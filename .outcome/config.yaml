@@ -1,0 +1,20 @@
+# Project automation configuration
+# Controls how much each role is automated for this project.
+#
+# Modes:
+#   manual     — a human does this role's work directly
+#   assisted   — human writes, AI helps refine and suggests
+#   autonomous — AI does the work, human reviews before proceeding
+#   both       — human and AI collaborate; human has final say
+#
+# This can be changed at any time. You can also override per-feature
+# by adding a `mode` field to any individual spec file.
+
+roles:
+  pm:       manual
+  designer: assisted
+  frontend: assisted
+  backend:  assisted
+
+# To add a future role, add an entry here and create its role definition
+# in roles/{role-name}.yaml

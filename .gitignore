@@ -1,0 +1,21 @@
+# Python
+backend/src/venv/
+backend/src/venv_linux/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment — never commit secrets
+backend/.env
+.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
