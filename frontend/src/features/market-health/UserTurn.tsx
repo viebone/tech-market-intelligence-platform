@@ -3,9 +3,10 @@ import { useState, ReactNode } from "react";
 interface UserTurnProps {
   prompt: string;
   preview?: ReactNode;
+  isFirst?: boolean;
 }
 
-export function UserTurn({ prompt, preview }: UserTurnProps) {
+export function UserTurn({ prompt, preview, isFirst = false }: UserTurnProps) {
   const [expanded, setExpanded] = useState(false);
   const TRUNCATE_AT = 120;
   const isTruncatable = prompt.length > TRUNCATE_AT;
@@ -14,23 +15,30 @@ export function UserTurn({ prompt, preview }: UserTurnProps) {
     : prompt;
 
   return (
-    <div className="flex items-start gap-3 justify-end">
-      <div className="flex flex-col items-end gap-1 max-w-[80%]">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-500">You</span>
-        </div>
+    <div className="flex items-start gap-3">
+      <div className="shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300 mt-0.5">
+        Y
+      </div>
 
-        <div className="rounded-2xl rounded-tr-sm bg-gray-800 px-4 py-3 text-sm text-gray-100 leading-relaxed">
-          <p>{displayText}</p>
-          {preview && !expanded && (
-            <div className="mt-2 opacity-60">{preview}</div>
-          )}
-        </div>
+      <div className="flex flex-col gap-1 min-w-0">
+        <p
+          className={
+            isFirst
+              ? "text-2xl font-semibold text-gray-100 leading-tight"
+              : "text-base font-medium text-gray-100 leading-relaxed"
+          }
+        >
+          {displayText}
+        </p>
+
+        {preview && !expanded && (
+          <div className="mt-2 opacity-60">{preview}</div>
+        )}
 
         {isTruncatable && (
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors focus:outline-none"
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200 transition-colors focus:outline-none"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -47,10 +55,6 @@ export function UserTurn({ prompt, preview }: UserTurnProps) {
             {expanded ? "Show less" : "Show full prompt"}
           </button>
         )}
-      </div>
-
-      <div className="shrink-0 w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 mt-0.5">
-        Y
       </div>
     </div>
   );

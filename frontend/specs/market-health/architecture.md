@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: draft
 created: 2026-06-13
-updated: 2026-06-15
+updated: 2026-06-22
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -25,16 +25,16 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 │                                         │
 │  ConversationThread  (scrollable)       │
 │                                         │
-│  ┌─────────────────────────────────┐    │
-│  │ MarketBriefingMessage           │    │  ← auto-generated on load
-│  │  MarketHealthSignal             │    │
-│  │  SearchImplication              │    │
-│  │  FilterControls                 │    │
-│  │  TrendGrid                      │    │
-│  │  [view prompt]                  │    │
-│  └─────────────────────────────────┘    │
+│  ┌──────────────────────────────────┐   │  ← first AI message, auto-rendered on load
+│  │ AIMessage                        │   │
+│  │   TrendChart (+ time selector)   │   │
+│  │   WrittenSummary                 │   │
+│  │   [view prompt]                  │   │
+│  └──────────────────────────────────┘   │
 │                                         │
-│  UserMessage …                          │
+│  UserMessage  ← first typed; title size │
+│  AIMessage    ← follow-up response      │
+│  UserMessage  ← subsequent; body size   │
 │  AIMessage …                            │
 │                                         │
 ├─────────────────────────────────────────┤  ← fixed, z-index top
@@ -48,45 +48,31 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `MarketHealthPage` | Top-level page. Owns filter state. Coordinates data fetching. Composes all zones. | `frontend/src/pages/MarketHealthPage.tsx` |
+| `MarketHealthPage` | Top-level page. Orchestrates the opening briefing fetch and the follow-up conversation. Composes all zones. | `frontend/src/pages/MarketHealthPage.tsx` |
 | `TopBar` | Fixed header. Product title only. No navigation in v1. | `frontend/src/features/market-health/TopBar.tsx` |
-| `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the briefing message, user messages, and AI follow-up messages. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
-| `MarketBriefingMessage` | The first message in the thread. Rendered from REST API data (not streamed). Contains the full market briefing: signal, implication, filters, trend grid. Carries a `PromptBadge`. | `frontend/src/features/market-health/MarketBriefingMessage.tsx` |
-| `PromptBadge` | Small affordance shown on every AI-sourced message. On click, opens `PromptViewer`. Receives the prompt text as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
-| `PromptViewer` | Read-only overlay showing the prompt behind an AI message. No editing. Dismissible. | `frontend/src/features/market-health/PromptViewer.tsx` |
-| `ChatInput` | Fixed, full-width input bar pinned to the bottom of the viewport. Handles text input and submit. Emits message upward. | `frontend/src/features/market-health/ChatInput.tsx` |
-| `MarketHealthSignal` | Displays the current verdict, one-sentence explanation, and Data Freshness label. Used inside `MarketBriefingMessage`. | `frontend/src/features/market-health/MarketHealthSignal.tsx` |
-| `SearchImplication` | Plain-language statement beneath the signal. Used inside `MarketBriefingMessage`. | `frontend/src/features/market-health/SearchImplication.tsx` |
-| `FilterControls` | Role family, seniority, location, and time range selectors. Emits filter changes upward to page. Used inside `MarketBriefingMessage`. | `frontend/src/features/market-health/FilterControls.tsx` |
-| `TrendGrid` | Grid of demand, compensation, and layoff signals. Receives filtered data as props. Used inside `MarketBriefingMessage`. | `frontend/src/features/market-health/TrendGrid.tsx` |
-| `TrendChart` | Individual trend chart with direction indicator and Data Freshness label. | `frontend/src/features/market-health/TrendChart.tsx` |
-| `DataFreshnessLabel` | Reusable label showing age and source of a data-backed claim. | `frontend/src/components/DataFreshnessLabel.tsx` |
+| `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
+| `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
+| `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
+| `TrendChart` | Multi-line chart: Designer, Product Manager, Engineer — monthly openings over a selected time range. Owns the time range tab selector (`This Year · Past 5 Years · All Time`). Fetches trend data via TanStack Query on mount and on range change. Fires `onRangeChange(range)` callback so the parent can trigger summary regeneration. | `frontend/src/features/market-health/TrendChart.tsx` |
+| `WrittenSummary` | The 3–4 sentence AI-generated summary below the chart. Receives streamed text. Shows bouncing-dots while streaming; fades in text as it arrives. | `frontend/src/features/market-health/WrittenSummary.tsx` |
+| `PromptBadge` | Small "view prompt" affordance anchored to every AI message. On click, opens `PromptViewer`. Receives the prompt string as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
+| `PromptViewer` | Read-only overlay showing the prompt behind an AI message. Dismissible with Escape or outside click. | `frontend/src/features/market-health/PromptViewer.tsx` |
+| `ChatInput` | Fixed, full-width input bar pinned to the bottom of the viewport. Placeholder: "Ask about the market…". Disabled while AI is streaming. | `frontend/src/features/market-health/ChatInput.tsx` |
+| `DataFreshnessLabel` | Reusable label showing age and source of a data-backed claim. Used inside `TrendChart`. | `frontend/src/components/DataFreshnessLabel.tsx` |
 
 ---
 
 ## State Management
 
-**Filter state** lives in `MarketHealthPage` as local React state. Passed as props to `MarketBriefingMessage` → `FilterControls`. When filters change, TanStack Query refetches and `MarketBriefingMessage` re-renders in place — the opening message updates, the conversation thread below it is unaffected.
+**Opening briefing** is separate from the follow-up conversation. `MarketHealthPage` fetches chart data and streams the written summary independently on mount. This is not part of `useChat`. The `AIMessage` and its children (`TrendChart`, `WrittenSummary`) are rendered directly by the page, not from a message list.
 
-**Conversation state** is managed by the `useChat` hook (Vercel AI SDK). It handles user messages and AI follow-up responses only — the opening briefing is not part of the `useChat` message history. `useChat` starts with an empty message list.
+**Follow-up conversation** is managed by the `useChat` hook (Vercel AI SDK). It starts with an empty message list. The first user message submitted via `ChatInput` is the first entry — this is the message rendered with `isFirst: true` in `UserMessage`.
 
-**Prompt viewer state** is local to `PromptBadge` / `PromptViewer` — a single boolean open/closed flag.
+**Time range state** lives in `TrendChart` as local state (`'this-year' | 'past-5-years' | 'all-time'`). On range change, `TrendChart` refetches chart data and fires `onRangeChange(range)` to `MarketHealthPage`, which sends a summary regeneration request to `/api/chat` and streams the new text into `WrittenSummary`.
 
-No global Zustand store required for v1.
+**Prompt viewer state** is local to `PromptBadge` — a boolean open/closed flag.
 
----
-
-## Opening Prompt
-
-The `MarketBriefingMessage` is not AI-streamed — it is rendered from data fetched via the existing REST endpoints. The "prompt" it represents is a static string stored as a constant, shown verbatim when the user taps "view prompt":
-
-```
-"Give me the current market health signal and search implication, followed by demand signals,
-compensation signals, and layoff signals — with filter controls so I can narrow by role,
-seniority, and location. I want to assess the current state of the tech job market."
-```
-
-This string is defined once in `MarketBriefingMessage.tsx` and passed to `PromptBadge` as a prop.
+No Zustand store required for v1.
 
 ---
 
@@ -94,11 +80,10 @@ This string is defined once in `MarketBriefingMessage.tsx` and passed to `Prompt
 
 | Data | Source | When fetched |
 |---|---|---|
-| Market Health Signal + Search Implication | `GET /api/market-health/summary` | On page load; refetch when filters change |
-| Trend data (Demand, Compensation, Layoff Signals) | `GET /api/market-health/trends` | On page load; refetch when filters change |
-| Conversational follow-up responses | `POST /api/chat` (streaming) | On each user message via `useChat` |
-
-The `GET /api/alerts/exceptions` call is removed from this layout — exceptions have no dedicated zone in the conversation model. Revisit when an alert system is designed.
+| Trend chart data (monthly openings by role category) | `GET /api/market-health/trends?range={range}` | On page mount; refetch on time range change |
+| Opening written summary | `POST /api/chat` (streaming) — opening prompt sent on mount | On page mount |
+| Summary for new time range | `POST /api/chat` (streaming) — range-specific prompt | On time range change |
+| Follow-up AI responses | `POST /api/chat` (streaming) via `useChat` | On each user message |
 
 ---
 
@@ -106,26 +91,26 @@ The `GET /api/alerts/exceptions` call is removed from this layout — exceptions
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/market-health/summary` | Current Market Health Signal, Search Implication, and Data Freshness metadata. Accepts: `role`, `seniority`, `location`. |
-| GET | `/api/market-health/trends` | Time-series data for Demand, Compensation, and Layoff Signals. Accepts: `role`, `seniority`, `location`, `period`. |
-| POST | `/api/chat` | Accepts `{ messages: [...], context: { role, seniority, location } }`. Streams Claude response for user follow-up questions. |
+| GET | `/api/market-health/trends` | Time-series data for the trend chart. Param: `range` (`this-year` \| `past-5-years` \| `all-time`). Returns monthly openings per role category. |
+| POST | `/api/chat` | Accepts `{ messages: [...] }`. Streams Claude responses. Used for the opening summary, range-change summary regeneration, and user follow-up questions. |
 
 ---
 
 ## Tech Decisions
 
-- **Vercel AI SDK `useChat`** for follow-up conversation only. The opening briefing is not streamed.
-- **TanStack Query** for all REST data. Query keys: `['market-health', 'summary', filters]` and `['market-health', 'trends', filters]`.
-- **CSS layout** for the three-zone structure: `TopBar` and `ChatInput` use `position: fixed`; `ConversationThread` uses padding-top and padding-bottom to clear both fixed zones.
+- **Vercel AI SDK `useChat`** for follow-up conversation only. The opening briefing and summary regeneration use direct streaming fetches, not `useChat`.
+- **TanStack Query** for trend chart data. Query key: `['market-health', 'trends', range]`.
+- **CSS layout** for the three-zone structure: `TopBar` and `ChatInput` use `position: fixed`; `ConversationThread` uses `padding-top` and `padding-bottom` to clear both fixed zones.
 - **Tailwind CSS** only — no additional component libraries.
-- While briefing data reloads after a filter change, keep the previous content visible with a subtle loading indicator. Do not blank the briefing message.
+- While the written summary regenerates on range change, keep the previous text visible with a bouncing-dots overlay. Do not blank `WrittenSummary`.
+- `UserMessage` receives an `isFirst` boolean: first message renders at `text-2xl font-semibold`; subsequent messages at `text-base font-medium`.
 
 ---
 
 ## Out of scope
 
-- Exception / alert banner (removed from this layout — no zone for it)
-- Alert creation UI
-- Company detail view
-- Side-by-side market comparison
+- Filter controls (role family, seniority, location)
+- Market Health Signal and Search Implication components
+- Exception / alert banner
 - Authentication and user session management
+- Side-by-side market comparison

@@ -1,100 +1,69 @@
-import { MarketHealthSignal, MarketHealthSignalData } from "./MarketHealthSignal";
-import { SearchImplication, SearchImplicationData } from "./SearchImplication";
-import { FilterControls, Filters } from "./FilterControls";
-import { TrendGrid, TrendsData } from "./TrendGrid";
+import { JobOpeningsChart, OpeningDataPoint, TimeRange } from "./JobOpeningsChart";
 
 export const OPENING_PROMPT =
-  "Give me the current market health signal and search implication, followed by demand signals, compensation signals, and layoff signals — with filter controls so I can narrow by role, seniority, and location. I want to assess the current state of the tech job market.";
+  "Show me the current trend in tech job openings by role category — Designer, Product Manager, " +
+  "and Engineer — month over month. Display total openings per month for each category as a line chart " +
+  "with time range options for This Year, Past 5 Years, and All Time. Then give me a brief written " +
+  "summary of what the data shows: the overall direction, the magnitude of change, and any notable " +
+  "differences between the three role categories.";
 
 interface MarketBriefingMessageProps {
-  filters: Filters;
-  onFiltersChange: (filters: Filters) => void;
-  signal: MarketHealthSignalData | null;
-  implication: SearchImplicationData | null;
-  signalLoading: boolean;
-  signalFetching: boolean;
-  signalError: Error | null;
-  onRetrySignal: () => void;
-  trends: TrendsData | undefined;
-  trendsLoading: boolean;
-  trendsFetching: boolean;
-  trendsError: Error | null;
-  onRetryTrends: () => void;
+  range: TimeRange;
+  onRangeChange: (r: TimeRange) => void;
+  data: OpeningDataPoint[] | undefined;
+  summary: string | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  onRetry: () => void;
 }
 
 export function MarketBriefingMessage({
-  filters,
-  onFiltersChange,
-  signal,
-  implication,
-  signalLoading,
-  signalFetching,
-  signalError,
-  onRetrySignal,
-  trends,
-  trendsLoading,
-  trendsFetching,
-  trendsError,
-  onRetryTrends,
+  range,
+  onRangeChange,
+  data,
+  summary,
+  isLoading,
+  isFetching,
+  error,
+  onRetry,
 }: MarketBriefingMessageProps) {
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-900/40 bg-red-950/30 px-6 py-5">
+        <p className="text-sm font-medium text-red-400 mb-1">Could not load market data</p>
+        <p className="text-sm text-red-500/80 mb-3">{error.message}</p>
+        <button
+          onClick={onRetry}
+          className="text-sm text-red-400 underline hover:no-underline focus:outline-none"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-5">
-      {signalError ? (
-        <div className="rounded-lg border border-red-100 bg-red-50 px-6 py-5">
-          <p className="text-sm font-medium text-red-700 mb-1">Could not load market signal</p>
-          <p className="text-sm text-red-600 mb-3">{signalError.message}</p>
-          <button
-            onClick={onRetrySignal}
-            className="text-sm text-red-700 underline hover:no-underline focus:outline-none"
-          >
-            Retry
-          </button>
-        </div>
-      ) : signalLoading ? (
-        <div className="rounded-lg border border-gray-100 bg-white px-6 py-5 animate-pulse" role="status">
-          <span className="sr-only">Loading…</span>
-          <div className="h-3 bg-gray-100 rounded w-24 mb-4" />
-          <div className="h-10 bg-gray-100 rounded w-48 mb-3" />
-          <div className="h-4 bg-gray-50 rounded w-full max-w-sm" />
-        </div>
-      ) : (
-        <div className="relative">
-          {signalFetching && (
-            <div className="absolute top-3 right-4 z-10" role="status" aria-label="Refreshing">
-              <svg className="animate-spin h-4 w-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            </div>
-          )}
-          <MarketHealthSignal signal={signal} />
-        </div>
-      )}
+    <div className="flex flex-col gap-6">
+      {/* Chart */}
+      <JobOpeningsChart
+        data={data ?? []}
+        range={range}
+        onRangeChange={onRangeChange}
+        isLoading={isLoading || isFetching}
+      />
 
-      {!signalError && implication && (
-        <SearchImplication implication={implication} />
-      )}
-
-      <FilterControls filters={filters} onChange={onFiltersChange} />
-
-      {trendsError ? (
-        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-4">
-          <p className="text-sm font-medium text-red-700 mb-1">Could not load trend data</p>
-          <p className="text-sm text-red-600 mb-3">{trendsError.message}</p>
-          <button
-            onClick={onRetryTrends}
-            className="text-sm text-red-700 underline hover:no-underline focus:outline-none"
-          >
-            Retry
-          </button>
+      {/* Written summary */}
+      {isLoading ? (
+        <div className="space-y-2 animate-pulse" role="status" aria-label="Loading summary">
+          <div className="h-3.5 bg-gray-700 rounded w-full" />
+          <div className="h-3.5 bg-gray-700 rounded w-11/12" />
+          <div className="h-3.5 bg-gray-700 rounded w-4/5" />
+          <div className="h-3.5 bg-gray-700 rounded w-3/4" />
         </div>
-      ) : (
-        <TrendGrid
-          trends={trends}
-          isLoading={trendsLoading || trendsFetching}
-        />
-      )}
-
+      ) : summary ? (
+        <p className="text-sm text-gray-300 leading-relaxed">{summary}</p>
+      ) : null}
     </div>
   );
 }

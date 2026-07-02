@@ -15,7 +15,7 @@ export function ConversationalArea({ context }: ConversationalAreaProps) {
   const { messages, input, handleInputChange, handleSubmit, isLoading, error, reload } =
     useChat({
       api: "/api/chat",
-      streamProtocol: "text",
+      streamProtocol: "data",
       body: { context },
     });
 

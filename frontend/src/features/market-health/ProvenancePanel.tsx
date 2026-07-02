@@ -1,26 +1,33 @@
 import { useState } from "react";
-import { Filters } from "./FilterControls";
 import { MarketHealthSignalData } from "./MarketHealthSignal";
+
+export interface ProvenanceFilters {
+  role: string;
+  seniority: string;
+  location: string;
+  period: string;
+}
 
 export interface ProvenanceData {
   source: "briefing" | "chat";
-  filters: Filters;
+  filters: ProvenanceFilters;
   signal: MarketHealthSignalData | null;
   demandCount: number;
   compCount: number;
   layoffCount: number;
+  model?: string;
 }
 
 const TREND_ICON: Record<string, { symbol: string; color: string }> = {
-  improving: { symbol: "↗", color: "text-emerald-600" },
-  stable:    { symbol: "→", color: "text-amber-600" },
-  worsening: { symbol: "↘", color: "text-red-600" },
-  declining: { symbol: "↘", color: "text-red-600" },
+  improving: { symbol: "↗", color: "text-emerald-400" },
+  stable:    { symbol: "→", color: "text-amber-400" },
+  worsening: { symbol: "↘", color: "text-red-400" },
+  declining: { symbol: "↘", color: "text-red-400" },
 };
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+    <span className="inline-flex items-center rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
       {children}
     </span>
   );
@@ -28,11 +35,11 @@ function Tag({ children }: { children: React.ReactNode }) {
 
 function Row({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5 border-b border-gray-100 last:border-0">
-      <span className="text-gray-400 shrink-0">{label}</span>
-      <span className="text-gray-700 text-right">
+    <div className="flex items-start justify-between gap-4 py-1.5 border-b border-gray-700/50 last:border-0">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className="text-gray-200 text-right">
         {value}
-        {sub && <span className="block text-gray-400 text-[10px] mt-0.5">{sub}</span>}
+        {sub && <span className="block text-gray-500 text-[10px] mt-0.5">{sub}</span>}
       </span>
     </div>
   );
@@ -45,13 +52,13 @@ interface ProvenancePanelProps {
 export function ProvenancePanel({ data }: ProvenancePanelProps) {
   const [open, setOpen] = useState(false);
 
-  const { filters, signal, demandCount, compCount, layoffCount, source } = data;
+  const { filters, signal, demandCount, compCount, layoffCount, source, model } = data;
 
   const trendIcon = signal
     ? (TREND_ICON[signal.trendDirection] ?? TREND_ICON.stable)
     : null;
 
-  const filterLabel = [
+  const filterLabels = [
     filters.role === "all" ? "All roles" : filters.role,
     filters.seniority === "all" ? "All seniority" : filters.seniority,
     filters.location === "all" ? "All locations" : filters.location,
@@ -62,7 +69,7 @@ export function ProvenancePanel({ data }: ProvenancePanelProps) {
     <div className="mb-4">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors focus:outline-none"
+        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors focus:outline-none"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -80,21 +87,21 @@ export function ProvenancePanel({ data }: ProvenancePanelProps) {
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-xs space-y-4">
+        <div className="mt-2 rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-xs space-y-4">
 
-          {/* Filters */}
+          {/* Filters applied */}
           <section>
             <p className="font-semibold text-gray-500 mb-2 uppercase tracking-wide text-[10px]">
               Filters applied
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {filterLabel.map((f) => (
+              {filterLabels.map((f) => (
                 <Tag key={f}>{f}</Tag>
               ))}
             </div>
           </section>
 
-          {/* Data loaded (briefing) or context sent (chat) */}
+          {/* Data loaded (briefing) or context sent to Claude (chat) */}
           <section>
             <p className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
               {source === "briefing" ? "Data loaded" : "Context sent to Claude"}
@@ -111,46 +118,37 @@ export function ProvenancePanel({ data }: ProvenancePanelProps) {
                       )}
                     </span>
                   ) : (
-                    <span className="text-gray-400">No data for these filters</span>
+                    <span className="text-gray-500">No data for these filters</span>
                   )
                 }
                 sub={signal ? `as of ${signal.asOf}` : undefined}
               />
-              <Row
-                label="Demand signals"
-                value={`${demandCount} matched`}
-              />
-              <Row
-                label="Compensation signals"
-                value={`${compCount} matched`}
-              />
-              <Row
-                label="Layoff events"
-                value={`${layoffCount} total`}
-              />
+              <Row label="Demand signals" value={`${demandCount} matched`} />
+              <Row label="Compensation signals" value={`${compCount} matched`} />
+              <Row label="Layoff events" value={`${layoffCount} total`} />
               {source === "chat" && (
-                <Row label="Model" value="Claude Haiku" />
+                <Row label="Model" value={model ?? "Claude Haiku"} />
               )}
             </div>
           </section>
 
-          {/* Sources (briefing only) */}
+          {/* Sources (briefing only, signal present) */}
           {source === "briefing" && signal && (
             <section>
               <p className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
                 Sources
               </p>
-              <p className="text-gray-500 leading-relaxed">{signal.source}</p>
+              <p className="text-gray-400 leading-relaxed">{signal.source}</p>
             </section>
           )}
 
-          {/* Endpoints (briefing only) */}
+          {/* API calls (briefing only) */}
           {source === "briefing" && (
             <section>
               <p className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
                 API calls
               </p>
-              <div className="space-y-1 font-mono text-gray-400">
+              <div className="space-y-1 font-mono text-gray-500">
                 <p>GET /api/market-health/summary</p>
                 <p>GET /api/market-health/trends</p>
               </div>
