@@ -19,6 +19,7 @@ from models import (
     CompensationSignal,
     LayoffSignal,
     MarketHealthSignal,
+    OpeningDataPoint,
     PostingPeriod,
     SearchImplication,
 )
@@ -828,3 +829,120 @@ def slice_posting_trend(
     """Return only the last N months of a posting trend list."""
     months = _PERIOD_MONTHS.get(period, 6)
     return posting_trend[-months:]
+
+
+# ---------------------------------------------------------------------------
+# Job Opening Trends — monthly totals per role category
+#
+# Covers Jan 2019 – Jun 2026 (all_time).
+# Sliced by the endpoint for this_year and past_5_years ranges.
+#
+# Values are aggregated across all locations and seniority levels.
+# The Jan–Jun 2026 figures match the sum of existing DEMAND_SIGNALS.
+# ---------------------------------------------------------------------------
+
+def _lerp(a: float, b: float, t: float) -> int:
+    return round(a + (b - a) * t)
+
+
+def _month_index(year: int, month: int) -> int:
+    """Months since Jan 2019 (0-based)."""
+    return (year - 2019) * 12 + (month - 1)
+
+
+def _build_opening_trends() -> list[OpeningDataPoint]:
+    # Key milestones: (year, month, designer, product_manager, engineer)
+    milestones = [
+        (2019, 1,  2200, 1800, 5500),
+        (2020, 1,  2360, 1930, 5900),
+        (2020, 4,  1480, 1180, 3800),  # pandemic crash
+        (2020, 10, 2250, 1820, 5700),  # rapid recovery
+        (2021, 4,  2700, 2250, 7100),
+        (2022, 6,  3300, 2900, 9000),  # boom peak
+        (2022, 11, 2700, 2350, 7300),  # correction begins
+        (2023, 6,  1750, 1560, 4650),  # tech winter trough
+        (2024, 1,  1840, 1650, 4600),
+        (2025, 1,  1960, 1740, 4620),
+        (2025, 9,  1810, 1560, 4420),  # slight end-of-year dip
+        (2026, 1,  1675, 1415, 4320),  # matches sum of existing DEMAND_SIGNALS
+        (2026, 2,  1687, 1468, 4225),
+        (2026, 3,  1704, 1506, 4185),
+        (2026, 4,  1732, 1567, 4103),
+        (2026, 5,  1747, 1616, 4065),
+        (2026, 6,  1783, 1680, 4000),
+    ]
+
+    # Convert to (index, d, pm, eng) for interpolation
+    keyed = [
+        (_month_index(y, m), d, pm, e)
+        for y, m, d, pm, e in milestones
+    ]
+
+    # Build a result dict for every month index from 0 to _month_index(2026, 6)
+    max_idx = _month_index(2026, 6)
+    result: dict[int, tuple[int, int, int]] = {}
+
+    for i in range(len(keyed) - 1):
+        i0, d0, pm0, e0 = keyed[i]
+        i1, d1, pm1, e1 = keyed[i + 1]
+        for idx in range(i0, i1 + 1):
+            t = (idx - i0) / (i1 - i0) if i1 > i0 else 0.0
+            result[idx] = (_lerp(d0, d1, t), _lerp(pm0, pm1, t), _lerp(e0, e1, t))
+
+    # Ensure the last milestone is set exactly
+    last_idx, ld, lpm, le = keyed[-1]
+    result[last_idx] = (ld, lpm, le)
+
+    points = []
+    for idx in range(0, max_idx + 1):
+        year = 2019 + idx // 12
+        month = idx % 12 + 1
+        d, pm, e = result.get(idx, (0, 0, 0))
+        points.append(OpeningDataPoint(
+            month=f"{year}-{month:02d}",
+            designer=d,
+            product_manager=pm,
+            engineer=e,
+        ))
+
+    return points
+
+
+OPENING_TRENDS_ALL_TIME: list[OpeningDataPoint] = _build_opening_trends()
+
+# Slice indices for each range
+_THIS_YEAR_START = _month_index(2026, 1)
+_PAST_5_YEARS_START = _month_index(2021, 1)
+
+OPENING_TRENDS: dict[str, list[OpeningDataPoint]] = {
+    "this_year":    OPENING_TRENDS_ALL_TIME[_THIS_YEAR_START:],
+    "past_5_years": OPENING_TRENDS_ALL_TIME[_PAST_5_YEARS_START:],
+    "all_time":     OPENING_TRENDS_ALL_TIME,
+}
+
+OPENING_SUMMARIES: dict[str, str] = {
+    "this_year": (
+        "Designer openings are up 6% since January and Product Manager roles have grown 19%, "
+        "driven by renewed hiring in B2B SaaS and AI-adjacent teams. "
+        "Engineering openings are moving in the opposite direction, down 7% over the same period. "
+        "Overall, the market remains well below its 2022 peak, though the divergence between "
+        "categories is the clearest signal of where hiring confidence currently sits."
+    ),
+    "past_5_years": (
+        "The tech job market peaked in mid-2022 then fell sharply through 2023 as the post-pandemic "
+        "boom reversed and mass layoffs hit Engineering hardest. "
+        "All three categories bottomed out in mid-2023 and have partially recovered since, "
+        "but none have returned to 2022 highs. "
+        "Designer and Product Manager roles have recovered faster than Engineering, "
+        "which remains roughly 55% below its 2022 peak."
+    ),
+    "all_time": (
+        "From 2019 to mid-2022, tech hiring grew steadily, accelerating after the pandemic recovery "
+        "into a hiring boom that peaked in June 2022. "
+        "A sharp correction followed through 2023 — Engineering fell over 55% from peak, "
+        "while Designer and Product Manager roles declined around 47%. "
+        "The market has stabilised since 2024 but has not returned to 2022 levels. "
+        "The 2026 trend shows modest growth in Designer and PM roles alongside continued "
+        "contraction in Engineering."
+    ),
+}

@@ -58,3 +58,37 @@ class LayoffSignal:
     event_date: date
     headcount_affected: Optional[int]   # None if unconfirmed
     source: str
+
+
+@dataclass
+class OpeningDataPoint:
+    month: str            # "YYYY-MM"
+    designer: int
+    product_manager: int
+    engineer: int
+
+
+# ---------------------------------------------------------------------------
+# Reasoning trace models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SourceAccess:
+    sequence: int
+    source_type: str   # "data_source" | "tool"
+    name: str
+    purpose: str
+
+
+@dataclass
+class ReasoningStep:
+    sequence: int
+    content: str
+
+
+@dataclass
+class ReasoningTrace:
+    input_context: str
+    sources_and_tools: list[SourceAccess]
+    reasoning_steps: list[ReasoningStep]
+    is_complete: bool
