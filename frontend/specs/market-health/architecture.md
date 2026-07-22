@@ -2,15 +2,29 @@
 id: market-health
 experience: market-health
 directive: low
-status: draft
+status: implemented
 created: 2026-06-13
-updated: 2026-06-22
+updated: 2026-07-19
 ---
 
 # Market Health — Frontend Architecture Spec
 
 ## Experience this implements
 See: `design/market-health/experience.md`
+
+## Taxonomy this uses
+See: `design/market-health/job-classification.md` — canonical `Role Category` names
+(`Designer`, `Product Manager`, `Engineer`).
+
+> **Note on this spec vs. the real implementation**: this document (and this feature's
+> shipped code) has drifted further from the layout below than this update alone fixes —
+> the real `MarketHealthPage.tsx` has a three-column layout (`TaskPanel`, `OutputPanel`,
+> `ReasoningTrace`) that this spec doesn't describe, built in later change requests
+> (ai-reasoning-transparency, provenance panel) without this file being updated. Reconciling
+> that is out of scope here — this update only corrects the pieces this change touches: the
+> taxonomy reference above and the `/openings` API contract below, which now matches the real
+> endpoint (`market_openings.py`) exactly. A full spec-vs-code reconciliation pass is a
+> candidate for its own future change request.
 
 ---
 
@@ -53,7 +67,7 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
-| `TrendChart` | Multi-line chart: Designer, Product Manager, Engineer — monthly openings over a selected time range. Owns the time range tab selector (`This Year · Past 5 Years · All Time`). Fetches trend data via TanStack Query on mount and on range change. Fires `onRangeChange(range)` callback so the parent can trigger summary regeneration. | `frontend/src/features/market-health/TrendChart.tsx` |
+| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ month, designer, product_manager, engineer }`, one row per month — the real `/openings` response shape). Each of the three fixed series keys maps to its accent colour from `design/visual-design.md` (indigo / purple / emerald), matching `job-classification.md` Role Category names. Owns the time range tab selector (`This Year · Past 5 Years · All Time`). Fetches trend data via TanStack Query on mount and on range change. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
 | `WrittenSummary` | The 3–4 sentence AI-generated summary below the chart. Receives streamed text. Shows bouncing-dots while streaming; fades in text as it arrives. | `frontend/src/features/market-health/WrittenSummary.tsx` |
 | `PromptBadge` | Small "view prompt" affordance anchored to every AI message. On click, opens `PromptViewer`. Receives the prompt string as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
 | `PromptViewer` | Read-only overlay showing the prompt behind an AI message. Dismissible with Escape or outside click. | `frontend/src/features/market-health/PromptViewer.tsx` |
@@ -80,7 +94,7 @@ No Zustand store required for v1.
 
 | Data | Source | When fetched |
 |---|---|---|
-| Trend chart data (monthly openings by role category) | `GET /api/market-health/trends?range={range}` | On page mount; refetch on time range change |
+| Trend chart data + written summary (monthly openings per Role Category, from live-classified postings) | `GET /api/market-health/openings?range={range}` — returns `{ range, data: [{ month, designer, product_manager, engineer }], summary, as_of, source }` | On page mount; refetch on time range change |
 | Opening written summary | `POST /api/chat` (streaming) — opening prompt sent on mount | On page mount |
 | Summary for new time range | `POST /api/chat` (streaming) — range-specific prompt | On time range change |
 | Follow-up AI responses | `POST /api/chat` (streaming) via `useChat` | On each user message |
@@ -91,7 +105,7 @@ No Zustand store required for v1.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/market-health/trends` | Time-series data for the trend chart. Param: `range` (`this-year` \| `past-5-years` \| `all-time`). Returns monthly openings per role category. |
+| GET | `/api/market-health/openings` | Time-series data for the trend chart plus a written summary. Param: `range` (`this_year` \| `past_5_years` \| `all_time`). Returns one row per month (`{ month, designer, product_manager, engineer }`) — sourced from live-ingested, LLM-classified postings, not mock data. See `backend/specs/market-health/api.md`. |
 | POST | `/api/chat` | Accepts `{ messages: [...] }`. Streams Claude responses. Used for the opening summary, range-change summary regeneration, and user follow-up questions. |
 
 ---

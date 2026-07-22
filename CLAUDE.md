@@ -69,6 +69,22 @@ source venv_linux/bin/activate
 pip install -r ../requirements.txt
 ```
 
+Market Health's job-opening trends are backed by a real PostgreSQL database
+(`raw_postings` + `classifications` — see `backend/specs/market-health/api.md`).
+Set `DATABASE_URL` in `backend/.env` before starting the server; the schema is
+created automatically on startup if missing. An externally hosted Postgres
+(e.g. Railway) is the simplest option — it avoids WSL↔Windows localhost
+networking friction entirely. To populate real data, run the ingestion
+pipeline (fetches live Adzuna postings, classifies them via Gemini):
+```bash
+cd products/tech-market-intelligence-platform/backend/src
+source venv_linux/bin/activate
+python ingest.py
+```
+Run it daily (cron or manual) to keep the dataset current. Until it's run at
+least once, `/api/market-health/openings` returns empty series with a
+"no data yet" summary — this is expected, not an error.
+
 **Frontend**
 ```bash
 cd products/tech-market-intelligence-platform/frontend

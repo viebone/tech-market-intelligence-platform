@@ -7,6 +7,7 @@ Starts with:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,8 +18,11 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 
 from chat import router as chat_router
+from db import init_schema
 from market_health import router as market_health_router
 from market_openings import router as market_openings_router
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # App
@@ -55,6 +59,19 @@ app.add_middleware(
 app.include_router(market_health_router)
 app.include_router(market_openings_router)
 app.include_router(chat_router)
+
+# ---------------------------------------------------------------------------
+# Startup — ensure raw_postings / classifications exist.
+# Non-fatal if the DB is unreachable: only /api/market-health/openings depends
+# on it, everything else (summary, chat, exceptions) still runs on mock data.
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+def _ensure_schema() -> None:
+    try:
+        init_schema()
+    except Exception as exc:
+        logger.warning("Could not initialise market-health schema: %s", exc)
 
 # ---------------------------------------------------------------------------
 # Health check

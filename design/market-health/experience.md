@@ -4,6 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
+updated: 2026-07-16
 ---
 
 # Market Health — Experience Spec
@@ -14,55 +15,164 @@ See: `outcomes/understand-market-health-before-searching.md`
 
 ---
 
+## Primary question this experience answers
+
+> "How is the tech job market trending right now — and has it been getting better or worse?"
+
+---
+
 ## Information Architecture
 
 **Location:** Market Health (primary landing section)
 
-This feature occupies the entire viewport. The page is a conversation. There is no static layout —
-all content is AI-generated and appears inside a scrollable conversation thread.
+The page is a conversation. There is no static layout — all content is AI-generated and appears
+inside a scrollable conversation thread.
+
+The opening AI message contains exactly two things: the trend chart and the written summary.
+Nothing else is shown until the user asks.
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Top Bar | Primary | Product title. Fixed, always visible. No navigation beyond this in v1. |
-| Conversation Thread | Primary | The full scrollable content area. Contains AI-generated messages and user messages. The opening message is generated automatically on load — it contains the market health briefing, demand signals, compensation signals, layoff signals, and filter controls. Subsequent messages are user questions and AI answers. |
-| Prompt Transparency | Primary | Every AI-generated message exposes a "view prompt" affordance. Tapping it reveals the exact prompt that produced that message. This applies to the opening briefing and all follow-up answers. |
-| Chat Input | Primary | Fixed, full-width, always visible at the bottom of the viewport. The user types here to ask follow-up questions. |
-| Data Freshness | Tertiary | Age and source labels on all data-backed claims within the conversation thread. |
+| Top Bar | Primary | Product title. Fixed, always visible. |
+| Conversation Thread | Primary | Scrollable. Opening AI message: trend chart + written summary. Subsequent messages: user questions and AI answers. |
+| Chat Input | Primary | Fixed, full-width, pinned to the bottom. Always visible. |
+| Prompt Transparency | Secondary | Every AI message exposes a "view prompt" affordance. |
+
+---
+
+## Opening Prompt
+
+The system fires this prompt automatically on load. The user does not type anything.
+
+This prompt embodies Principle 1 (Intent First, Always Explicit): outcome, constraints,
+and delegation boundary are all stated explicitly. The system has no room to guess.
+
+```
+Show me the current trend in tech job openings by role category — Designer, Product Manager,
+and Engineer — month over month.
+
+Display total openings per month for each category as a line chart.
+Provide three time range views the user can switch between: This Year, Past 5 Years, All Time.
+
+Then write a brief summary of what the data shows: the overall direction (rising, flat,
+or declining), the magnitude of change, and any notable differences between the three role
+categories. Keep the summary to 3–4 sentences. Use plain, direct language. Do not use
+verdict labels (Cautious, Strong, Weak). Do not recommend an action — describe only.
+
+Delegation boundary: retrieve the data, render the chart, generate the summary.
+The user interprets and decides what to do with it.
+```
 
 ---
 
 ## User Flow
 
 1. The user opens the product. The page loads with a fixed top bar and an empty conversation thread.
-2. The system immediately fires the opening prompt — the user sees the AI generating the full market briefing: market health signal, search implication, demand signals with filter controls, compensation signals, and layoff signals. The user did not type anything; the system acted on their behalf.
-3. The user reads the briefing. They can tap "view prompt" on any section to see the exact prompt that generated it.
-4. The user optionally applies filters (role, seniority, location, time range) surfaced within the AI-generated briefing. Changing a filter re-generates the relevant section.
-5. The user types a follow-up question in the fixed chat input at the bottom ("Is now a good time to look for a senior UX role in London?").
-6. The AI responds with a new message in the thread — direct answer with supporting signals shown inline.
-7. The conversation grows downward. Each answer exposes a "view prompt" affordance.
-8. The user leaves with a clear, evidence-backed read on the market and calibrated expectations for their search.
+2. The system fires the opening prompt. The opening AI message generates:
+   first the trend chart, then the written summary directly below it.
+3. The user reads the chart. The direction is visible before reading any text.
+4. The user reads the written summary. It confirms what the chart shows in plain language.
+5. The user optionally switches the time range (This Year / Past 5 Years / All Time).
+   The chart updates. The summary regenerates for the new window.
+6. The user types a follow-up question in the chat input ("What does this mean for a senior
+   UX designer looking in London?").
+7. The AI responds with a new message in the thread.
+8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
 
 ## Visual Design
 
-The layout has three persistent elements: fixed top bar, scrollable conversation thread, fixed chat input.
+**Top bar** — fixed, full width. Product title only. Does not scroll.
 
-**Top bar** — fixed, full width. Contains the product title only. Minimal. Does not scroll away.
+**Opening AI message** — the first and dominant message in the thread. Contains:
 
-**Conversation thread** — occupies all space between the top bar and the chat input. Scrollable.
-Messages are left-aligned (AI) and right-aligned (user), consistent with chat conventions.
-The opening AI message is the full market briefing — it contains the same content as the previous
-layout (signal, implication, trend charts, layoff list, filters) but rendered inside a message bubble.
-Each AI message carries a small "view prompt" affordance (e.g., a subtle icon or link). Tapping it
-opens a read-only view of the exact prompt that produced that message — no editing, just transparency.
+1. **Trend chart** — large. Three lines: Designer, Product Manager, Engineer, each in a
+   distinct colour. A time range selector above the chart, right-aligned:
+   `This Year · Past 5 Years · All Time`. Default: This Year.
+   Hover: vertical cursor snaps to the nearest month; tooltip shows the count and M-o-M Δ
+   for each visible line.
+   No verdict label, no colour-coded health state. Numbers and shape only.
+   These three categories are the fixed `Role Category` set from
+   `design/information-architecture.md` Content Taxonomy. Sub-specializations within each,
+   plus the seniority and track taxonomy used elsewhere in this feature, are defined in
+   `design/market-health/job-classification.md`.
 
-**Chat input** — fixed, full width, pinned to the bottom of the viewport. Always visible regardless
-of scroll position. Placeholder: "Ask about the market…". Send button on the right.
+2. **Written summary** — directly below the chart, inside the same message bubble.
+   3–4 sentences. Names direction, magnitude, and category divergence where present.
+   No verdict labels. Plain language. Regenerates when the time range changes.
+   A "view prompt" affordance is anchored to this block.
 
-Visual tone: information-dense but uncluttered. Neutral, evidence-based. No urgency language or
-sentiment framing beyond what the data supports. The conversation frame keeps the experience feeling
-live and responsive rather than like a dashboard.
+**Chat input** — fixed, full width, pinned to the bottom. Placeholder: "Ask about the market…".
+
+**Thinking process accordion** — every AI message carries a secondary disclosure control below
+its header: a small chevron link labelled "How this was generated". Collapsed by default.
+When expanded, it shows:
+
+- **Filters applied** — the active role, seniority, location, and time range as tag chips.
+  Role and seniority values follow the canonical taxonomy defined in
+  `design/market-health/job-classification.md`.
+- **Context sent to Claude** — the market signal verdict and trend direction, demand signal count,
+  compensation signal count, layoff event count, and the model used
+- **Sources** — the data source description (briefing turns only, when a signal is present)
+- **API calls** — the internal endpoints queried to build the response (briefing turns only)
+
+The accordion is read-only. It cannot be edited or shared. It appears on every AI turn —
+both the opening briefing and all follow-up responses.
+
+Visual tone: the chart carries the emotional weight. The summary confirms it. No urgency
+language or sentiment framing beyond what the numbers directly support.
+
+---
+
+## Chart Specification
+
+| Property | Value |
+|---|---|
+| Chart type | Line chart, continuous. No bar fill. |
+| **Chart title** | "Tech hiring demand" — top-left, `text-sm font-semibold text-gray-100` |
+| **Chart subtitle** | "Monthly job openings by role category" — below title, `text-xs text-gray-400` |
+| **Time range tabs** | Top-right of the title row, right-aligned. `This Year · Past 5 Years · All Time`. |
+| **Legend** | Below the title row, above the chart. Coloured line swatch + role label per category. |
+| **Y axis label** | "Openings" — rotated 90°, left of the Y axis tick values. `text-[10px] fill-gray-500`. |
+| **X axis label** | "Month" — centred below the X axis tick marks. `text-[10px] fill-gray-500`. |
+| X axis ticks | Month names for This Year (Jan, Feb…). Year for Past 5 Years and All Time. Primary axis identifier — the label is supplemental. |
+| Y axis ticks | Absolute count, formatted (e.g. 5k, 10k). |
+| Lines | Designer, Product Manager, Engineer |
+| Default time range | This Year (Jan–current month) |
+| Available ranges | This Year · Past 5 Years · All Time |
+| Hover | Vertical cursor + tooltip with count + M-o-M Δ per line |
+| Loading state | Skeleton lines pulse in place. Chart frame does not shift. |
+| No-data state | If a category has no data for a range, its line is hidden; legend shows "No data." |
+
+---
+
+## Written Summary Specification
+
+Generated with the opening prompt. Regenerates when the time range changes.
+
+**Rules:**
+- Always names the direction: rising, flat, or declining.
+- States magnitude where data supports it (% change or absolute count).
+- Names divergence between categories if present (e.g., one category outperforming the others).
+- Names a recent reversal if relevant (e.g., a decline that is slowing).
+- Never uses verdict labels (Cautious, Strong, Weak, etc.).
+- Never recommends an action.
+- 3–4 sentences maximum.
+
+**Example outputs:**
+
+↓ Declining: "Tech job openings are down 23% year-over-year, with the steepest drops in
+Product Manager (−31%) and Designer roles (−28%). Engineering has held more stable at −12%.
+The pace of decline has slowed in the last three months."
+
+→ Flat: "Tech job openings have been broadly flat over the past 12 months, within a ±5% band.
+Designer and Engineering roles are stable. Product Manager openings spiked in Q2 but have
+since returned to the baseline."
+
+↑ Rising: "Tech job openings have grown 18% year-over-year, led by Engineering (+27%).
+Designer and Product Manager roles are also up, at +11% and +9% respectively. Growth was
+concentrated in the first half of the year — the last three months have been flat."
 
 ---
 
@@ -70,25 +180,22 @@ live and responsive rather than like a dashboard.
 
 | User action | System response |
 |---|---|
-| Open Market Health (first visit or return) | Show Market Health Signal, Search Implication, and trend areas with current data. Surface any Exceptions since last visit before showing the standard view. |
-| Ask a question in the conversational area | Respond with a direct answer and supporting signals (Demand, Compensation, or Layoff Signals) shown inline |
-| Select a role from a trend area or filter | Update Demand Signals, Skill Signals, and Compensation Signals for that role across all trend areas |
-| Select a location from filters | Update all signals and trend areas to reflect that market |
-| Change the time range | Update charts and explanation copy; Data Freshness labels update accordingly |
-| Select a skill in the trend area | Show whether the Skill Signal for that skill is rising, stable, or declining, with a Search Implication |
-| Select a company | Show hiring activity and any associated Layoff Signals |
-| Set an alert from a data point | Navigate to Alert Centre pre-populated with the relevant signal and threshold |
+| Open Market Health | Opening message generates: trend chart (This Year default), then written summary. |
+| Switch time range | Chart updates. Written summary regenerates for the new window. |
+| Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
+| Ask a question in chat | AI responds in a new message below. |
+| Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
+| Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 
 ---
 
 ## Edge Cases
 
-- **Insufficient data:** If a combination of filters has too few data points to support a conclusion, show what is available and state clearly that confidence is low. Do not show a Market Health Signal verdict if the data does not support one.
-- **Partial data availability:** If some signals are unavailable (e.g., Compensation Signals for a niche role), show the signals that exist and indicate which are missing with a Data Freshness label explaining why.
-- **No results for filter combination:** Explain that no data is available for that combination and suggest the closest alternative (e.g., broader role family, adjacent location).
-- **Loading state:** While data loads, keep the previous state visible with a progress indicator on the sections being refreshed. Do not blank the whole page.
-- **Unanswerable conversational query:** If the system cannot answer a question with sufficient confidence, say so plainly, explain the limitation, and suggest 1–2 related questions it can answer.
-- **Returning user with active alerts:** Show Exceptions since last visit as a prioritised header before the standard Market Health view. The user can dismiss or review them.
+- **Insufficient data for a time range:** Show what exists. X axis compresses to fit. A note
+  below the chart: "Data available from [earliest date]." Summary reflects the available window.
+- **No data at all:** Replace chart with a plain message. Summary does not generate.
+- **Summary generation fails:** Show: "Ask a question below to explore the trend data."
+- **Chat query unanswerable:** Say so plainly and suggest 1–2 related questions.
 
 ---
 
@@ -96,19 +203,23 @@ live and responsive rather than like a dashboard.
 
 | Metric | How measured | Target |
 |---|---|---|
-| Task completion rate — market read in under 5 minutes | Usability test (timed task: "give me your assessment of the market") | ≥ 85% complete within 5 min |
-| Time to first insight | Analytics — time from page load to first scroll past Search Implication | < 30 seconds |
-| Market Health Signal comprehension accuracy | Post-task question: "What does the current market verdict mean for your search?" | ≥ 80% correct interpretation |
-| Conversational query resolution rate | Analytics — queries that receive an answer vs. fallback to "I can't answer" | ≥ 75% resolved |
-| Filter error rate | Usability test — filter interactions that produce no-results or confused states | < 10% |
-| Return visit rate | Analytics — users who return to Market Health within 7 days | TBD after baseline |
+| Time to directional read | Analytics — time from chart render to first scroll or interaction | < 15 seconds |
+| Direction comprehension | Post-task question: "Is the market rising, flat, or declining?" | ≥ 85% correct |
+| Time range switch rate | Analytics — % of sessions where user changes from default range | Track, no target yet |
+| Chat engagement rate | Analytics — % of sessions where user sends at least one follow-up | Track, no target yet |
 
 ---
 
 ## Open Questions
 
-- Should the experience focus only on UX roles initially, or include Product Managers and Software Engineers? (PM decision — affects scope of Demand and Skill Signals)
-- Should users be able to compare two markets or roles side by side, or is a single-filter read sufficient for v1?
-- Should the Market Health Signal use a numerical confidence score alongside the label, or labels only?
-- Should the experience surface recommendations ("consider expanding to contract roles") or observations only?
-- Should Layoff Signals and hiring surges appear together in the trend area or in separate zones?
+- Should the Y axis show absolute counts or index-normalised values? Absolute is more concrete;
+  indexed makes cross-range trend comparison easier but feels less grounded.
+- Should "All Time" include a smoothed trend line alongside raw monthly data to reduce noise?
+
+**Resolved (2026-07-16):** Role categories are fixed in v1 — Designer, Product Manager,
+Engineer. This was already committed by `design/information-architecture.md` Content Taxonomy
+(`Role Category`), which defines exactly this set; it does not need to be decided again here.
+The full classification taxonomy — sub-specializations within each category, the seniority
+ladder, and the IC/management track — is defined in
+`design/market-health/job-classification.md`. Backend and frontend specs reference that file
+rather than redefining these values independently.
