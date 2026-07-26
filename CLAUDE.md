@@ -138,3 +138,9 @@ duplicating work in progress.
   intentionally bounded (sliding windows, message-length caps), not just handed through in
   full. The actual enforced numbers live in `backend/src/ai_interaction_settings.py`, not in
   that doc, so they can't drift apart.
+- **Before touching Railway deployment config, the ingestion cron, or adding new
+  services (`api`, `web`)**, read `DEPLOYMENT.md` — it explains the full deployment
+  architecture (Postgres, `job-sync`, planned `api`/`web` services), the ingestion
+  pipeline's data flow, and operational gotchas found the hard way (`railway.json`
+  always overrides dashboard config, auto-deploy is off for this repo, cron services
+  don't run immediately on deploy).
