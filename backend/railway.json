@@ -5,6 +5,7 @@
   },
   "deploy": {
     "startCommand": "python src/ingest.py",
+    "cronSchedule": "0 6 * * *",
     "restartPolicyType": "NEVER"
   }
 }
