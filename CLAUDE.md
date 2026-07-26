@@ -52,7 +52,15 @@ A market intelligence platform for UX and other tech professionals that automati
 
 ## Running Locally
 
-Requires WSL (Ubuntu). Open two **Ubuntu** terminals in VS Code (click the `+` dropdown in the terminal panel and select **Ubuntu**).
+**Backend runs in WSL (Ubuntu); frontend runs in a normal Windows terminal (PowerShell or
+Git Bash) — not WSL.** This isn't a preference, it's a hard requirement discovered empirically:
+`frontend/node_modules` was installed on Windows and contains Windows-only native rollup
+binaries (`@rollup/rollup-win32-x64-*`). Running `npm run dev` under WSL's Linux Node fails
+with `Cannot find module @rollup/rollup-linux-x64-gnu` — npm's optional-dependency resolution
+picks binaries for the OS it was installed on, and reinstalling under WSL would just flip the
+problem (Linux binaries, then failing on Windows). Keep frontend on Windows, backend in WSL.
+
+Open one **Ubuntu** terminal in VS Code (click the `+` dropdown in the terminal panel and select **Ubuntu**) for the backend, and use a regular Windows terminal for the frontend.
 
 **Backend**
 ```bash
@@ -85,7 +93,7 @@ Run it daily (cron or manual) to keep the dataset current. Until it's run at
 least once, `/api/market-health/openings` returns empty series with a
 "no data yet" summary — this is expected, not an error.
 
-**Frontend**
+**Frontend** — run this in a **Windows terminal** (PowerShell or Git Bash), not the WSL Ubuntu terminal used for the backend:
 ```bash
 cd products/tech-market-intelligence-platform/frontend
 npm install   # first time only
@@ -125,4 +133,8 @@ duplicating work in progress.
 
 ## Key Constraints
 <!-- Anything the AI must know to avoid wrong decisions. -->
-- 
+- **Before touching `/api/chat` or anything conversation-history related**, read
+  `backend/AI_INTERACTION_SETTINGS.md` — it explains why LLM conversation context is
+  intentionally bounded (sliding windows, message-length caps), not just handed through in
+  full. The actual enforced numbers live in `backend/src/ai_interaction_settings.py`, not in
+  that doc, so they can't drift apart.

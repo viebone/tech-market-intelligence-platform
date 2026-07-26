@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-07-19
+updated: 2026-07-22
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -107,6 +107,15 @@ No Zustand store required for v1.
 |---|---|---|
 | GET | `/api/market-health/openings` | Time-series data for the trend chart plus a written summary. Param: `range` (`this_year` \| `past_5_years` \| `all_time`). Returns one row per month (`{ month, designer, product_manager, engineer }`) — sourced from live-ingested, LLM-classified postings, not mock data. See `backend/specs/market-health/api.md`. |
 | POST | `/api/chat` | Accepts `{ messages: [...] }`. Streams Claude responses. Used for the opening summary, range-change summary regeneration, and user follow-up questions. |
+
+**Reviewed 2026-07-22** (change: chat data sourcing/attribution fix + scheduled classification
+agent, `backend/specs/market-health/api.md`): confirmed no frontend changes needed. The
+backend's new `query_market_data` tool and Google Search grounding both happen server-side —
+the request/response shape and SSE event sequence above are unchanged. New source types
+populate the existing reasoning-trace `SourceAccess` fields (`name`, `purpose`), which the
+`ai-reasoning-panel` frontend spec already renders generically. Citations appear as plain
+markdown text/links within the streamed answer, already covered by `AIMessage`'s existing
+markdown rendering.
 
 ---
 

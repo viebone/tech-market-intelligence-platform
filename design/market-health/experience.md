@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-07-16
+updated: 2026-07-22
 ---
 
 # Market Health — Experience Spec
@@ -74,9 +74,21 @@ The user interprets and decides what to do with it.
 4. The user reads the written summary. It confirms what the chart shows in plain language.
 5. The user optionally switches the time range (This Year / Past 5 Years / All Time).
    The chart updates. The summary regenerates for the new window.
-6. The user types a follow-up question in the chat input ("What does this mean for a senior
-   UX designer looking in London?").
-7. The AI responds with a new message in the thread.
+6. The user types a follow-up question in the chat input — anything from a specific comparison
+   ("Is User Experience Designer or Product Designer more in demand right now?") to something
+   the platform's data can't possibly cover ("What was demand like in 2019?").
+7. The AI answers by actually analysing the platform's own data for that specific question —
+   not repeating a fixed canned summary. It states the answer's time window plainly, grounded
+   in when live data collection actually began (e.g. "since we started tracking on 20 July
+   2026, Product Designer postings have outnumbered User Experience Designer postings"). If the
+   question reaches outside what the platform's data can answer — a time period before
+   collection began, or something the dataset was never going to contain — the AI says so
+   plainly, then answers from real external sources it can point to (an article, a report, a
+   named study), never from unverified recall. An answer is never presented without saying
+   whether it came from the platform's own data or an external source — the two are never
+   blended without saying which is which. The detailed *how* — what was queried, what was
+   searched — belongs in the drill-down (see Thinking process accordion, below), not
+   necessarily spelled out in the visible answer; the *source* always is.
 8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
@@ -114,7 +126,15 @@ When expanded, it shows:
   `design/market-health/job-classification.md`.
 - **Context sent to Claude** — the market signal verdict and trend direction, demand signal count,
   compensation signal count, layoff event count, and the model used
-- **Sources** — the data source description (briefing turns only, when a signal is present)
+- **Sources** — for the opening briefing, the data source description. For a follow-up chat
+  turn, this is where the *how* lives: what the platform's data was queried or analysed for
+  (and the data's time window), what — if anything — was searched externally, and why. The
+  visible answer always states which source class it came from (platform data vs. external);
+  this section is where the specific queries and searches behind that are inspectable, for the
+  user who wants to verify rather than just trust. Never shows a source that wasn't actually
+  consulted for that response. This is the same commitment `design/ai-reasoning-panel/experience.md`
+  already makes product-wide (its "Sources & Tools" section) — a follow-up turn's Sources entry
+  here is that same disclosure, applied to this feature's questions.
 - **API calls** — the internal endpoints queried to build the response (briefing turns only)
 
 The accordion is read-only. It cannot be edited or shared. It appears on every AI turn —
@@ -183,7 +203,8 @@ concentrated in the first half of the year — the last three months have been f
 | Open Market Health | Opening message generates: trend chart (This Year default), then written summary. |
 | Switch time range | Chart updates. Written summary regenerates for the new window. |
 | Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
-| Ask a question in chat | AI responds in a new message below. |
+| Ask a question in chat, answerable from the platform's data | AI analyses the platform's data specifically for that question (not a fixed canned summary), states the answer's time window, and the accordion shows what was queried. |
+| Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began) | AI says plainly that the platform doesn't have that data, then answers from a real, citable external source (article, report, named study) — never from unverified recall. Response and accordion both make clear it's an external source, not platform data. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 
@@ -195,7 +216,22 @@ concentrated in the first half of the year — the last three months have been f
   below the chart: "Data available from [earliest date]." Summary reflects the available window.
 - **No data at all:** Replace chart with a plain message. Summary does not generate.
 - **Summary generation fails:** Show: "Ask a question below to explore the trend data."
-- **Chat query unanswerable:** Say so plainly and suggest 1–2 related questions.
+- **Chat query genuinely unanswerable:** Neither the platform's data nor a real external source
+  applies (e.g. a question entirely outside the tech job market). Say so plainly and suggest
+  1–2 related questions the platform can actually help with.
+- **Question reaches outside the platform's data (e.g. a time period before data collection
+  began):** Say so plainly first — never silently substitute an external answer for a data
+  question without flagging the gap. Then, if a real external source can address it, answer
+  from that source with the source named. If no real source can be found, say so rather than
+  guessing.
+- **Answer blends platform data and an external source:** Both are used in the same response
+  (e.g. "our data shows demand rising since July; a 2025 industry report found similar broader
+  trends — [source]"). The response and the accordion both distinguish the two — never
+  presented as a single undifferentiated source.
+- **A claim would need a source the platform doesn't have:** The AI states plainly that it
+  doesn't have that data or a source for it, rather than inventing a plausible-sounding one.
+  Never cite a source — platform data or external — that wasn't actually consulted for that
+  response.
 
 ---
 
@@ -215,6 +251,12 @@ concentrated in the first half of the year — the last three months have been f
 - Should the Y axis show absolute counts or index-normalised values? Absolute is more concrete;
   indexed makes cross-range trend comparison easier but feels less grounded.
 - Should "All Time" include a smoothed trend line alongside raw monthly data to reduce noise?
+- This spec's own "Thinking process accordion" (above) and `design/ai-reasoning-panel/experience.md`'s
+  universal "Reasoning Panel" ("View thinking" toggle) describe overlapping but differently-named
+  provenance UI, and the shipped product already uses the universal component's naming. This
+  change updates this spec's accordion content (the Sources entry) to carry the new attribution
+  rule without resolving which naming is canonical — that reconciliation is out of scope here
+  and should be its own future change request.
 
 **Resolved (2026-07-16):** Role categories are fixed in v1 — Designer, Product Manager,
 Engineer. This was already committed by `design/information-architecture.md` Content Taxonomy

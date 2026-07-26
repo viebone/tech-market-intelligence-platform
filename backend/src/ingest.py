@@ -1,14 +1,17 @@
 """
 Daily ingestion + classification entry point for market-health.
 
-Run manually or via an external scheduler (cron, etc.):
+Run manually or via an external scheduler (Railway cron in production — see
+railway.json):
     python ingest.py
 
 For each curated, industry-standard job title tracked per Role Category,
 fetches new live Adzuna postings, dedupes by id, stores them in raw_postings.
 Classification then runs once across everything newly ingested (not once per
 search term) so the title-based dedup cache in classification.py sees the
-widest possible pool before spending any LLM call. See
+widest possible pool before spending any LLM call. Every run — including a
+failed one — is recorded in ingestion_runs, so its outcome is inspectable
+after the fact instead of existing only as console output. See
 backend/specs/market-health/api.md — Business Logic.
 """
 
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +29,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from adzuna_client import fetch_postings
 from classification import classify_postings
 from db import init_schema
+from ingestion_runs import record_run
 from raw_postings import get_all_unclassified, insert_new_postings
 
 logging.basicConfig(level=logging.INFO)
@@ -67,22 +72,55 @@ ROLE_SEARCH_TERMS: dict[str, list[str]] = {
 MAX_DAYS_OLD = 3  # rolling safety margin, not exactly 1 — tolerates a late/missed run
 
 
-def ingest_search_term(term: str) -> None:
+def ingest_search_term(term: str) -> dict:
     postings = fetch_postings(term, max_days_old=MAX_DAYS_OLD)
     new_ids = insert_new_postings(term, postings)
     logger.info("ingest[%s]: fetched %d, inserted %d new", term, len(postings), len(new_ids))
+    return {"term": term, "fetched": len(postings), "inserted": len(new_ids)}
 
 
 async def run() -> None:
     init_schema()
+    started_at = datetime.now(timezone.utc)
+    terms_processed: list[dict] = []
 
-    for terms in ROLE_SEARCH_TERMS.values():
-        for term in terms:
-            ingest_search_term(term)
+    try:
+        for terms in ROLE_SEARCH_TERMS.values():
+            for term in terms:
+                terms_processed.append(ingest_search_term(term))
 
-    unclassified = get_all_unclassified()
-    logger.info("classify: %d unclassified postings across all search terms", len(unclassified))
-    await classify_postings(unclassified)
+        total_fetched = sum(t["fetched"] for t in terms_processed)
+        total_inserted = sum(t["inserted"] for t in terms_processed)
+
+        unclassified = get_all_unclassified()
+        logger.info("classify: %d unclassified postings across all search terms", len(unclassified))
+        stats = await classify_postings(unclassified)
+
+    except Exception as exc:
+        logger.exception("Ingestion run failed: %s", exc)
+        record_run(
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+            status="failed",
+            terms_processed=terms_processed,
+            error_message=str(exc),
+        )
+        raise
+
+    status = "partial" if stats["stopped_early"] else "success"
+    record_run(
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc),
+        status=status,
+        terms_processed=terms_processed,
+        total_fetched=total_fetched,
+        total_inserted=total_inserted,
+        total_classified=stats["total_classified"],
+        cache_hits=stats["cache_hits"],
+        llm_classified=stats["llm_classified"],
+        other_count=stats["other_count"],
+    )
+    logger.info("ingestion run recorded: status=%s", status)
 
 
 if __name__ == "__main__":

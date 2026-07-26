@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 
@@ -159,7 +160,10 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 
 
 async def _complete_with_retry(prompt: str, system: str) -> str:
-    provider = providers.gemini(CLASSIFICATION_MODEL)
+    # Dedicated key, separate from /api/chat's GEMINI_API_KEY — classification
+    # and live chat must never compete for the same quota pool (see
+    # backend/specs/market-health/api.md — Scheduled ingestion agent).
+    provider = providers.gemini(CLASSIFICATION_MODEL, api_key=os.environ["GEMINI_API_KEY_CLASSIFICATION"])
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             return await provider.complete(prompt=prompt, system=system)
@@ -222,9 +226,11 @@ def insert_classifications(classifications: list[dict]) -> None:
             )
 
 
-async def classify_postings(postings: list[dict]) -> None:
+async def classify_postings(postings: list[dict]) -> dict:
     """
     Classify and store an arbitrary-length list of {id, title} postings.
+    Returns stats for the IngestionRun record: {cache_hits, llm_classified,
+    other_count, total_classified, stopped_early}.
 
     Two dedup layers run before any LLM call, since classification depends
     only on title (see _get_title_cache):
@@ -236,9 +242,16 @@ async def classify_postings(postings: list[dict]) -> None:
     This matters a lot in practice — job titles repeat heavily across
     postings/companies/days — and it's the main lever available for staying
     under the LLM provider's request quota while building up the dataset.
+
+    If the LLM provider becomes unavailable partway through (rate limit
+    exhausted after all retries — routine on the free tier), stops gracefully
+    and returns stopped_early=True rather than letting the exception crash
+    the whole ingestion run. Everything classified before the stopping point
+    is already persisted (per-batch insert, below), so nothing is lost.
     """
+    empty_stats = {"cache_hits": 0, "llm_classified": 0, "other_count": 0, "total_classified": 0, "stopped_early": False}
     if not postings:
-        return
+        return empty_stats
 
     # Grouped by title so a batch's result can be written for every posting
     # sharing that title as soon as it's known — not held in memory until
@@ -265,18 +278,45 @@ async def classify_postings(postings: list[dict]) -> None:
             for p in postings_by_title[title]
         ]
 
+    def _count_other(rows: list[dict]) -> int:
+        return sum(1 for r in rows if r["role_category"] == "other")
+
     cached_titles = [t for t in unique_titles if t in cache]
-    insert_classifications(_rows_for(cached_titles, cache))
+    cached_rows = _rows_for(cached_titles, cache)
+    insert_classifications(cached_rows)
+    cache_hits = len(cached_rows)
+    other_count = _count_other(cached_rows)
+    llm_classified = 0
+    stopped_early = False
 
     num_batches = (len(novel_titles) + BATCH_SIZE - 1) // BATCH_SIZE
     for batch_num, i in enumerate(range(0, len(novel_titles), BATCH_SIZE), start=1):
         title_batch = novel_titles[i : i + BATCH_SIZE]
-        # classify_batch takes {id, title} pairs; here each unique title
-        # stands in as its own id since we're classifying titles, not
-        # individual postings.
-        results = await classify_batch([{"id": t, "title": t} for t in title_batch])
+        try:
+            # classify_batch takes {id, title} pairs; here each unique title
+            # stands in as its own id since we're classifying titles, not
+            # individual postings.
+            results = await classify_batch([{"id": t, "title": t} for t in title_batch])
+        except Exception as exc:
+            logger.error(
+                "classify batch %d/%d failed, stopping this run early (already-classified "
+                "titles remain safely persisted): %s", batch_num, num_batches, exc,
+            )
+            stopped_early = True
+            break
         fresh = dict(zip(title_batch, results))
-        insert_classifications(_rows_for(title_batch, fresh))
+        fresh_rows = _rows_for(title_batch, fresh)
+        insert_classifications(fresh_rows)
+        llm_classified += len(fresh_rows)
+        other_count += _count_other(fresh_rows)
         logger.info("classified batch %d/%d (%d unique titles)", batch_num, num_batches, len(title_batch))
         if batch_num < num_batches:
             await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
+
+    return {
+        "cache_hits": cache_hits,
+        "llm_classified": llm_classified,
+        "other_count": other_count,
+        "total_classified": cache_hits + llm_classified,
+        "stopped_early": stopped_early,
+    }

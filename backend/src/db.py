@@ -55,6 +55,23 @@ CREATE TABLE IF NOT EXISTS classifications (
 
 CREATE INDEX IF NOT EXISTS idx_raw_postings_fetched_at ON raw_postings (fetched_at);
 CREATE INDEX IF NOT EXISTS idx_classifications_role_category ON classifications (role_category);
+
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    id                 SERIAL PRIMARY KEY,
+    started_at         TIMESTAMPTZ NOT NULL,
+    completed_at       TIMESTAMPTZ,
+    status             TEXT NOT NULL,
+    terms_processed    JSONB NOT NULL DEFAULT '[]',
+    total_fetched      INTEGER NOT NULL DEFAULT 0,
+    total_inserted     INTEGER NOT NULL DEFAULT 0,
+    total_classified   INTEGER NOT NULL DEFAULT 0,
+    cache_hits         INTEGER NOT NULL DEFAULT 0,
+    llm_classified     INTEGER NOT NULL DEFAULT 0,
+    other_count        INTEGER NOT NULL DEFAULT 0,
+    other_rate         REAL NOT NULL DEFAULT 0.0,
+    anomalies          JSONB NOT NULL DEFAULT '[]',
+    error_message      TEXT
+);
 """
 
 

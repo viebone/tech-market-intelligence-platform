@@ -1,0 +1,107 @@
+"""
+Storage and anomaly-flagging for ingestion_runs. Makes a run's outcome
+inspectable after the fact instead of existing only as ephemeral console
+output. See backend/specs/market-health/api.md — Data Models — IngestionRun,
+Business Logic — Scheduled ingestion agent.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+
+from db import get_connection
+
+# Thresholds and lookback window match backend/specs/market-health/api.md exactly.
+ANOMALY_LOOKBACK = 5
+OTHER_RATE_RELATIVE_THRESHOLD = 0.5
+OTHER_RATE_ABSOLUTE_THRESHOLD = 0.15
+
+
+def get_recent_runs(limit: int = ANOMALY_LOOKBACK) -> list[dict]:
+    """Most recent completed (success or partial) runs, most recent first."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT terms_processed, other_rate
+            FROM ingestion_runs
+            WHERE status IN ('success', 'partial')
+            ORDER BY started_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+    return [{"terms_processed": r[0], "other_rate": r[1]} for r in rows]
+
+
+def detect_anomalies(terms_processed: list[dict], other_rate: float, total_classified: int) -> list[str]:
+    """
+    Compare this run against recent history. Never flags anything until there's
+    enough history to have a baseline — a term legitimately returning 0 once,
+    or the very first few runs' other_rate, aren't anomalies, they're just data.
+    """
+    anomalies: list[str] = []
+    recent = get_recent_runs()
+    if not recent:
+        return anomalies
+
+    for term_stat in terms_processed:
+        term, fetched = term_stat.get("term"), term_stat.get("fetched", 0)
+        if fetched > 0 or term is None:
+            continue
+        had_results_before = any(
+            any(rt.get("term") == term and rt.get("fetched", 0) > 0 for rt in run["terms_processed"])
+            for run in recent
+        )
+        if had_results_before:
+            anomalies.append(
+                f'Search term "{term}" returned 0 postings this run, despite returning '
+                f"results in at least one of the last {len(recent)} runs."
+            )
+
+    if len(recent) >= ANOMALY_LOOKBACK and total_classified > 0:
+        trailing_avg = sum(r["other_rate"] for r in recent) / len(recent)
+        absolute_dev = abs(other_rate - trailing_avg)
+        relative_dev = (absolute_dev / trailing_avg) if trailing_avg > 0 else (1.0 if other_rate > 0 else 0.0)
+        if relative_dev > OTHER_RATE_RELATIVE_THRESHOLD and absolute_dev > OTHER_RATE_ABSOLUTE_THRESHOLD:
+            anomalies.append(
+                f'"other" rate this run ({other_rate:.0%}) deviates significantly from the '
+                f"trailing {len(recent)}-run average ({trailing_avg:.0%})."
+            )
+
+    return anomalies
+
+
+def record_run(
+    started_at: datetime,
+    completed_at: datetime | None,
+    status: str,
+    terms_processed: list[dict],
+    total_fetched: int = 0,
+    total_inserted: int = 0,
+    total_classified: int = 0,
+    cache_hits: int = 0,
+    llm_classified: int = 0,
+    other_count: int = 0,
+    error_message: str | None = None,
+) -> None:
+    """Insert one IngestionRun row. Called exactly once per run, always —
+    including when the run failed, so a crash still leaves a record."""
+    other_rate = other_count / total_classified if total_classified else 0.0
+    anomalies = detect_anomalies(terms_processed, other_rate, total_classified)
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO ingestion_runs
+                (started_at, completed_at, status, terms_processed, total_fetched,
+                 total_inserted, total_classified, cache_hits, llm_classified,
+                 other_count, other_rate, anomalies, error_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                started_at, completed_at, status, json.dumps(terms_processed), total_fetched,
+                total_inserted, total_classified, cache_hits, llm_classified,
+                other_count, other_rate, json.dumps(anomalies), error_message,
+            ),
+        )
