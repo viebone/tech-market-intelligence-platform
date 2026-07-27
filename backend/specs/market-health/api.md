@@ -85,8 +85,8 @@ human happened to be watching in a terminal.
 | `id` | `int` (PK) | |
 | `started_at` | `datetime` | |
 | `completed_at` | `datetime \| None` | `None` if the run crashed before finishing |
-| `status` | `"success" \| "partial" \| "failed"` | `"partial"` = completed but stopped early (e.g. hit an unresolvable rate limit) |
-| `terms_processed` | `JSON` | `[{ "term": str, "fetched": int, "inserted": int }, ...]` — one entry per search term attempted |
+| `status` | `"success" \| "partial" \| "failed"` | `"partial"` = completed but degraded — one or more search terms failed after exhausting retries (see Business Logic — Ingestion), or classification stopped early on an unresolvable rate limit; whatever succeeded is still persisted. `"failed"` is reserved for a run that produced nothing usable at all (e.g. the database itself was unreachable) — a single bad search term is a `"partial"` run, not a `"failed"` one. |
+| `terms_processed` | `JSON` | `[{ "term": str, "fetched": int, "inserted": int, "error": str \| None }, ...]` — one entry per search term attempted. `error` is set when that term failed after exhausting retries; `fetched`/`inserted` are `0` for it, and the run continues to the next term rather than aborting. |
 | `total_fetched` | `int` | |
 | `total_inserted` | `int` | New `raw_postings` rows this run |
 | `total_classified` | `int` | Postings classified this run (cache hits + fresh LLM calls) |
@@ -258,6 +258,34 @@ late or missed daily run doesn't create a coverage gap; the 3-day overlap is saf
 postings are deduped by Adzuna's `id` before insert — an already-stored posting is skipped
 entirely, never re-fetched or re-classified.
 
+**Fault isolation, per search term.** Each term's fetch is independent: a term that
+still fails after exhausting retries (below) is recorded with its error in
+`terms_processed` and skipped — the run moves on to the remaining terms rather than
+aborting. This is what the 2026-07-27 production crash violated: a single Adzuna 503
+on one term took down all 12, discarding progress on terms not yet attempted even
+though two earlier terms had already succeeded. A term returning zero results is not
+a failure and is recorded exactly like any successful term (`fetched: 0`, `error:
+null`) — Adzuna having nothing new for a niche title on a given day is expected, not
+exceptional.
+
+**Adzuna rate limits and retry policy.** Adzuna's default API quota (its Terms of
+Service) is 25 hits/minute, 250/day, 1000/week, 2500/month — tight enough that an
+unpaced run risks it: a single term can paginate up to `MAX_PAGES` (60) requests, and
+12 terms run back-to-back with no delay is exactly the pattern that risks tripping
+the per-minute cap, quota exhaustion aside. Two rules follow:
+- **Pacing.** Every Adzuna request — each pagination page within a term, and the
+  transition between terms — is spaced at a fixed minimum interval that keeps sustained
+  throughput safely under 25/minute, regardless of how many pages a single term needs.
+  At the current ~12 terms/day (mostly one page each, per observed volume), this stays
+  far under the daily/weekly/monthly caps too, so no separate daily-budget tracker is
+  needed — the per-minute pace alone is the binding constraint in practice.
+- **Retries.** A request is retried with exponential backoff only on retryable
+  failures — HTTP 429 (rate limited) and 5xx (upstream server error, the 503 class
+  that caused the 2026-07-27 crash). A non-429 4xx (e.g. a malformed request) is not
+  retried — retrying it can't succeed and would just spend quota. After exhausting
+  retries, the term (or that page of it) is recorded as failed per the fault-isolation
+  rule above, not raised as an unhandled exception.
+
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every
 search term together — not once per search term — so the title-based cache below sees the
@@ -400,12 +428,16 @@ true — `ingest.py` has never been called from any request path) but in deploym
   versa. Requires the provider abstraction to accept an explicit API key per call (see Tech
   Decisions), defaulting to `GEMINI_API_KEY` when not given so `/api/chat` and the reasoning
   trace feature are unaffected.
-- **Every run records an `IngestionRun` row, including failed ones.** Today, a crashed run
-  produces nothing but console output — no record survives. The run's top level must be
-  wrapped so that whatever totals were accumulated before a crash, plus the error, are still
-  written as a `status: "failed"` row. A run that completes normally writes `status: "success"`;
-  one that stops early after exhausting retries on a rate limit (rather than crashing outright)
-  writes `status: "partial"` with whatever was actually classified.
+- **Every run records an `IngestionRun` row, including degraded ones.** The run's top level is
+  wrapped so that whatever totals were accumulated are always written, never lost to an
+  unhandled crash. A run that completes with every term succeeding and classification running
+  to completion writes `status: "success"`. A run where one or more search terms failed after
+  exhausting retries (see Business Logic — Ingestion — Fault isolation), or classification
+  stopped early after exhausting retries on a rate limit, writes `status: "partial"` — whatever
+  was fetched, inserted, or classified before the degradation is still persisted and still
+  counts. `status: "failed"` is reserved for a run that couldn't produce anything usable at all
+  (e.g. the database itself is unreachable at startup) — this is deliberately rare now that
+  per-term failures degrade to `"partial"` instead of aborting the whole run.
 - **Anomaly flagging** (appended to the run's `anomalies` list, does not block the run):
   - **Zero-result term**: a search term in `ingest.py`'s `ROLE_SEARCH_TERMS` returns 0 postings
     this run, and returned more than 0 in at least one of the last 5 recorded runs. (Not
@@ -432,7 +464,7 @@ true — `ingest.py` has never been called from any request path) but in deploym
 |---|---|
 | Google Generative AI Python SDK (`google-genai`) | Streaming Gemini responses for `/api/chat`; `query_market_data` tool-calling; posting classification |
 | Google Search grounding (via `google-genai`) | Real, citable external sources for `/api/chat` questions outside the platform's own data |
-| Adzuna Jobs API (UK) | Source of live job postings for `raw_postings`. Credentials: `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` |
+| Adzuna Jobs API (UK) | Source of live job postings for `raw_postings`. Credentials: `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Default quota (their Terms of Service): 25 hits/minute, 250/day, 1000/week, 2500/month — see Business Logic — Ingestion — Adzuna rate limits for how the pipeline paces requests to stay under this. |
 | Railway (cron-scheduled service) | Runs the daily ingestion agent independently of local dev — see Tech Decisions |
 
 PostgreSQL (already in the project's tech stack) backs `raw_postings`, `classifications`, and
