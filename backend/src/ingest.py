@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from adzuna_client import fetch_postings
+from adzuna_client import AdzunaFetchError, fetch_postings
 from classification import classify_postings
 from db import init_schema
 from ingestion_runs import record_run
@@ -73,10 +73,22 @@ MAX_DAYS_OLD = 3  # rolling safety margin, not exactly 1 — tolerates a late/mi
 
 
 def ingest_search_term(term: str) -> dict:
-    postings = fetch_postings(term, max_days_old=MAX_DAYS_OLD)
+    """
+    Fetch and store new postings for one search term. Never raises — a term that
+    fails after fetch_postings exhausts its own retries is recorded with its error
+    rather than propagated, so one bad term can't abort the run. See
+    backend/specs/market-health/api.md — Business Logic — Ingestion — Fault
+    isolation, per search term.
+    """
+    try:
+        postings = fetch_postings(term, max_days_old=MAX_DAYS_OLD)
+    except AdzunaFetchError as exc:
+        logger.error("ingest[%s]: failed, skipping this term: %s", term, exc)
+        return {"term": term, "fetched": 0, "inserted": 0, "error": str(exc)}
+
     new_ids = insert_new_postings(term, postings)
     logger.info("ingest[%s]: fetched %d, inserted %d new", term, len(postings), len(new_ids))
-    return {"term": term, "fetched": len(postings), "inserted": len(new_ids)}
+    return {"term": term, "fetched": len(postings), "inserted": len(new_ids), "error": None}
 
 
 async def run() -> None:
@@ -91,12 +103,15 @@ async def run() -> None:
 
         total_fetched = sum(t["fetched"] for t in terms_processed)
         total_inserted = sum(t["inserted"] for t in terms_processed)
+        any_term_failed = any(t["error"] is not None for t in terms_processed)
 
         unclassified = get_all_unclassified()
         logger.info("classify: %d unclassified postings across all search terms", len(unclassified))
         stats = await classify_postings(unclassified)
 
     except Exception as exc:
+        # Something outside per-term fault isolation went wrong (e.g. the database
+        # itself is unreachable) — this run produced nothing usable.
         logger.exception("Ingestion run failed: %s", exc)
         record_run(
             started_at=started_at,
@@ -107,7 +122,7 @@ async def run() -> None:
         )
         raise
 
-    status = "partial" if stats["stopped_early"] else "success"
+    status = "partial" if (any_term_failed or stats["stopped_early"]) else "success"
     record_run(
         started_at=started_at,
         completed_at=datetime.now(timezone.utc),
