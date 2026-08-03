@@ -238,7 +238,7 @@ def _build_reasoning_trace(
         sources.append(SourceAccess(
             sequence=seq,
             source_type="data_source",
-            name="Job Market Database (live Adzuna-sourced, LLM-classified)",
+            name="Job Market Database (Greenhouse/Lever/Ashby-sourced, LLM-classified)",
             purpose=f"query_market_data({call.args})",
         ))
         seq += 1

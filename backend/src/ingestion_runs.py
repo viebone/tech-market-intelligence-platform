@@ -37,25 +37,36 @@ def get_recent_runs(limit: int = ANOMALY_LOOKBACK) -> list[dict]:
 def detect_anomalies(terms_processed: list[dict], other_rate: float, total_classified: int) -> list[str]:
     """
     Compare this run against recent history. Never flags anything until there's
-    enough history to have a baseline — a term legitimately returning 0 once,
+    enough history to have a baseline — a company legitimately returning 0 once,
     or the very first few runs' other_rate, aren't anomalies, they're just data.
+
+    terms_processed entries are `{"source", "company", "fetched", "inserted",
+    "error"}` since the 2026-08-03 multi-source change (previously `{"term",
+    ...}`). Legacy pre-2026-08-03 runs in `recent` still carry the old shape —
+    `.get("source")`/`.get("company")` simply return None for those, so they
+    never match a current (source, company) pair and are silently excluded
+    from the comparison rather than raising, per
+    backend/specs/market-health/api.md — Data Models — IngestionRun.
     """
     anomalies: list[str] = []
     recent = get_recent_runs()
     if not recent:
         return anomalies
 
-    for term_stat in terms_processed:
-        term, fetched = term_stat.get("term"), term_stat.get("fetched", 0)
-        if fetched > 0 or term is None:
+    for stat in terms_processed:
+        source, company, fetched = stat.get("source"), stat.get("company"), stat.get("fetched", 0)
+        if fetched > 0 or company is None:
             continue
         had_results_before = any(
-            any(rt.get("term") == term and rt.get("fetched", 0) > 0 for rt in run["terms_processed"])
+            any(
+                rt.get("source") == source and rt.get("company") == company and rt.get("fetched", 0) > 0
+                for rt in run["terms_processed"]
+            )
             for run in recent
         )
         if had_results_before:
             anomalies.append(
-                f'Search term "{term}" returned 0 postings this run, despite returning '
+                f'"{source}/{company}" returned 0 postings this run, despite returning '
                 f"results in at least one of the last {len(recent)} runs."
             )
 

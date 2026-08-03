@@ -2,8 +2,9 @@
 Storage layer for the raw_postings table.
 
 raw_postings is immutable: a row is inserted once, at first sight, and never
-updated — the exact Adzuna response is the only chance to ever capture a given
-posting, since expired listings disappear from Adzuna's index permanently.
+updated — the exact source response is the only chance to ever capture a
+given posting, since a company can edit or unpublish a posting at any time
+with no way to recover its prior state.
 See backend/specs/market-health/api.md — Data Models — RawPosting.
 """
 
@@ -13,6 +14,7 @@ import json
 from datetime import datetime, timezone
 
 from db import get_connection
+from sources.base import FetchedPosting
 
 
 def existing_ids(ids: list[str]) -> set[str]:
@@ -26,14 +28,16 @@ def existing_ids(ids: list[str]) -> set[str]:
     return {row[0] for row in rows}
 
 
-def insert_new_postings(role_family_query: str, postings: list[dict]) -> list[str]:
+def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str]:
     """
-    Insert postings not already stored, deduped by Adzuna's own `id`.
+    Insert postings not already stored, deduped by id = f"{source}:{source_ref}"
+    (see backend/specs/market-health/api.md — Data Models — RawPosting — id).
     Returns the ids of the newly inserted postings.
     """
-    seen = existing_ids([p["id"] for p in postings])
-    new_postings = [p for p in postings if p["id"] not in seen]
-    if not new_postings:
+    candidate_ids = [f"{source}:{p.source_ref}" for p in postings]
+    seen = existing_ids(candidate_ids)
+    new = [(pid, p) for pid, p in zip(candidate_ids, postings) if pid not in seen]
+    if not new:
         return []
 
     fetched_at = datetime.now(timezone.utc)
@@ -41,35 +45,28 @@ def insert_new_postings(role_family_query: str, postings: list[dict]) -> list[st
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO raw_postings (id, role_family_query, title, raw_response, fetched_at)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO raw_postings (id, source, source_ref, company, title, raw_response, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 [
-                    (
-                        p["id"],
-                        role_family_query,
-                        p.get("title", ""),
-                        json.dumps(p),
-                        fetched_at,
-                    )
-                    for p in new_postings
+                    (pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at)
+                    for pid, p in new
                 ],
             )
 
-    return [p["id"] for p in new_postings]
+    return [pid for pid, _ in new]
 
 
 def get_all_unclassified() -> list[dict]:
     """
-    Postings across every search term that don't have a classification row yet.
+    Postings across every source that don't have a classification row yet.
 
-    Deliberately not scoped to a single role_family_query: classification is
+    Deliberately not scoped to a single source or company: classification is
     run once across everything newly ingested (see ingest.py), not once per
-    search term, so the title-based dedup cache in classification.py sees the
+    company, so the title-based dedup cache in classification.py sees the
     widest possible pool for catching duplicate titles before any LLM call —
-    e.g. "UX designer" and "product designer" searches both surfacing a
-    posting literally titled "Product Designer".
+    e.g. a "Product Designer" posting surfacing on both Greenhouse and Ashby.
     """
     with get_connection() as conn:
         rows = conn.execute(

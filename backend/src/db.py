@@ -33,12 +33,24 @@ def get_connection():
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_postings (
     id                 TEXT PRIMARY KEY,
-    role_family_query  TEXT NOT NULL,
+    role_family_query  TEXT,
     title              TEXT NOT NULL,
     raw_response       JSONB NOT NULL,
     fetched_at         TIMESTAMPTZ NOT NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Multi-source ingestion migration (2026-08-03): raw_postings already has
+-- live production rows from Adzuna, so this evolves the existing table
+-- rather than assuming a fresh CREATE. See backend/specs/market-health/
+-- api.md — Data Models — RawPosting (migration note) and Tech Decisions —
+-- Schema migration is ALTER TABLE, not just CREATE TABLE IF NOT EXISTS.
+-- Idempotent — safe to run on every startup, same as the CREATE statements.
+ALTER TABLE raw_postings ALTER COLUMN role_family_query DROP NOT NULL;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS source_ref TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS company TEXT;
+UPDATE raw_postings SET source = 'adzuna', source_ref = id WHERE source IS NULL;
 
 CREATE TABLE IF NOT EXISTS classifications (
     id                 SERIAL PRIMARY KEY,
@@ -54,6 +66,7 @@ CREATE TABLE IF NOT EXISTS classifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_postings_fetched_at ON raw_postings (fetched_at);
+CREATE INDEX IF NOT EXISTS idx_raw_postings_source ON raw_postings (source);
 CREATE INDEX IF NOT EXISTS idx_classifications_role_category ON classifications (role_category);
 
 CREATE TABLE IF NOT EXISTS ingestion_runs (

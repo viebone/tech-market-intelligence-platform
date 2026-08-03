@@ -5,13 +5,14 @@ Run manually or via an external scheduler (Railway cron in production — see
 railway.json):
     python ingest.py
 
-For each curated, industry-standard job title tracked per Role Category,
-fetches new live Adzuna postings, dedupes by id, stores them in raw_postings.
-Classification then runs once across everything newly ingested (not once per
-search term) so the title-based dedup cache in classification.py sees the
-widest possible pool before spending any LLM call. Every run — including a
-failed one — is recorded in ingestion_runs, so its outcome is inspectable
-after the fact instead of existing only as console output. See
+For each company in each source adapter's curated list (Greenhouse, Lever,
+Ashby — see backend/src/sources/), fetches that company's full job board,
+dedupes by id, stores new postings in raw_postings. Classification then runs
+once across everything newly ingested (not once per company) so the
+title-based dedup cache in classification.py sees the widest possible pool
+before spending any LLM call. Every run — including a failed one — is
+recorded in ingestion_runs, so its outcome is inspectable after the fact
+instead of existing only as console output. See
 backend/specs/market-health/api.md — Business Logic.
 """
 
@@ -26,69 +27,37 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from adzuna_client import AdzunaFetchError, fetch_postings
 from classification import classify_postings
 from db import init_schema
 from ingestion_runs import record_run
 from raw_postings import get_all_unclassified, insert_new_postings
+from sources import ALL_SOURCE_ADAPTERS
+from sources.base import SourceFetchError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# category=it-jobs covers all three Role Categories (see
-# design/market-health/job-classification.md), but it's a coarse, generic
-# filter — Adzuna offers no finer-grained category underneath it. Precision
-# comes entirely from these search terms, so each one is a specific,
-# standard, high-frequency industry title rather than a bare category word
-# like "designer" or "engineer" — those were confirmed to pull in a lot of
-# irrelevant noise (e.g. "Cabling Infrastructure Designer"), which still
-# costs a real classification call to reject as "other".
-#
-# This list is deliberately curated, not exhaustive, and is expected to be
-# reviewed periodically — add a title once it recurs often enough in
-# raw_postings to matter, retire one that's gone stale. This is the same
-# review process job-classification.md already describes for Raw Title.
-ROLE_SEARCH_TERMS: dict[str, list[str]] = {
-    "Designer": [
-        "UX designer",
-        "user experience designer",
-        "product designer",
-        "UI designer",
-    ],
-    "Product Manager": [
-        "product manager",
-        "product owner",
-        "technical product manager",
-    ],
-    "Engineer": [
-        "software engineer",
-        "software developer",
-        "frontend engineer",
-        "backend engineer",
-        "devops engineer",
-    ],
-}
 
-MAX_DAYS_OLD = 3  # rolling safety margin, not exactly 1 — tolerates a late/missed run
-
-
-def ingest_search_term(term: str) -> dict:
+def ingest_company(adapter, company: str) -> dict:
     """
-    Fetch and store new postings for one search term. Never raises — a term that
-    fails after fetch_postings exhausts its own retries is recorded with its error
-    rather than propagated, so one bad term can't abort the run. See
-    backend/specs/market-health/api.md — Business Logic — Ingestion — Fault
-    isolation, per search term.
+    Fetch and store new postings for one (adapter, company) pair. Never
+    raises — a company that still fails after the adapter's own retries are
+    exhausted is recorded with its error rather than propagated, so one bad
+    company can't abort the run. See backend/specs/market-health/api.md —
+    Business Logic — Ingestion — Fault isolation, per company.
     """
     try:
-        postings = fetch_postings(term, max_days_old=MAX_DAYS_OLD)
-    except AdzunaFetchError as exc:
-        logger.error("ingest[%s]: failed, skipping this term: %s", term, exc)
-        return {"term": term, "fetched": 0, "inserted": 0, "error": str(exc)}
+        postings = adapter.fetch_company(company)
+    except SourceFetchError as exc:
+        logger.error("ingest[%s/%s]: failed, skipping this company: %s", adapter.name, company, exc)
+        return {"source": adapter.name, "company": company, "fetched": 0, "inserted": 0, "error": str(exc)}
 
-    new_ids = insert_new_postings(term, postings)
-    logger.info("ingest[%s]: fetched %d, inserted %d new", term, len(postings), len(new_ids))
-    return {"term": term, "fetched": len(postings), "inserted": len(new_ids), "error": None}
+    new_ids = insert_new_postings(adapter.name, postings)
+    logger.info(
+        "ingest[%s/%s]: fetched %d, inserted %d new",
+        adapter.name, company, len(postings), len(new_ids),
+    )
+    return {"source": adapter.name, "company": company, "fetched": len(postings), "inserted": len(new_ids), "error": None}
 
 
 async def run() -> None:
@@ -97,21 +66,33 @@ async def run() -> None:
     terms_processed: list[dict] = []
 
     try:
-        for terms in ROLE_SEARCH_TERMS.values():
-            for term in terms:
-                terms_processed.append(ingest_search_term(term))
+        for adapter in ALL_SOURCE_ADAPTERS:
+            try:
+                for company in adapter.companies:
+                    terms_processed.append(ingest_company(adapter, company))
+            except Exception as exc:
+                # Adapter-level failure outside any single company's fetch
+                # (e.g. a bug in that adapter's response parsing) — recorded,
+                # but must not abort the other adapters. See
+                # backend/specs/market-health/api.md — Business Logic —
+                # Ingestion — Fault isolation, per adapter.
+                logger.exception("ingest[%s]: adapter failed outside per-company isolation: %s", adapter.name, exc)
+                terms_processed.append(
+                    {"source": adapter.name, "company": None, "fetched": 0, "inserted": 0, "error": str(exc)}
+                )
 
         total_fetched = sum(t["fetched"] for t in terms_processed)
         total_inserted = sum(t["inserted"] for t in terms_processed)
-        any_term_failed = any(t["error"] is not None for t in terms_processed)
+        any_company_failed = any(t["error"] is not None for t in terms_processed)
 
         unclassified = get_all_unclassified()
-        logger.info("classify: %d unclassified postings across all search terms", len(unclassified))
+        logger.info("classify: %d unclassified postings across all sources", len(unclassified))
         stats = await classify_postings(unclassified)
 
     except Exception as exc:
-        # Something outside per-term fault isolation went wrong (e.g. the database
-        # itself is unreachable) — this run produced nothing usable.
+        # Something outside per-company/per-adapter fault isolation went
+        # wrong (e.g. the database itself is unreachable) — this run
+        # produced nothing usable.
         logger.exception("Ingestion run failed: %s", exc)
         record_run(
             started_at=started_at,
@@ -122,7 +103,7 @@ async def run() -> None:
         )
         raise
 
-    status = "partial" if (any_term_failed or stats["stopped_early"]) else "success"
+    status = "partial" if (any_company_failed or stats["stopped_early"]) else "success"
     record_run(
         started_at=started_at,
         completed_at=datetime.now(timezone.utc),

@@ -8,10 +8,12 @@ Returns monthly job opening counts per role category (Designer, Product Manager,
 Engineer) for three time ranges, plus a written summary of the trend.
 
 Sourced from raw_postings + classifications — live-ingested, LLM-classified
-Adzuna postings — not mock data. A count is the number of distinct postings
-first observed by daily ingestion in that month, not "total open positions" at
-any point in time: Adzuna's /search endpoint has no historical date-range
-parameter, so there is no earlier data than when this pipeline started.
+postings from Greenhouse, Lever, and Ashby (Adzuna retired 2026-08-03, see
+changes/2026-07-28-multi-source-job-data-ingestion.md) — not mock data. A
+count is the number of distinct postings first observed by daily ingestion
+in that month, not "total open positions" at any point in time: none of the
+source platforms' APIs support a historical date-range query, so there is no
+earlier data than when this pipeline started.
 See backend/specs/market-health/api.md — Business Logic — Trend aggregation.
 """
 
@@ -174,5 +176,5 @@ def get_openings(range: str = "this_year") -> dict:
         ],
         "summary": _generate_summary(points),
         "as_of": datetime.now(timezone.utc).date().isoformat(),
-        "source": "Adzuna Jobs API (UK) — live postings, LLM-classified",
+        "source": "Company job boards hosted on Greenhouse, Lever, and Ashby — live postings, LLM-classified",
     }
