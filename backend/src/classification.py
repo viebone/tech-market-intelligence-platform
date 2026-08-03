@@ -52,7 +52,7 @@ BATCH_SIZE = 100
 # cap. Upgrading the API plan removes the need for this pacing entirely.
 SECONDS_BETWEEN_BATCHES = 13
 MAX_RETRIES = 5
-RATE_LIMIT_RETRY_DELAY = 60
+RETRYABLE_ERROR_RETRY_DELAY = 60
 
 SYSTEM_INSTRUCTION = """You classify UK tech job postings into a closed taxonomy. \
 For each posting, return exactly these fields:
@@ -148,15 +148,32 @@ def _validate(entry: dict) -> dict:
     }
 
 
-def _is_rate_limit_error(exc: Exception) -> bool:
+# Mirrors the retryable-failure set already used for the Greenhouse/Lever/Ashby
+# fetch adapters (sources/base.py — RETRYABLE_STATUS_CODES: 429/500/502/503/504) —
+# a provider being transiently overloaded (e.g. a 503 "model currently experiencing
+# high demand") is not the same failure as quota exhaustion, but both are equally
+# worth retrying past before giving up on a batch (see backend/specs/market-health/
+# api.md — Business Logic — Classification — Retry policy).
+RETRYABLE_STATUS_CODES = {"429", "500", "502", "503", "504"}
+
+
+def _is_retryable_error(exc: Exception) -> bool:
     """
-    Detect rate-limit errors generically from the exception's string form
+    Detect retryable errors generically from the exception's string form
     rather than importing a provider-specific exception type — LLMProvider
     doesn't define what its adapters raise, and different providers signal
-    rate limits differently.
+    failures differently. httpx status codes aren't available at this layer
+    (the Gemini SDK raises its own exception types), so this matches on the
+    exception's string form the same way the original rate-limit-only check
+    did — just broadened to cover 5xx/transient-unavailability text too.
     """
     text = str(exc).lower()
-    return "429" in text or "resource_exhausted" in text or "rate limit" in text
+    if any(code in text for code in RETRYABLE_STATUS_CODES):
+        return True
+    return any(
+        keyword in text
+        for keyword in ("resource_exhausted", "rate limit", "unavailable", "timeout", "connection")
+    )
 
 
 async def _complete_with_retry(prompt: str, system: str) -> str:
@@ -168,13 +185,13 @@ async def _complete_with_retry(prompt: str, system: str) -> str:
         try:
             return await provider.complete(prompt=prompt, system=system)
         except Exception as exc:
-            if not _is_rate_limit_error(exc) or attempt == MAX_RETRIES:
+            if not _is_retryable_error(exc) or attempt == MAX_RETRIES:
                 raise
             logger.warning(
-                "Rate limited (attempt %d/%d), retrying in %ds: %s",
-                attempt, MAX_RETRIES, RATE_LIMIT_RETRY_DELAY, exc,
+                "Retryable error (attempt %d/%d), retrying in %ds: %s",
+                attempt, MAX_RETRIES, RETRYABLE_ERROR_RETRY_DELAY, exc,
             )
-            await asyncio.sleep(RATE_LIMIT_RETRY_DELAY)
+            await asyncio.sleep(RETRYABLE_ERROR_RETRY_DELAY)
     raise RuntimeError("unreachable")  # loop always returns or raises
 
 
