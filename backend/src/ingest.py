@@ -103,6 +103,10 @@ async def run() -> None:
         )
         raise
 
+    # budget_reached alone is a clean, intentional stop, not a degradation —
+    # only an actual error (a failed company or an exhausted-retries batch)
+    # makes this "partial". See backend/specs/market-health/api.md — Business
+    # Logic — Classification — Per-run classification budget.
     status = "partial" if (any_company_failed or stats["stopped_early"]) else "success"
     record_run(
         started_at=started_at,
@@ -113,8 +117,10 @@ async def run() -> None:
         total_inserted=total_inserted,
         total_classified=stats["total_classified"],
         cache_hits=stats["cache_hits"],
+        heuristic_filtered=stats["heuristic_filtered"],
         llm_classified=stats["llm_classified"],
         other_count=stats["other_count"],
+        budget_reached=stats["budget_reached"],
     )
     logger.info("ingestion run recorded: status=%s", status)
 

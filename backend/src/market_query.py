@@ -11,7 +11,7 @@ directly by the LLM via automatic function calling (see llm/gemini.py).
 
 from db import get_connection
 
-_ALLOWED_GROUP_BY = {"role_category", "sub_specialization", "seniority", "track", "month"}
+_ALLOWED_GROUP_BY = {"role_category", "sub_specialization", "seniority", "track", "country", "month"}
 _ALLOWED_ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer"}
 _ALLOWED_SENIORITY = {
     "entry", "junior", "mid", "senior", "lead",
@@ -35,12 +35,23 @@ def _as_list(value) -> list:
     return [value]
 
 
+def _country_filter(country: list[str] | None) -> list[str]:
+    """
+    Country isn't a small closed set the way role/seniority are (Business
+    Logic — Location normalization), so it's validated only as "non-empty,
+    2-letter-ish" rather than against a fixed enum — still fully parameterised,
+    never string-interpolated into SQL.
+    """
+    return [v.strip().upper() for v in _as_list(country) if v and v.strip()]
+
+
 def query_market_data(
     group_by: list[str],
     role_category: list[str] | None = None,
     sub_specialization: list[str] | None = None,
     seniority: list[str] | None = None,
     track: list[str] | None = None,
+    country: list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict:
@@ -48,13 +59,15 @@ def query_market_data(
     Query real, live-classified job postings from the platform's own database.
 
     Use this to answer any question about tech job market demand — comparisons
-    between role categories, specializations, seniority levels, or track, and
-    trends over time. Always try this before assuming a question can't be
-    answered from the platform's data.
+    between role categories, specializations, seniority levels, track, or
+    location, and trends over time. Always try this before assuming a question
+    can't be answered from the platform's data. For compensation/salary
+    questions, use query_compensation_data instead — this tool only counts
+    postings, it does not return salary figures.
 
     Args:
         group_by: One or more of "role_category", "sub_specialization",
-            "seniority", "track", "month" — how to break the counts down.
+            "seniority", "track", "country", "month" — how to break the counts down.
         role_category: List of one or more of "Designer", "Product Manager",
             "Engineer" to filter to — pass a single-item list to filter to one.
         sub_specialization: List of one or more specific specializations to
@@ -63,6 +76,9 @@ def query_market_data(
         seniority: List of one or more of "entry", "junior", "mid", "senior",
             "lead", "principal", "manager", "director", "vp", "exec" to filter to.
         track: List of one or more of "ic", "management" to filter to.
+        country: List of one or more ISO-2 country codes (e.g. "US", "GB") to filter
+            to. Postings whose location couldn't be normalized are always excluded
+            when this filter or group_by dimension is used — never guessed in.
         date_from: ISO date (YYYY-MM-DD). Only postings first observed on or after this date.
         date_to: ISO date (YYYY-MM-DD). Only postings first observed on or before this date.
 
@@ -84,6 +100,7 @@ def query_market_data(
     sub_specializations = _as_list(sub_specialization)
     seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
     tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
+    countries = _country_filter(country)
 
     where = ["c.role_category != 'other'"]
     params: list = []
@@ -100,6 +117,11 @@ def query_market_data(
     if tracks:
         where.append("c.track = ANY(%s)")
         params.append(tracks)
+    if countries:
+        where.append("rp.country = ANY(%s)")
+        params.append(countries)
+    if "country" in valid_group_by:
+        where.append("rp.country IS NOT NULL")
     if date_from:
         where.append("rp.fetched_at >= %s")
         params.append(date_from)
@@ -108,10 +130,14 @@ def query_market_data(
         params.append(date_to)
     where_sql = " AND ".join(where)
 
-    select_columns = [
-        "to_char(date_trunc('month', rp.fetched_at), 'YYYY-MM') AS month" if g == "month" else f"c.{g} AS {g}"
-        for g in valid_group_by
-    ]
+    def _select_for(g: str) -> str:
+        if g == "month":
+            return "to_char(date_trunc('month', rp.fetched_at), 'YYYY-MM') AS month"
+        if g == "country":
+            return "rp.country AS country"
+        return f"c.{g} AS {g}"
+
+    select_columns = [_select_for(g) for g in valid_group_by]
     group_by_sql = ", ".join("month" if g == "month" else g for g in valid_group_by)
 
     query = f"""
@@ -143,6 +169,134 @@ def query_market_data(
 
     return {
         "rows": rows,
+        "data_range": {
+            "earliest": earliest.date().isoformat() if earliest else None,
+            "latest": latest.date().isoformat() if latest else None,
+        },
+        "total_matching": total_matching,
+    }
+
+
+def query_compensation_data(
+    role_category: list[str] | None = None,
+    sub_specialization: list[str] | None = None,
+    seniority: list[str] | None = None,
+    track: list[str] | None = None,
+    country: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """
+    Query real disclosed/estimated compensation data from the platform's own
+    database. Use this for any salary or pay-range question — query_market_data
+    only counts postings, it does not know about compensation.
+
+    Not every posting discloses compensation, and the postings that do aren't
+    equally reliable: `structured_count` postings had a real structured salary
+    field from the source itself; `parsed_count` postings only had salary
+    mentioned in free text, extracted via pattern matching. NEVER present
+    these as equally certain. Always lead with the disclosed/structured figure
+    when `structured_count` > 0, state how many postings it's based on, and
+    only mention the parsed/estimated count separately, explicitly labelled as
+    an estimate — never blend the two into one number. If both counts are 0,
+    say plainly that no postings in this slice disclose compensation — never
+    guess a figure from seniority or role alone.
+
+    Args:
+        role_category, sub_specialization, seniority, track, country: same filters
+            as query_market_data — narrow to a specific slice of the market.
+        date_from, date_to: ISO dates (YYYY-MM-DD), same meaning as query_market_data.
+
+    Returns:
+        A dict with:
+        - structured_count: postings with a real, source-provided salary field
+        - parsed_count: postings with salary only inferred from free text
+        - salary_min, salary_max: the range across the higher-confidence tier
+          available (structured if any exist, else parsed) — null if neither exists
+        - currency: the currency the range above is denominated in (the most common
+          currency within whichever tier was used) — null if no range
+        - data_range, total_matching: same meaning as query_market_data
+    """
+    role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
+    sub_specializations = _as_list(sub_specialization)
+    seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
+    tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
+    countries = _country_filter(country)
+
+    where = ["c.role_category != 'other'"]
+    params: list = []
+    if role_categories:
+        where.append("c.role_category = ANY(%s)")
+        params.append(role_categories)
+    if sub_specializations:
+        where.append("c.sub_specialization = ANY(%s)")
+        params.append(sub_specializations)
+    if seniorities:
+        where.append("c.seniority = ANY(%s)")
+        params.append(seniorities)
+    if tracks:
+        where.append("c.track = ANY(%s)")
+        params.append(tracks)
+    if countries:
+        where.append("rp.country = ANY(%s)")
+        params.append(countries)
+    if date_from:
+        where.append("rp.fetched_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("rp.fetched_at <= %s")
+        params.append(date_to)
+    where_sql = " AND ".join(where)
+
+    with get_connection() as conn:
+        total_matching = conn.execute(
+            f"""
+            SELECT count(*) FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()[0]
+
+        # Grouped by (confidence, currency) so a range is never computed by
+        # mixing currencies — the dominant currency within whichever
+        # confidence tier is actually used wins (see docstring: structured
+        # preferred over parsed).
+        comp_rows = conn.execute(
+            f"""
+            SELECT rp.salary_confidence, rp.salary_currency,
+                   min(rp.salary_min) AS lo, max(rp.salary_max) AS hi, count(*) AS n
+            FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql} AND rp.salary_confidence IS NOT NULL
+            GROUP BY rp.salary_confidence, rp.salary_currency
+            """,
+            params,
+        ).fetchall()
+
+        earliest, latest = conn.execute(
+            "SELECT min(fetched_at), max(fetched_at) FROM raw_postings"
+        ).fetchone()
+
+    structured_count = sum(n for conf, _, _, _, n in comp_rows if conf == "structured")
+    parsed_count = sum(n for conf, _, _, _, n in comp_rows if conf == "parsed")
+
+    salary_min = salary_max = currency = None
+    for preferred_confidence in ("structured", "parsed"):
+        candidates = [r for r in comp_rows if r[0] == preferred_confidence]
+        if candidates:
+            # Dominant currency within this tier (highest posting count) —
+            # never mix currencies into one min/max.
+            best = max(candidates, key=lambda r: r[4])
+            _, currency, salary_min, salary_max, _ = best
+            break
+
+    return {
+        "structured_count": structured_count,
+        "parsed_count": parsed_count,
+        "salary_min": salary_min,
+        "salary_max": salary_max,
+        "currency": currency,
         "data_range": {
             "earliest": earliest.date().isoformat() if earliest else None,
             "latest": latest.date().isoformat() if latest else None,

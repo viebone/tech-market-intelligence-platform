@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-07-22
+updated: 2026-08-04
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -116,6 +116,34 @@ populate the existing reasoning-trace `SourceAccess` fields (`name`, `purpose`),
 `ai-reasoning-panel` frontend spec already renders generically. Citations appear as plain
 markdown text/links within the streamed answer, already covered by `AIMessage`'s existing
 markdown rendering.
+
+**Reviewed 2026-08-03** (change: multi-source job data ingestion — Adzuna retired, replaced by
+Greenhouse/Lever/Ashby, `changes/2026-07-28-multi-source-job-data-ingestion.md`): confirmed no
+frontend changes needed. `/api/market-health/openings`'s response shape is unchanged (`{ month,
+designer, product_manager, engineer }` per row); only the *content* of its `source` string
+changes (now names three platforms instead of one), which `DataFreshnessLabel` and the
+provenance panel already render as an opaque string — no shape assumption to update. `/api/chat`
+and its SSE contract are unaffected; `query_market_data` isn't changed by this backend update.
+Same pattern as the 2026-07-22 review above: a backend sourcing change that's fully absorbed
+server-side.
+
+**Reviewed 2026-08-04** (change: Compensation Signal + enriched Demand Signal,
+`changes/2026-08-04-compensation-signal-gap.md`): confirmed no frontend changes needed —
+verified against the actual `ReasoningPanel.tsx` code, not just the spec. Both new
+capabilities are conversation-only per the updated `design/market-health/experience.md`
+(reached exclusively through follow-up chat, never a new chart element or filter control on
+the opening view — this file's existing "Out of scope" entry, "Filter controls (role family,
+seniority, location)," still holds unchanged). The backend's new `query_compensation_data`
+tool (`backend/specs/market-health/api.md`) runs server-side alongside the existing
+`query_market_data` tool, in the same `/api/chat` request/response contract — no SSE event
+shape change, no new endpoint. `ReasoningPanel.tsx` already renders `sources_and_tools` and
+`reasoning_steps` generically (`s.name`, `s.purpose`, `s.content` — no tool name hardcoded
+anywhere in the component), so a `query_compensation_data` entry in the trace renders
+correctly with zero code change. Compensation answers (including the confidence-caveat
+language from the experience spec's User Flow 7a) are plain prose text streamed through
+`AIMessage`'s existing follow-up markdown rendering — same as any other follow-up answer,
+no new component. Same pattern as the two reviews above: a backend-and-design change fully
+absorbed by existing generic frontend infrastructure.
 
 ---
 

@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: draft
 created: 2026-06-13
-updated: 2026-07-25
+updated: 2026-08-04
 ---
 
 # Market Health — Backend Architecture Spec
@@ -19,6 +19,16 @@ and `Track` enums. This spec references that taxonomy rather than redefining it.
 ---
 
 ## Data Models
+
+**Sourcing update (2026-08-03):** Adzuna is no longer used — its license does not permit
+continued use, not merely a cost concern (see `changes/2026-07-28-multi-source-job-data-ingestion.md`).
+Postings are now ingested from three ATS (applicant tracking system) platforms whose job
+boards are public per-company JSON APIs, no authentication required: **Greenhouse, Lever,
+and Ashby**. `RawPosting` changes from an Adzuna-shaped model to a source-agnostic one behind
+a `SourceAdapter` abstraction (see Tech Decisions), so a fourth source can be added later as
+one new adapter without another data-model change. Existing Adzuna-sourced rows already in
+`raw_postings` are historical data and are never deleted or rewritten — see the migration
+note under RawPosting below for how they're reconciled with the new columns.
 
 `MarketHealthSignal` and `SearchImplication` below remain mocked in-memory in v1 — they
 back `/api/market-health/summary`, which is not used by the current experience spec and is
@@ -44,18 +54,46 @@ superseded by real ingestion.
 | `signal_verdict` | `str` | The verdict this implication corresponds to |
 
 ### RawPosting (`raw_postings` table)
-Immutable. The exact Adzuna response for a posting is the only chance to ever capture it —
-expired listings disappear from Adzuna's index permanently, so nothing here is ever mutated
-after insert.
+Immutable. The exact source response for a posting is the only chance to ever capture it — a
+posting can be edited or unpublished by the company at any time and there is no way to recover
+its prior state, so nothing here is ever mutated after insert.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `str` (PK) | Adzuna's own job id. The dedupe key — a posting is fetched and stored at most once, regardless of how many daily ingestion runs re-surface it while still live. |
-| `role_family_query` | `str` | Which tracked search term produced this row (e.g. `"UX designer"`, `"product owner"`, `"backend engineer"` — the current full list is `ingest.py`'s `ROLE_SEARCH_TERMS`, reviewed periodically) — the specific query that surfaced it, not its eventual classification. |
-| `title` | `str` | Raw job title, verbatim from Adzuna. |
-| `raw_response` | `JSON` | The full Adzuna API response object for this posting, stored verbatim. |
-| `fetched_at` | `datetime` | When our ingestion pipeline captured this posting. The only date this product can trust — Adzuna's `/search` endpoint has no reliable posting-date field and no historical date-range query. |
+| `id` | `str` (PK) | The dedupe key — a posting is fetched and stored at most once, regardless of how many daily ingestion runs re-surface it while still live. For rows from an adapter (Greenhouse/Lever/Ashby, going forward), `id` is derived as `f"{source}:{source_ref}"` — e.g. `"greenhouse:acme-corp/123456"` — so uniqueness never depends on a source's native id being globally unique by itself. **Legacy exception**: rows ingested before 2026-08-03 keep their original bare Adzuna job id (immutable — never rewritten); see the migration note below for how they're reconciled with `source`/`source_ref`. |
+| `source` | `str` | Which adapter produced this row: `"greenhouse"`, `"lever"`, `"ashby"` (closed set, validated in application code the same way `role_category` is — see Business Logic). `"adzuna"` for legacy rows (backfilled, no longer a live source). |
+| `source_ref` | `str` | The posting's identifier within its source, scoped to be unique on its own within that source — `f"{company}/{native_id}"` for all three ATS adapters, since none of the three platforms guarantees its native id is unique *across* companies on that platform (only within one company's board), only that it's unique *within* one company's board. `NULL` for legacy Adzuna rows (backfilled to equal `id`; see migration note). |
+| `company` | `str \| None` | The company whose job board produced this row — the Greenhouse `board_token`, Lever `site`, or Ashby job-board name used to fetch it. `NULL` for legacy Adzuna rows, which were never fetched per-company (see `role_family_query` below). |
+| `role_family_query` | `str \| None` | **Legacy, Adzuna-era only.** Which tracked search term produced this row (Adzuna was queried by role-family search term, not by company). Always `NULL` for rows from Greenhouse/Lever/Ashby — those adapters fetch a company's entire board and rely on classification's `role_category: "other"` escape hatch to filter relevance, not a source-side search query (see Business Logic — Ingestion). Column kept, not dropped or renamed, since existing rows' values are historical data. |
+| `title` | `str` | Raw job title, verbatim from the source. |
+| `raw_response` | `JSON` | The full source API response object for this posting, stored verbatim — Adzuna's shape for legacy rows, the originating ATS's own job-object shape for everything since. Never normalised or projected down; each source's shape is whatever that source actually returned. |
+| `fetched_at` | `datetime` | When our ingestion pipeline captured this posting. The only date this product can trust for "when did this posting first appear to us" — none of Adzuna, Greenhouse, Lever, or Ashby's public APIs support querying by historical date range; all four are live-snapshot-only. |
 | `created_at` | `datetime` | Row insert timestamp (server clock). |
+| `country` | `str \| None` | Normalized country, derived at ingestion time from the source's own location fields (see Business Logic — Location normalization). `NULL` when the source's location data couldn't be normalized — never guessed. |
+| `city` | `str \| None` | Normalized city, same derivation and same honesty rule as `country`. Coverage is lower than `country` — see Business Logic — Location normalization for per-source rates. |
+| `salary_min` | `int \| None` | Lower bound of disclosed/parsed compensation, in `salary_currency` units per year. `NULL` when the posting discloses no usable compensation (see Business Logic — Compensation extraction). |
+| `salary_max` | `int \| None` | Upper bound, same rule as `salary_min`. |
+| `salary_currency` | `str \| None` | ISO currency code (e.g. `"USD"`), `NULL` iff `salary_min`/`salary_max` are `NULL`. |
+| `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
+| `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/seniority/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
+
+**Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
+the already-live `raw_postings` table via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (not just
+`CREATE TABLE IF NOT EXISTS`, which only affects table creation, not an existing table — see
+Tech Decisions). Existing rows are backfilled once: `source = 'adzuna'`, `source_ref = id`,
+`company = NULL`. `role_family_query`'s `NOT NULL` constraint is relaxed (`ALTER COLUMN ... DROP
+NOT NULL`) since it's populated only for legacy rows going forward. No existing row's `id`,
+`title`, `raw_response`, or `fetched_at` is touched — the immutability rule above still holds;
+only new descriptive columns are added and backfilled.
+
+**Migration note (2026-08-04).** `country`, `city`, `salary_min`, `salary_max`,
+`salary_currency`, `salary_confidence`, `salary_extraction_method` are new nullable columns,
+same `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pattern. No backfill against existing rows in
+this change — location/compensation extraction runs going forward, at ingestion time, per
+Business Logic below; existing rows simply keep these columns `NULL` until (if ever) a
+backfill pass is deliberately scoped as its own change. Still consistent with the
+immutability rule: these are derived-once, source-agnostic-shape columns filled in at the
+same moment a row is first inserted, not a later mutation of an existing row's captured data.
 
 ### Classification (`classifications` table)
 Keyed to `raw_postings`, one row per posting. Kept separate from `RawPosting` so
@@ -71,7 +109,7 @@ without re-fetching anything.
 | `seniority` | `"entry" \| "junior" \| "mid" \| "senior" \| "lead" \| "principal" \| "manager" \| "director" \| "vp" \| "exec" \| None` | `None` when `role_category` is `"other"`. |
 | `track` | `"ic" \| "management" \| None` | `None` when `role_category` is `"other"`. Always captured alongside seniority, never inferred from it. |
 | `taxonomy_version` | `str` | The version of `job-classification.md` active when this row was produced. Never rewritten retroactively when the taxonomy changes. |
-| `model` | `str` | Provider/model that produced this classification, e.g. `"gemini/gemini-2.5-flash"`. |
+| `model` | `str` | Provider/model that produced this classification, e.g. `"gemini/gemini-2.5-flash"` — or `"heuristic-keyword-filter"` when the posting was resolved by the pre-classification denylist filter (see Business Logic — Classification) rather than an LLM call. Kept as a free-text field specifically so provenance stays honest about which path produced a given `"other"`. |
 | `classified_at` | `datetime` | |
 
 ### IngestionRun (`ingestion_runs` table)
@@ -85,13 +123,15 @@ human happened to be watching in a terminal.
 | `id` | `int` (PK) | |
 | `started_at` | `datetime` | |
 | `completed_at` | `datetime \| None` | `None` if the run crashed before finishing |
-| `status` | `"success" \| "partial" \| "failed"` | `"partial"` = completed but degraded — one or more search terms failed after exhausting retries (see Business Logic — Ingestion), or classification stopped early on an unresolvable rate limit; whatever succeeded is still persisted. `"failed"` is reserved for a run that produced nothing usable at all (e.g. the database itself was unreachable) — a single bad search term is a `"partial"` run, not a `"failed"` one. |
-| `terms_processed` | `JSON` | `[{ "term": str, "fetched": int, "inserted": int, "error": str \| None }, ...]` — one entry per search term attempted. `error` is set when that term failed after exhausting retries; `fetched`/`inserted` are `0` for it, and the run continues to the next term rather than aborting. |
+| `status` | `"success" \| "partial" \| "failed"` | **Redefined 2026-08-04.** `"success"` = completed with no errors — this now includes deliberately reaching the per-run classification budget (`budget_reached`, below); hitting a self-imposed cap on purpose is the run working as designed, not a degraded outcome. `"partial"` = completed but degraded by an actual error — one or more companies failed after exhausting retries (see Business Logic — Ingestion), or a classification batch failed after exhausting retries on a genuine, non-budget error (see Business Logic — Classification — Retry policy); whatever succeeded is still persisted. `"failed"` is reserved for a run that produced nothing usable at all (e.g. the database itself was unreachable) — a single bad company or classification batch is a `"partial"` run, not a `"failed"` one. |
+| `terms_processed` | `JSON` | **Column name kept for migration simplicity; semantics generalised 2026-08-03.** `[{ "source": str, "company": str, "fetched": int, "inserted": int, "error": str \| None }, ...]` — one entry per (source, company) pair attempted, e.g. `{"source": "greenhouse", "company": "acme-corp", "fetched": 12, "inserted": 3, "error": null}`. `error` is set when that company's fetch failed after exhausting retries; `fetched`/`inserted` are `0` for it, and the run continues to the next company rather than aborting. Legacy rows (pre-2026-08-03) hold the old `{"term": str, ...}` shape — readers must handle both shapes when reading historical `ingestion_runs` rows. |
 | `total_fetched` | `int` | |
 | `total_inserted` | `int` | New `raw_postings` rows this run |
-| `total_classified` | `int` | Postings classified this run (cache hits + fresh LLM calls) |
+| `total_classified` | `int` | Postings classified this run (cache hits + heuristic-filtered + fresh LLM calls) |
 | `cache_hits` | `int` | Titles resolved from the title cache — zero LLM calls |
-| `llm_classified` | `int` | Titles that required a fresh LLM call |
+| `heuristic_filtered` | `int` | **Added 2026-08-04.** Titles resolved straight to `other` by the pre-classification denylist filter — zero LLM calls (see Business Logic — Classification — Pre-classification filter) |
+| `llm_classified` | `int` | Titles that required a fresh LLM call — excludes both cache hits and heuristic-filtered titles |
+| `budget_reached` | `bool` | **Added 2026-08-04.** `true` if this run stopped because `MAX_BATCHES_PER_RUN` was reached with no errors (see Business Logic — Classification — Per-run classification budget), not because the backlog was exhausted. Distinguishes "still more backlog waiting for tomorrow" from "fully caught up today" without needing to infer it from counts. |
 | `other_count` | `int` | |
 | `other_rate` | `float` | `other_count / total_classified` for this run, `0.0` if nothing was classified |
 | `anomalies` | `JSON` | List of flagged issue strings (see Business Logic — Anomaly flagging); empty list if none |
@@ -169,9 +209,14 @@ LLM-classified postings.
   ],
   "summary": "Over this period, Designer openings are up 21%, Product Manager openings have stayed roughly flat, and Engineer openings are down 8%. Counts reflect postings first observed by live daily ingestion, not a backfilled historical series.",
   "as_of": "2026-07-19",
-  "source": "Adzuna Jobs API (UK) — live postings, LLM-classified"
+  "source": "Company job boards hosted on Greenhouse, Lever, and Ashby — live postings, LLM-classified"
 }
 ```
+
+`source` is a fixed descriptive string naming every adapter currently live, not a per-row
+breakdown — matching this endpoint's existing behaviour of blending all sources into one
+series. A user who wants to know which specific source contributed to a number uses the chat
+endpoint's per-turn provenance (Business Logic — Conversational data sourcing), not this field.
 
 One row per calendar month that has at least one non-`"other"` classified posting.
 `range=all_time` returns every month since ingestion started — there is no earlier data,
@@ -239,57 +284,111 @@ its shape.
 
 ## Business Logic
 
-**Ingestion (daily)**
-For each curated, industry-standard job title tracked per Role Category — e.g. "UX designer",
-"product owner", "backend engineer" (the current full list is `ingest.py`'s
-`ROLE_SEARCH_TERMS`, one query per title) — query the Adzuna Jobs API:
-`what_phrase=<term>&category=it-jobs&max_days_old=3`, paginating until exhausted.
-`category=it-jobs` is the validated filter for all three role categories, but it is a coarse,
-generic filter — Adzuna's own category taxonomy has no finer-grained bucket underneath it
-(confirmed against Adzuna's `/categories` endpoint) — so precision comes entirely from the
-search terms, not the category. Bare category-name terms (`"designer"`, `"engineer"`) were
-tried first and rejected: too generic, pulling in a lot of irrelevant noise (e.g. "Cabling
-Infrastructure Designer") that still costs a real classification call to reject as `"other"`.
-`ROLE_SEARCH_TERMS` is deliberately curated, not exhaustive, and is expected to be reviewed
-periodically — add a title once it recurs often enough in `raw_postings` to matter, retire
-one that's gone stale. This is the same review process `job-classification.md` already
-describes for Raw Title. `max_days_old=3` (not 1) is a deliberate rolling safety margin so a
-late or missed daily run doesn't create a coverage gap; the 3-day overlap is safe because
-postings are deduped by Adzuna's `id` before insert — an already-stored posting is skipped
-entirely, never re-fetched or re-classified.
+**Ingestion (daily) — multi-adapter, since 2026-08-03.** Three `SourceAdapter`s run each day —
+Greenhouse, Lever, Ashby (see Tech Decisions for the adapter abstraction). Each adapter holds
+its own curated list of company board tokens/site slugs/job-board names (the same curation
+pattern as the retired `ROLE_SEARCH_TERMS`: a deliberately curated, periodically-reviewed list,
+not an attempt at exhaustive coverage of every company on that platform — see Tech Decisions for
+how that list is validated before being added). For each company in an adapter's list, fetch
+that company's *entire* published job board — none of the three platforms' public APIs support
+server-side filtering to "just tech roles" in a way that's consistent across all three (Ashby's
+public endpoint supports no filtering at all; Greenhouse and Lever's filtering options don't map
+onto this product's Role Category taxonomy) — and let classification's existing `role_category:
+"other"` escape hatch do the relevance filtering downstream, the same mechanism already trusted
+for Adzuna postings that didn't fit the taxonomy. This is a deliberate change from Adzuna's
+search-term-based fetching (which pre-filtered by phrase before any posting reached
+`raw_postings`) to fetch-everything-then-classify — expect a materially higher `other` rate
+in the weeks after this ships, as a real, expected transition effect, not a pipeline defect (see
+Anomaly flagging below, which needs a fresh baseline once the source mix changes).
 
-**Fault isolation, per search term.** Each term's fetch is independent: a term that
-still fails after exhausting retries (below) is recorded with its error in
-`terms_processed` and skipped — the run moves on to the remaining terms rather than
-aborting. This is what the 2026-07-27 production crash violated: a single Adzuna 503
-on one term took down all 12, discarding progress on terms not yet attempted even
-though two earlier terms had already succeeded. A term returning zero results is not
-a failure and is recorded exactly like any successful term (`fetched: 0`, `error:
-null`) — Adzuna having nothing new for a niche title on a given day is expected, not
-exceptional.
+**Fault isolation, per company, and per adapter.** Two nested levels, both non-aborting:
+- **Per company** (within one adapter): a single company's board fetch failing — board token
+  renamed or removed, network error, rate limited after exhausting retries — is recorded with
+  its error in `terms_processed` (see Data Models — IngestionRun) and skipped; the adapter moves
+  on to the next company. Mirrors the per-search-term isolation the 2026-07-27 Adzuna resilience
+  change already established — same principle, applied one level differently (company instead of
+  search term).
+- **Per adapter** (within the whole run): an adapter-level failure outside any single company's
+  fetch (e.g. an unexpected bug in that adapter's response parsing) is caught at the
+  orchestration level and recorded, not allowed to abort the other two adapters — a bug in the
+  Ashby adapter must never stop Greenhouse and Lever from running that day.
 
-**Adzuna rate limits and retry policy.** Adzuna's default API quota (its Terms of
-Service) is 25 hits/minute, 250/day, 1000/week, 2500/month — tight enough that an
-unpaced run risks it: a single term can paginate up to `MAX_PAGES` (60) requests, and
-12 terms run back-to-back with no delay is exactly the pattern that risks tripping
-the per-minute cap, quota exhaustion aside. Two rules follow:
-- **Pacing.** Every Adzuna request — each pagination page within a term, and the
-  transition between terms — is spaced at a fixed minimum interval that keeps sustained
-  throughput safely under 25/minute, regardless of how many pages a single term needs.
-  At the current ~12 terms/day (mostly one page each, per observed volume), this stays
-  far under the daily/weekly/monthly caps too, so no separate daily-budget tracker is
-  needed — the per-minute pace alone is the binding constraint in practice.
-- **Retries.** A request is retried with exponential backoff only on retryable
-  failures — HTTP 429 (rate limited) and 5xx (upstream server error, the 503 class
-  that caused the 2026-07-27 crash). A non-429 4xx (e.g. a malformed request) is not
-  retried — retrying it can't succeed and would just spend quota. After exhausting
-  retries, the term (or that page of it) is recorded as failed per the fault-isolation
-  rule above, not raised as an unhandled exception.
+A company/adapter returning zero results is not a failure and is recorded exactly like any
+successful one (`fetched: 0`, `error: null`) — a small company having no open roles on a given
+day is expected, not exceptional.
+
+**Pacing and retry policy — self-imposed, not source-mandated.** None of Greenhouse, Lever, or
+Ashby documents a hard rate limit for their public GET job-board endpoints (confirmed against
+each platform's own current API docs 2026-08-03 — Lever documents a rate limit only for its POST
+application-submission endpoint, 2 requests/second, which this product never calls). The absence
+of a documented limit is not treated as license to fetch unpaced: every adapter still applies a
+conservative, fixed minimum interval between its own requests (company-to-company, and
+pagination within a company where the platform paginates), and retries with exponential backoff
+only on retryable failures — HTTP 429 and 5xx, plus connection errors/timeouts — never on a
+non-429 4xx, which can't succeed on retry. This reuses the exact pattern (not the exact numbers)
+already proven for Adzuna in the 2026-07-27 resilience change: pacing constant and retry count
+are implementation details tuned per adapter, not spec'd exactly here, matching how Adzuna's
+were left as code-level constants rather than spec'd numbers.
+
+**Location normalization (at ingestion time, no LLM).** `country`/`city` (Data Models —
+RawPosting) are derived synchronously while a posting is fetched and inserted — not a
+separate pass, since nothing here needs an LLM or has an external rate limit. Each adapter
+maps its own source's location shape:
+- **Lever**: `country` comes directly from the source's own `country` field, already a clean
+  ISO code — used as-is. `city` is a best-effort split of the `categories.location` free-text
+  string (e.g. `"New York, NY"`); left `NULL` if it doesn't parse cleanly as `"City, ST"`.
+- **Ashby**: `country` comes from `address.postalAddress.addressCountry`, populated for the
+  large majority of postings but inconsistently formatted (e.g. `"United States"` and
+  `"USA"` both appear for the same country) — passed through a small static normalization
+  map, not an LLM. `city` comes from `address.postalAddress.addressLocality` when non-empty;
+  left `NULL` otherwise (a meaningful minority of postings leave this blank).
+- **Greenhouse**: weakest of the three. `offices[0].location` is a parseable `"City, State,
+  Country"` string when present, but is absent for a large share of postings — when present,
+  best-effort parsed; when absent, both fields are left `NULL` rather than attempting to
+  parse the separate, messier `location.name` field, which frequently combines remote-status
+  and multiple cities in one string (e.g. `"San Francisco, CA • New York, NY • United
+  States"`) — genuinely ambiguous multi-location text, out of scope for this pass.
+
+A posting whose location can't be normalized keeps `country`/`city` as `NULL` and is simply
+excluded from location-specific answers (`design/market-health/experience.md` — Edge Cases)
+rather than guessed.
+
+**Compensation extraction (at ingestion time) — three sources, three different confidence
+levels, one deliberately excluded.** `salary_min`/`salary_max`/`salary_currency`/
+`salary_confidence`/`salary_extraction_method` (Data Models — RawPosting) exist specifically
+so a `"parsed"` estimate is never presented with the same certainty as a `"structured"`
+figure (`design/market-health/experience.md`, User Flow 7a). Confirmed by querying the real
+production database directly before writing this, not assumed:
+- **Ashby — `salary_confidence: "structured"`.** Read directly from
+  `raw_response.compensation.summaryComponents`, filtered to entries where
+  `compensationType == "Salary"`, taking `minValue`/`maxValue`/`currencyCode`. Zero
+  extraction risk — this is a source-provided structured field, not inferred. If
+  `compensation` is absent or `shouldDisplayCompensationOnJobPostings` is false, the posting
+  simply has no compensation data — not an error.
+- **Lever — `salary_confidence: "parsed"`.** A majority of postings mention salary as free
+  text inside `additionalPlain` (plain text, not the HTML `additional` field), in fairly
+  consistent phrasing (e.g. "the estimated salary range for this position is estimated to be
+  $93,000 - $160,000/year"). Extracted via regex for a `$X - $Y` pattern. If regex finds no
+  confident match, the posting is treated as having no disclosed salary — **no LLM fallback**
+  (see below for why).
+- **Greenhouse — excluded from compensation extraction entirely, `salary_confidence: NULL`
+  for every Greenhouse posting.** A majority of postings mention salary/compensation, but
+  only inside one large unstructured HTML `content` blob mixed with the entire job
+  description — nothing as cleanly patterned as Lever's phrasing, so reliable extraction
+  would require an LLM call per posting, not per unique title. This is a deliberate scope
+  boundary, not an oversight: an LLM fallback here (or for Lever's regex misses) would mean a
+  **per-posting** LLM call — a fundamentally different, larger cost shape than classification's
+  per-*title* LLM calls, and would reopen the exact daily-quota problem the 2026-08-04
+  classification-budget change was built to solve, at a larger scale (thousands of
+  Greenhouse postings vs. a few thousand unique *titles*). If this coverage gap ever becomes
+  a real product priority, it deserves its own explicitly-budgeted change — not a quiet
+  LLM call added here.
 
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every
-search term together — not once per search term — so the title-based cache below sees the
-widest possible pool for catching duplicate titles before any LLM call is made. Postings are
+adapter and company together — not once per company, and not scoped by source — so the
+title-based cache below sees the widest possible pool for catching duplicate titles before any
+LLM call is made. Postings are
 classified in batched LLM calls (not per-posting, to control cost), constrained to the closed
 `Role Category`, `Seniority`, and `Track` sets defined in `design/market-health/job-classification.md`;
 the response is parsed and validated against those sets in application code (see `Tech
@@ -302,6 +401,19 @@ forced into the nearest match. Every classification row is stamped with the
 is later revised, existing rows keep their original version rather than being silently
 relabeled.
 
+**Retry policy — transient provider errors, not just rate limits.** Each classification
+batch call retries with backoff (up to 5 attempts, 60s between attempts) on any retryable
+failure — HTTP 429/quota-exhausted **and** HTTP 5xx / transient provider unavailability
+(e.g. a `503 UNAVAILABLE "model currently experiencing high demand"` response), plus
+connection errors/timeouts. This mirrors the pattern already established for the
+source-fetch step above (Business Logic — Ingestion — Pacing and retry policy): a
+provider being briefly overloaded is not the same failure as quota exhaustion, and both
+are equally worth retrying past before giving up on a batch. Only after retries are
+exhausted does the run stop early and record `status: "partial"` (see Data Models —
+IngestionRun) — whatever was classified before the failing batch is already persisted and
+is not re-sent on the next run, since the title cache below only skips titles that were
+actually written.
+
 **Title-based classification cache** — classification is a pure function of the posting's
 title (the prompt sends nothing else). Before any LLM call, unclassified postings are deduped
 by exact title in two layers: (1) a title already classified in a prior run is reused
@@ -312,15 +424,71 @@ dataset grows — job titles repeat heavily across postings, companies, and days
 doubles as a consistency improvement, since it removes run-to-run model variance for the
 same exact title.
 
+**The real constraint — 20 requests/day, confirmed 2026-08-04.** Gemini's free tier for
+`gemini-2.5-flash` is capped at exactly 20 requests/day/project/model (Google's own error
+payload: `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: '20'`) —
+not a per-minute limit, which earlier code comments assumed. At `BATCH_SIZE = 100`
+titles/batch, that ceiling caps daily classification throughput at roughly 2,000 unique
+titles. Real multi-source ingestion runs surface 3,000-4,700+ unique titles/day — demand
+structurally exceeds throughput, not just occasionally but every day, since Greenhouse/
+Lever/Ashby return each company's entire job board with no server-side tech-role filter (a
+large share of any given board is sales, legal, finance, HR, and ops postings). The three
+mechanisms below exist to make that gap survivable without the run always simply losing the
+race against the quota.
+
+**Pre-classification filter (denylist, not allowlist).** Before any title reaches the
+LLM-batching step (i.e. before it's even counted against the title cache above's
+"never-before-seen" pool for LLM purposes), it's checked against a curated denylist of
+unambiguous non-tech keywords (e.g. "account executive," "payroll," "legal counsel,"
+"recruiter," "warehouse associate" — full list is an implementation detail, see Tech
+Decisions). A match is classified `role_category: "other"` immediately, no model call spent,
+stamped with `model: "heuristic-keyword-filter"` (Data Models — Classification) so it stays
+distinguishable from an LLM-produced `"other"`. Deliberately a denylist rather than an
+allowlist: an allowlist (only send recognized tech keywords to the LLM) would silently
+starve exactly the unusual-but-real titles `job-classification.md`'s "Raw Title" section
+exists to catch (e.g. "Founding Engineer," "AI Product Manager") — a denylist only ever
+skips titles that are unambiguous regardless of phrasing, so novel tech titles still reach
+the LLM. This is a cost optimization, not a taxonomy change (see
+`design/market-health/job-classification.md` — Classification Method): the end result for a
+denylisted title is the same `"other"` an LLM call would have produced anyway.
+
+**Backlog processing order — oldest-first.** `raw_postings.get_all_unclassified()` returns
+unclassified postings ordered by `fetched_at` ascending. Under a bounded daily budget (below),
+order of processing directly determines what actually gets classified promptly versus what
+waits — without an explicit order, this was previously arbitrary (whatever Postgres's default
+scan happened to produce). Oldest-first was chosen over newest-first despite newest-first
+giving fresher data sooner, because the outcome this pipeline serves
+(`understand-market-health-before-searching`) depends on reliable historical continuity
+("how the hiring market numbers evolve through time") — newest-first would let the backlog
+accumulated from any single large ingestion event get perpetually deprioritized behind each
+day's new arrivals, leaving a permanent gap instead of one that closes over the following
+days.
+
+**Per-run classification budget — stopping on purpose is success, not degradation.** A
+single run attempts at most `MAX_BATCHES_PER_RUN` batches (an implementation constant sized
+with headroom under the 20-request/day ceiling, leaving room for this-run retries on
+transient errors — see Tech Decisions), not "every unclassified title that exists." Reaching
+that budget with zero errors sets `budget_reached: true` (Data Models — IngestionRun) and
+`status: "success"` — the run did exactly what it was designed to do. This is a deliberate
+redefinition: previously, running out of anything (backlog or quota) short of "classified
+everything" had no vocabulary except the failure-flavored `"partial"`. Under a real daily
+ceiling, "classified everything" is no longer an achievable definition of success, so
+conflating a by-design stopping point with a degraded one would make every future run look
+broken when it's actually working as intended. `status: "partial"` remains reserved
+strictly for a batch that fails after exhausting retries on a genuine, non-budget error (see
+Retry policy, above) — the distinction that matters operationally is "we chose to stop"
+versus "something is actually wrong."
+
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their
 `classifications` row, excluding `role_category: "other"` — grouped by `role_category` and
 the calendar month of `fetched_at`, then pivots into one row per month with a column per
 Role Category. This counts postings newly observed by the ingestion pipeline in that month,
-not "total open positions" at any point in time: an inherent limit of Adzuna's live-only
-search API (no historical date-range parameter, confirmed empirically). Because ingestion
-runs daily with dedupe-by-id, each posting is counted exactly once, in the month it was
-first captured.
+not "total open positions" at any point in time: an inherent limit shared by all three source
+platforms' public APIs (none support a historical date-range query — each only ever returns
+what's currently live — confirmed empirically for Adzuna and, separately, for Greenhouse,
+Lever, and Ashby). Because ingestion runs daily with dedupe-by-id, each posting is counted
+exactly once, in the month it was first captured.
 
 **Written summary generation**
 The `summary` string is generated deterministically (percentage change from the first to
@@ -347,12 +515,23 @@ citation bug happened. The new design gives the model two tools and a fixed deci
 
 1. **`query_market_data` tool (always tried first).** A read-only, parameterised query
    interface over `raw_postings` joined to `classifications` — not raw SQL execution, which
-   would be unsafe to expose to a model. Parameters:
-   - `group_by`: one or more of `role_category`, `sub_specialization`, `seniority`, `track`, `month`
+   would be unsafe to expose to a model. **Note (2026-08-04): sub-specialization, seniority,
+   and track drill-down — the "Demand Signal, enriched" part of
+   `design/market-health/experience.md` — already work through this exact tool, unchanged.
+   No backend change was needed for those three dimensions; only `country` (below) is new.**
+   Parameters:
+   - `group_by`: one or more of `role_category`, `sub_specialization`, `seniority`, `track`,
+     `country` (new 2026-08-04), `month`
    - `role_category`, `sub_specialization`, `seniority`, `track`: optional filters, each
      restricted to the closed sets in `design/market-health/job-classification.md`
+   - `country` (new 2026-08-04): optional filter — a non-empty string, parameterised the same
+     safe way as the closed-set filters, but validated only as "non-empty" rather than against
+     a fixed set, since normalized country values aren't a small enum the way role/seniority
+     are (Business Logic — Location normalization)
    - `date_from`, `date_to`: optional ISO dates
-   Always excludes `role_category: "other"` rows, matching the trend-aggregation rule.
+   Always excludes `role_category: "other"` rows, matching the trend-aggregation rule. Rows
+   with `country IS NULL` are excluded whenever `country` is used as a filter or `group_by`
+   dimension — never guessed in to pad a count.
    Returns:
    ```json
    {
@@ -365,20 +544,48 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    whether a question falls outside the data's actual window (e.g. `date_to` before
    `data_range.earliest` means "we don't have that," not "the answer is zero").
 
-2. **Google Search grounding (tried only when step 1 can't answer the question).** Triggered
-   when `query_market_data` returns `total_matching: 0` for a request that should be inside its
-   domain but isn't inside the data's time window, or when the question is categorically
-   outside what the dataset could ever contain (general career advice, market history before
-   this pipeline existed, industry context). Implemented as a **separate, second model call**
-   with Google Search grounding enabled, not combined with `query_market_data` in the same
-   call — current Gemini API versions don't support mixing a custom function-calling tool with
-   the search-grounding tool in one request (reverify at implementation time; API capabilities
-   change). The grounded response's citation metadata (search queries used, source
-   titles/URLs) becomes the trace's external sources — never a source that wasn't actually
-   returned by the grounded call.
+1a. **`query_compensation_data` tool (added 2026-08-04, tried alongside `query_market_data`,
+   same stage).** A second read-only, parameterised tool, added because compensation
+   questions need a different aggregation shape than demand questions — `AVG`/`MIN`/`MAX`
+   over a numeric range plus a disclosed-vs-estimated breakdown, not a `GROUP BY` count.
+   Accepts the same filter dimensions as `query_market_data` (`role_category`,
+   `sub_specialization`, `seniority`, `track`, `country` — see Location normalization,
+   above, for how `country` is derived) so a compensation question can be scoped exactly
+   like a demand question. Returns:
+   ```json
+   {
+     "structured_count": 14,
+     "parsed_count": 6,
+     "salary_min": 130000,
+     "salary_max": 165000,
+     "currency": "USD",
+     "data_range": { "earliest": "2026-07-20", "latest": "2026-08-04" },
+     "total_matching": 41
+   }
+   ```
+   `salary_min`/`salary_max` are computed **only from `salary_confidence: "structured"` rows**
+   — `structured_count`/`parsed_count` are surfaced separately precisely so the model can lead
+   with the reliable figure and mention (never blend in) the parsed count, per
+   `design/market-health/experience.md`'s confidence rule. If `structured_count` is 0 but
+   `parsed_count` > 0, the range is computed from the parsed rows instead, and the model must
+   label it as an estimate — never presented as if structured. If both are 0, the range
+   fields are `null` and the model states plainly that no postings in that slice disclose
+   compensation (Edge Cases — no fallback guess from seniority/role alone).
 
-3. **Never silently substitute one for the other.** If step 1 finds a partial answer and step
-   2 is needed to fill a gap, the response says which parts came from which. If neither step
+2. **Google Search grounding (tried only when steps 1/1a can't answer the question).**
+   Triggered when neither data tool returns anything usable for a request that should be
+   inside their domain but isn't inside the data's time window, or when the question is
+   categorically outside what the dataset could ever contain (general career advice, market
+   history before this pipeline existed, industry context). Implemented as a **separate,
+   second model call** with Google Search grounding enabled, not combined with the data tools
+   in the same call — current Gemini API versions don't support mixing custom function-calling
+   tools with the search-grounding tool in one request (reverify at implementation time; API
+   capabilities change). The grounded response's citation metadata (search queries used,
+   source titles/URLs) becomes the trace's external sources — never a source that wasn't
+   actually returned by the grounded call.
+
+3. **Never silently substitute one for the other.** If steps 1/1a find a partial answer and
+   step 2 is needed to fill a gap, the response says which parts came from which. If nothing
    can answer the question, the model says so rather than guessing — this is a prompt-level
    instruction, and was confirmed insufficient on its own through testing (see the
    anti-fabrication guard below); a code-level check backs it up.
@@ -397,22 +604,26 @@ when the user questioned it. Giving the tool stages a small bounded window of re
 (not the full history a longer conversation would otherwise need) fixed this directly.
 
 **Anti-fabrication guard — a code-level check, not just a prompt instruction.** If the
-data-query stage makes zero `query_market_data` calls AND doesn't emit the `NEEDS_EXTERNAL`
-marker, its text is discarded outright before it can reach the synthesis stage — confirmed
-by testing that a confused model will sometimes answer with fabricated content instead of
-abstaining, regardless of what the system prompt says. The synthesis stage is also grounded
-directly in the raw `query_market_data` return values (not just the data-query stage's prose
-summary of them), so a hallucinated narrative can't reach the user even if it somehow slipped
+data-query stage makes zero calls to *either* data tool (`query_market_data` or
+`query_compensation_data`) AND doesn't emit the `NEEDS_EXTERNAL` marker, its text is
+discarded outright before it can reach the synthesis stage — confirmed by testing that a
+confused model will sometimes answer with fabricated content instead of abstaining,
+regardless of what the system prompt says. The synthesis stage is also grounded directly in
+the raw tool-call return values (not just the data-query stage's prose summary of them), so a
+hallucinated narrative can't reach the user even if it somehow slipped
 past the first guard.
 
 **Reasoning trace now reflects real tool calls, not pre-computed context.**
 `backend/specs/ai-reasoning-panel/api.md` currently states trace assembly is "synchronous and
 pre-LLM... input context and sources are known before the LLM call." That premise no longer
-holds for `/api/chat`: `sources_and_tools` must now be built from the `query_market_data` calls
+holds for `/api/chat`: `sources_and_tools` must now be built from whichever data tool(s) were
+actually called (`query_market_data`, `query_compensation_data` — added 2026-08-04 — or both)
 and any Google Search grounding call actually made during generation, in real order, not
-assembled beforehand. This spec's behavior is authoritative for `/api/chat`; the other spec is
-not updated here since reconciling it fully is out of this change's scope (flagged in
-`design/market-health/experience.md`'s Open Questions).
+assembled beforehand. The trace-building code must not hardcode a single tool name/purpose
+string the way it could when only one data tool existed — it now needs to reflect whichever
+tool(s) the model actually invoked. This spec's behavior is authoritative for `/api/chat`; the
+other spec is not updated here since reconciling it fully is out of this change's scope
+(flagged in `design/market-health/experience.md`'s Open Questions).
 
 **Insufficient data handling**
 If filters produce an empty dataset, the summary endpoint returns `verdict: null` and an explanation stating that no data is available for that combination. The frontend must handle a null verdict without crashing.
@@ -430,31 +641,43 @@ true — `ingest.py` has never been called from any request path) but in deploym
   trace feature are unaffected.
 - **Every run records an `IngestionRun` row, including degraded ones.** The run's top level is
   wrapped so that whatever totals were accumulated are always written, never lost to an
-  unhandled crash. A run that completes with every term succeeding and classification running
-  to completion writes `status: "success"`. A run where one or more search terms failed after
-  exhausting retries (see Business Logic — Ingestion — Fault isolation), or classification
-  stopped early after exhausting retries on a rate limit, writes `status: "partial"` — whatever
-  was fetched, inserted, or classified before the degradation is still persisted and still
-  counts. `status: "failed"` is reserved for a run that couldn't produce anything usable at all
-  (e.g. the database itself is unreachable at startup) — this is deliberately rare now that
-  per-term failures degrade to `"partial"` instead of aborting the whole run.
+  unhandled crash. **Redefined 2026-08-04**: a run that completes with every company (across
+  all three adapters) succeeding, and classification either clearing the entire backlog or
+  deliberately stopping at `MAX_BATCHES_PER_RUN` with zero errors (`budget_reached: true` —
+  see Business Logic — Classification — Per-run classification budget), writes
+  `status: "success"`. Reaching the budget on purpose is not degradation — under the
+  confirmed 20-request/day quota, "classified everything" is no longer an achievable bar for
+  success, so a clean, by-design stop must not read the same as a failure. A run where one or
+  more companies failed after exhausting retries (see Business Logic — Ingestion — Fault
+  isolation), or a classification batch failed after exhausting retries on a genuine,
+  non-budget error (see Business Logic — Classification — Retry policy), writes
+  `status: "partial"` — whatever was fetched, inserted, or classified before the degradation is
+  still persisted and still counts. `status: "failed"` is reserved for a run that couldn't
+  produce anything usable at all (e.g. the database itself is unreachable at startup, or every
+  adapter failed) — deliberately rare now that per-company and per-adapter failures degrade to
+  `"partial"` instead of aborting the whole run.
 - **Anomaly flagging** (appended to the run's `anomalies` list, does not block the run):
-  - **Zero-result term**: a search term in `ingest.py`'s `ROLE_SEARCH_TERMS` returns 0 postings
-    this run, and returned more than 0 in at least one of the last 5 recorded runs. (Not
-    flagged before there's at least one prior run to compare against — a term legitimately
-    returning 0 occasionally is normal, a term that's clearly stopped working is not.)
+  - **Zero-result company**: a company in any adapter's curated list returns 0 postings this
+    run, and returned more than 0 in at least one of the last 5 recorded runs. (Not flagged
+    before there's at least one prior run to compare against — a company legitimately having no
+    open roles occasionally is normal, a company whose board integration has clearly broken is
+    not.) Generalises the same rule previously scoped to `ROLE_SEARCH_TERMS` entries.
   - **Abnormal `other` rate**: this run's `other_rate` deviates from the trailing average of
     the last 5 completed runs' `other_rate` by more than 50% relative or 15 percentage points
     absolute, whichever is more lenient. No flagging until at least 5 completed runs exist to
-    establish a baseline.
+    establish a baseline. **Note**: this baseline resets in effect once the source mix changes
+    (2026-08-03) — the first ~5 runs on the new fetch-everything-then-classify pattern will read
+    as "no baseline yet," and a materially higher `other_rate` than the old Adzuna-era baseline
+    is expected during that window, not a signal something's broken (see Business Logic —
+    Ingestion).
   - Anomalies are recorded, not acted on automatically — no run is blocked or retried because
     of a flag. They exist to be inspectable, per Principle 3 (Exceptions Define the
     Experience) — surfaced, not silently absorbed.
-- **Explicitly out of scope**: analysing `other`-classified raw titles to propose new
-  `ROLE_SEARCH_TERMS` entries or taxonomy changes. Valuable, deferred until there's enough real
-  `IngestionRun` history to build sensible thresholds against — see this change's decision log.
-  If ever built, it must propose changes for human review, never edit
-  `job-classification.md` directly.
+- **Explicitly out of scope**: analysing `other`-classified raw titles to propose new companies
+  to track, or taxonomy changes. Valuable, deferred until there's enough real `IngestionRun`
+  history to build sensible thresholds against — see this change's decision log. If ever built,
+  it must propose changes for human review, never edit `job-classification.md` or an adapter's
+  company list directly.
 
 ---
 
@@ -464,7 +687,10 @@ true — `ingest.py` has never been called from any request path) but in deploym
 |---|---|
 | Google Generative AI Python SDK (`google-genai`) | Streaming Gemini responses for `/api/chat`; `query_market_data` tool-calling; posting classification |
 | Google Search grounding (via `google-genai`) | Real, citable external sources for `/api/chat` questions outside the platform's own data |
-| Adzuna Jobs API (UK) | Source of live job postings for `raw_postings`. Credentials: `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Default quota (their Terms of Service): 25 hits/minute, 250/day, 1000/week, 2500/month — see Business Logic — Ingestion — Adzuna rate limits for how the pipeline paces requests to stay under this. |
+| Greenhouse Job Board API (`boards-api.greenhouse.io/v1/boards/{board_token}/jobs`) | Source of live job postings for `raw_postings` (`source: "greenhouse"`). Public, unauthenticated GET, no credentials. No documented rate limit for this endpoint (confirmed against Greenhouse's own API docs, 2026-08-03) — paced conservatively regardless (Business Logic — Ingestion). |
+| Lever Postings API (`api.lever.co/v0/postings/{site}`) | Source of live job postings for `raw_postings` (`source: "lever"`). Public, unauthenticated GET, no credentials. Documents a rate limit only for its POST application-submission endpoint (2 req/sec) — this product never calls that endpoint; the GET postings endpoint has no documented limit, paced conservatively regardless. |
+| Ashby Job Board API (`api.ashbyhq.com/posting-api/job-board/{jobBoardName}`) | Source of live job postings for `raw_postings` (`source: "ashby"`). Public, unauthenticated GET, no credentials. No documented rate limit (confirmed against Ashby's own API docs, 2026-08-03); paced conservatively regardless. No filtering support at all on this endpoint — every company's full board is fetched. |
+| ~~Adzuna Jobs API (UK)~~ | **Retired 2026-08-03** — license no longer permits use. No longer called; existing `raw_postings` rows sourced from it are kept as historical data (`source: "adzuna"`, backfilled). See `changes/2026-07-28-multi-source-job-data-ingestion.md`. |
 | Railway (cron-scheduled service) | Runs the daily ingestion agent independently of local dev — see Tech Decisions |
 
 PostgreSQL (already in the project's tech stack) backs `raw_postings`, `classifications`, and
@@ -486,24 +712,118 @@ ingestion agent for why these are kept separate.
 - **Ingestion + classification run as a daily cron-scheduled service on Railway**, in the same
   Railway project as the Postgres database. `python ingest.py` is the service's start command;
   Railway's native cron scheduling runs it to completion once a day, not as a long-running
-  process. Environment variables on that service: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`,
-  `GEMINI_API_KEY_CLASSIFICATION`, and `DATABASE_URL` — using Railway's **internal/private**
-  network URL for Postgres, not the public proxy URL used for local dev, since the service is
-  co-located with the database. Needs a `railway.json` (or equivalent) declaring the cron
-  schedule and start command — a concrete deliverable of `/implement-backend`, not left
-  open-ended. The job ingests every search term in `ROLE_SEARCH_TERMS` first, then runs
-  classification once across everything newly ingested — not once per term — to maximize
-  duplicate-title detection before spending any LLM call (see Business Logic — Classification).
-- **The classification LLM call is the actual bottleneck, not Adzuna.** The provider's free
-  tier caps `gemini-2.5-flash` at a low daily request count, lower in practice than documented.
-  Now that classification uses its own dedicated key (Business Logic — Scheduled ingestion
-  agent), it no longer competes with `/api/chat`'s live traffic for the same quota — but its
-  own budget is still real. The title-based cache is the primary lever for staying under it as
-  the dataset grows; if usage genuinely outgrows the free tier, upgrading that key's billing
-  plan is the fix, not more aggressive caching or narrower ingestion.
-- `raw_postings.raw_response` is stored as a JSON/JSONB column — store the Adzuna response
+  process. Environment variables on that service: `GEMINI_API_KEY_CLASSIFICATION` and
+  `DATABASE_URL` — using Railway's **internal/private** network URL for Postgres, not the public
+  proxy URL used for local dev, since the service is co-located with the database. **No
+  `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` needed going forward** — a real operational simplification,
+  since all three replacement sources are public and unauthenticated; those two variables should
+  be removed from the Railway service config and `backend/.env.example` as part of this change's
+  implementation, not just left unused. Needs `railway.json` (or equivalent) updated if it
+  referenced Adzuna credentials — a concrete deliverable of `/implement-backend`. The job runs
+  every adapter's every company first, then runs classification once across everything newly
+  ingested — not once per company — to maximize duplicate-title detection before spending any
+  LLM call (see Business Logic — Classification).
+- **The classification LLM call is the actual bottleneck, not fetching — confirmed 2026-08-04,
+  superseding the free-tier assumption below.** The provider's free tier caps
+  `gemini-2.5-flash` at exactly 20 requests/day/project/model (Google's own error payload:
+  `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`) — a hard daily ceiling, not a
+  per-minute limit as originally assumed here. At `BATCH_SIZE = 100`, that's ~2,000
+  titles/day of throughput against a real 3,000-4,700+ titles/day of demand (Business Logic —
+  Classification). **Decision: stay on the free tier and reduce call volume, rather than
+  upgrade billing** — reverses this bullet's original stance ("upgrading is the fix, not more
+  aggressive caching or narrower ingestion"). Three mechanisms now do that: a
+  pre-classification denylist filter (skips obviously non-tech titles with zero LLM calls), a
+  deliberate per-run batch budget (`MAX_BATCHES_PER_RUN`, stops on purpose instead of racing
+  the quota to a `429`), and oldest-first backlog ordering (all three documented in Business
+  Logic — Classification). Revisit the upgrade-billing option only if these three together
+  still can't keep the backlog from permanently growing.
+- **Denylist keywords and `MAX_BATCHES_PER_RUN` are implementation constants, not spec'd
+  exactly here** — same precedent as the retry pacing/backoff numbers (Business Logic —
+  Ingestion — Pacing and retry policy): the *policy* (denylist not allowlist; a fixed budget
+  with headroom under the daily quota) is spec'd, the exact keyword list and batch count are
+  code-level and expected to be tuned as real `other`-rate and quota-usage data comes in.
+  `MAX_BATCHES_PER_RUN` should leave enough headroom under 20 requests/day to absorb this-run
+  retries on transient errors (Business Logic — Classification — Retry policy) without itself
+  causing a `429` — sizing it at the full 20 would leave zero margin for a single retry.
+- `raw_postings.raw_response` is stored as a JSON/JSONB column — store each source's response
   verbatim, do not project it down to the fields we currently use, since it is the only
   chance to ever capture a given posting.
+- **Schema migration is `ALTER TABLE`, not just `CREATE TABLE IF NOT EXISTS`.** `db.py`'s
+  `init_schema()` today only creates tables that don't exist yet — it never alters a table that's
+  already live. `raw_postings` already has real production rows, so the new `source`,
+  `source_ref`, and `company` columns (Data Models — RawPosting) need explicit `ALTER TABLE
+  raw_postings ADD COLUMN IF NOT EXISTS ...` statements plus the one-time backfill UPDATE and the
+  `role_family_query` `DROP NOT NULL`, run as part of `init_schema()` (idempotent — safe to run
+  on every startup, same as the existing `CREATE TABLE IF NOT EXISTS` calls) rather than a
+  separate manual migration step.
+
+**Source adapter abstraction**
+Mirrors the `LLMProvider` pattern (below) for job-data sources instead of AI providers — the
+same shape solving the same problem: no business logic anywhere (ingestion orchestration,
+classification, trend aggregation) should need to know or care which source produced a given
+row. Defined in `backend/src/sources/base.py`:
+
+```python
+@dataclass
+class FetchedPosting:
+    source_ref: str   # unique within this source, e.g. "acme-corp/123456"
+    company: str       # the board token / site / job-board name fetched
+    title: str
+    raw_response: dict  # the source's own job-object shape, verbatim
+    # Added 2026-08-04 — all optional, populated per-adapter on a best-effort
+    # basis (Business Logic — Location normalization, Compensation extraction).
+    # None means "couldn't be normalized," never a guess.
+    country: str | None = None
+    city: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    salary_currency: str | None = None
+    salary_confidence: str | None = None       # "structured" | "parsed" | None
+    salary_extraction_method: str | None = None  # e.g. "ashby-structured", "lever-regex"
+
+class SourceAdapter(Protocol):
+    name: str  # "greenhouse" | "lever" | "ashby"
+    def fetch(self) -> list[FetchedPosting]:
+        """
+        Fetch every company in this adapter's curated list. Never raises for a
+        single company's failure — that's caught and recorded internally (Business
+        Logic — Ingestion — Fault isolation, per company); only an adapter-level
+        failure outside any single company's fetch propagates, for orchestration
+        to catch at the per-adapter level.
+        """
+        ...
+```
+
+`backend/src/sources/greenhouse.py`, `lever.py`, and `ashby.py` each implement this protocol:
+own curated company list (module-level constant, same review discipline as the retired
+`ROLE_SEARCH_TERMS` — periodically reviewed, not exhaustive), own pacing/retry logic (reusing
+the pattern, not the code, from `adzuna_client.py`'s `_pace()`/`_get_with_retry()` before its
+removal), own mapping from that platform's job-object shape into `FetchedPosting`. Adding a
+fourth source later means writing one new adapter file implementing this protocol — no change to
+`ingest.py`'s orchestration, `raw_postings.py`, or classification.
+
+`ingest.py`'s orchestration loops over a fixed list of adapter instances (`ALL_SOURCE_ADAPTERS`
+in `backend/src/sources/__init__.py`, mirroring `llm/providers.py`'s factory-module pattern),
+catches an adapter-level exception without aborting the others (Business Logic — Ingestion —
+Fault isolation, per adapter), and passes each adapter's `FetchedPosting`s to
+`raw_postings.insert_new_postings()`, updated to accept `source` and build `id =
+f"{source}:{p.source_ref}"` before the existing dedupe-by-`id` insert logic.
+
+**Company-list curation — verified, not invented.** Each adapter's initial company list is a
+deliverable of `/implement-backend`, not fixed by this spec: candidate companies are validated
+by actually confirming their board token/site/job-board name resolves (a live HTTP 200 from that
+company's public job-board URL) before being added to the list — the same "confirm empirically,
+don't assume" discipline this spec already applies to Adzuna's quota and these three platforms'
+rate-limit documentation. A guessed-but-wrong board token fails loudly and immediately (a
+same-day 404, not a silent gap), so this is a cheap check worth doing before shipping, not an
+excuse to skip it.
+
+**Not in this change.** Non-posting enrichment content (articles, market reports) — named as a
+future source category in `outcomes/job-data-source-flexibility.md` — is not modeled here. This
+change is scoped to job-posting sources only (Greenhouse, Lever, Ashby); enrichment content has
+a genuinely different shape (not a job posting, shouldn't be forced through classification) and
+is deferred to its own follow-on change once a concrete enrichment source is chosen, per the
+outcome's scope boundary.
 
 **Provider abstraction layer**
 All AI calls go through a shared `LLMProvider` protocol defined in `backend/src/llm/base.py`.

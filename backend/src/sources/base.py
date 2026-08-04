@@ -29,6 +29,63 @@ class FetchedPosting:
     company: str        # the board token / site / job-board name fetched
     title: str
     raw_response: dict  # the source's own job-object shape, verbatim
+    # Added 2026-08-04 — all optional, populated per-adapter on a best-effort
+    # basis (backend/specs/market-health/api.md — Business Logic — Location
+    # normalization, Compensation extraction). None means "couldn't be
+    # normalized," never a guess.
+    country: str | None = None          # normalized ISO-2 code, e.g. "US"
+    city: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    salary_currency: str | None = None
+    salary_confidence: str | None = None        # "structured" | "parsed" | None
+    salary_extraction_method: str | None = None  # e.g. "ashby-structured", "lever-regex"
+
+
+# Normalizes free-text country names (Ashby's addressCountry, Greenhouse's
+# parsed office location) to the same ISO-2 codes Lever already provides
+# natively — so `country` is comparable across all three sources instead of
+# "US" vs "United States" vs "USA" fragmenting the same country into three
+# group_by buckets. Curated from the country names actually observed in
+# production data (2026-08-04), not exhaustive — an unmapped name resolves to
+# None (excluded from location-specific answers) rather than being guessed at
+# or passed through unnormalized.
+COUNTRY_NAME_TO_ISO2 = {
+    "united states": "US", "usa": "US", "us": "US",
+    "united kingdom": "GB", "uk": "GB",
+    "canada": "CA",
+    "singapore": "SG",
+    "japan": "JP",
+    "india": "IN",
+    "ireland": "IE",
+    "germany": "DE",
+    "mexico": "MX",
+    "australia": "AU",
+    "sweden": "SE",
+    "spain": "ES",
+    "france": "FR",
+    "south korea": "KR",
+    "poland": "PL",
+    "netherlands": "NL",
+    "united arab emirates": "AE",
+    "denmark": "DK",
+    "lithuania": "LT",
+    "israel": "IL",
+}
+
+
+def normalize_country(raw: str | None) -> str | None:
+    """
+    Map a free-text country name to its ISO-2 code. Returns None for empty,
+    already-2-letter (assumed already-ISO), or unrecognized input — an
+    unnormalizable value is excluded from location answers, never guessed.
+    """
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    if len(cleaned) == 2:
+        return cleaned.upper()
+    return COUNTRY_NAME_TO_ISO2.get(cleaned.lower())
 
 
 class SourceFetchError(Exception):

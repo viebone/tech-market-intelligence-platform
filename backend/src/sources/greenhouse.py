@@ -14,9 +14,30 @@ from __future__ import annotations
 
 import httpx
 
-from sources.base import FetchedPosting, PacedFetcher
+from sources.base import FetchedPosting, PacedFetcher, normalize_country
 
 BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
+
+
+def _extract_location(job: dict) -> tuple[str | None, str | None]:
+    """
+    Best-effort city/country from offices[0].location ("City, State, Country")
+    when present — absent for a large share of postings, in which case both
+    are left None rather than parsing the separate, messier `location.name`
+    field (which mixes remote-status and multiple cities in one string). See
+    backend/specs/market-health/api.md — Business Logic — Location
+    normalization.
+    """
+    offices = job.get("offices") or []
+    if not offices:
+        return None, None
+    location = offices[0].get("location")
+    if not location or "," not in location:
+        return None, None
+    parts = [p.strip() for p in location.split(",")]
+    city = parts[0] or None
+    country = normalize_country(parts[-1])
+    return city, country
 
 # Curated, not exhaustive — every token below was validated 2026-08-03 by
 # confirming it resolves to a real, live Greenhouse job board (HTTP 200).
@@ -44,12 +65,19 @@ class GreenhouseAdapter:
                 client, f"{BASE_URL}/{company}/jobs", {"content": "true"}
             )
         jobs = response.json().get("jobs", [])
-        return [
-            FetchedPosting(
+        results = []
+        for job in jobs:
+            city, country = _extract_location(job)
+            results.append(FetchedPosting(
                 source_ref=f"{company}/{job['id']}",
                 company=company,
                 title=job.get("title", ""),
                 raw_response=job,
-            )
-            for job in jobs
-        ]
+                country=country,
+                city=city,
+                # Salary intentionally left unextracted for Greenhouse — see
+                # backend/specs/market-health/api.md — Business Logic —
+                # Compensation extraction. Reliable extraction here would
+                # need a per-posting LLM call, a deliberately excluded scope.
+            ))
+        return results

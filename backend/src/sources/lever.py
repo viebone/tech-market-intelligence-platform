@@ -17,6 +17,8 @@ api.md — Business Logic — Ingestion.
 
 from __future__ import annotations
 
+import re
+
 import httpx
 
 from sources.base import FetchedPosting, PacedFetcher
@@ -24,6 +26,39 @@ from sources.base import FetchedPosting, PacedFetcher
 BASE_URL = "https://api.lever.co/v0/postings"
 PAGE_SIZE = 100
 MAX_PAGES = 20  # safety cap (2000 postings) so a runaway query can't paginate forever
+
+# Matches phrasing like "estimated salary range for this position is estimated
+# to be $93,000 - $160,000/year" — confirmed fairly consistent across real
+# Lever postings (2026-08-04). No LLM fallback for postings this doesn't
+# match — see backend/specs/market-health/api.md — Business Logic —
+# Compensation extraction for why (per-posting LLM cost, deliberately out of
+# scope).
+_SALARY_RANGE_RE = re.compile(r"\$\s?([\d,]{4,})\s*-\s*\$?\s?([\d,]{4,})")
+
+
+def _extract_salary(additional_plain: str | None) -> tuple[int | None, int | None]:
+    if not additional_plain:
+        return None, None
+    match = _SALARY_RANGE_RE.search(additional_plain)
+    if not match:
+        return None, None
+    try:
+        low = int(match.group(1).replace(",", ""))
+        high = int(match.group(2).replace(",", ""))
+    except ValueError:
+        return None, None
+    if low > high:
+        low, high = high, low
+    return low, high
+
+
+def _extract_city(location: str | None) -> str | None:
+    """Best-effort city from a "City, ST" free-text string. None if it
+    doesn't split cleanly — never a guess."""
+    if not location or "," not in location:
+        return None
+    city = location.split(",")[0].strip()
+    return city or None
 
 # Curated, not exhaustive — every slug below was validated 2026-08-03 by
 # confirming it resolves to a real, live Lever site (HTTP 200). Lever's
@@ -60,12 +95,23 @@ class LeverAdapter:
                     break
                 skip += PAGE_SIZE
 
-        return [
-            FetchedPosting(
+        results = []
+        for p in postings:
+            salary_min, salary_max = _extract_salary(p.get("additionalPlain"))
+            results.append(FetchedPosting(
                 source_ref=f"{company}/{p['id']}",
                 company=company,
                 title=p.get("text", ""),
                 raw_response=p,
-            )
-            for p in postings
-        ]
+                country=(p.get("country") or "").upper() or None,
+                city=_extract_city(p.get("categories", {}).get("location")),
+                salary_min=salary_min,
+                salary_max=salary_max,
+                # Regex only matches a "$" pattern, and Lever postings in this
+                # dataset are overwhelmingly US-based — USD is a reasonable
+                # assumption for a match, not a guess at the number itself.
+                salary_currency="USD" if salary_min is not None else None,
+                salary_confidence="parsed" if salary_min is not None else None,
+                salary_extraction_method="lever-regex" if salary_min is not None else None,
+            ))
+        return results

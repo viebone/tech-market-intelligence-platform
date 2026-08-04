@@ -44,7 +44,7 @@ from ai_interaction_settings import (
     TOOL_STAGE_HISTORY_MESSAGES,
 )
 from market_health import _resolve_signal, _filter_demand, _filter_compensation, _serialise
-from market_query import query_market_data
+from market_query import query_compensation_data, query_market_data
 from mock_data import LAYOFF_SIGNALS
 from models import ReasoningStep, ReasoningTrace, SourceAccess
 
@@ -96,14 +96,19 @@ def _render_transcript(messages: list[ChatMessage]) -> str:
 # ---------------------------------------------------------------------------
 
 _DATA_STAGE_SYSTEM_TEMPLATE = """You are a market intelligence assistant for tech professionals. \
-Today's date is {today}. Answer using the query_market_data tool to examine real, \
-live-classified job posting data — call it as needed to answer the user's question with real \
-numbers.
+Today's date is {today}. You have two tools to examine real, live-classified job posting data \
+— call whichever fits (or both) as needed to answer the user's question with real numbers:
+- query_market_data: demand/volume questions — counts, trends, comparisons across role, \
+sub-specialization, seniority, track, or country.
+- query_compensation_data: salary/pay questions. Never blend its structured_count and \
+parsed_count figures into one number — lead with the structured (disclosed) figure when it \
+exists, mention the parsed (estimated) one separately and label it as an estimate, and say \
+plainly if neither exists rather than guessing.
 
 Below is the recent conversation. Answer the LAST message in it, using the earlier messages \
 only to understand what a short reply like "yes please" or "what about X" is referring to.
 
-Always check the tool's data_range and total_matching fields. If total_matching is 0 because \
+Always check each tool's data_range and total_matching fields. If total_matching is 0 because \
 the question falls outside data_range, or the question is about something the tool could \
 never answer (general career advice, market history before data_range.earliest, industry \
 context not derivable from job postings), do not guess or use your own general knowledge here. \
@@ -114,7 +119,7 @@ from the data (write "(nothing)" if the data contributed nothing).
 If you cannot tell what the last message is asking even with the conversation above — it's too \
 ambiguous, or references something not present in the conversation shown — prefix your response \
 with exactly "NEEDS_EXTERNAL: " followed by that explanation. Never invent an answer, a \
-category, or a number that didn't come from an actual query_market_data call.
+category, or a number that didn't come from an actual tool call.
 
 If the data can answer the question, respond directly and specifically: state the data's time \
 window (from data_range) and the real numbers returned. Never state a number or claim the tool \
@@ -135,7 +140,7 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
     response = await provider.complete_with_tools(
         prompt=_render_transcript(recent_messages),
         system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
-        tools=[query_market_data],
+        tools=[query_market_data, query_compensation_data],
     )
     return response.text, response.tool_calls
 
@@ -181,7 +186,7 @@ def _build_synthesis_system(
     grounded_sources: list,
 ) -> str:
     if tool_calls:
-        raw_results = "\n".join(f"query_market_data({c.args}) -> {c.result}" for c in tool_calls)
+        raw_results = "\n".join(f"{c.name}({c.args}) -> {c.result}" for c in tool_calls)
     else:
         raw_results = "(no platform data was queried for this question)"
 
@@ -239,7 +244,7 @@ def _build_reasoning_trace(
             sequence=seq,
             source_type="data_source",
             name="Job Market Database (Greenhouse/Lever/Ashby-sourced, LLM-classified)",
-            purpose=f"query_market_data({call.args})",
+            purpose=f"{call.name}({call.args})",
         ))
         seq += 1
         result = call.result if isinstance(call.result, dict) else {}
@@ -247,9 +252,9 @@ def _build_reasoning_trace(
         steps.append(ReasoningStep(
             sequence=step_seq,
             content=(
-                f"Queried the platform's data ({call.args}). Found {result.get('total_matching', 0)} "
-                f"matching postings, data available from {data_range.get('earliest')} to "
-                f"{data_range.get('latest')}."
+                f"Queried the platform's data via {call.name}({call.args}). Found "
+                f"{result.get('total_matching', 0)} matching postings, data available from "
+                f"{data_range.get('earliest')} to {data_range.get('latest')}."
             ),
         ))
         step_seq += 1

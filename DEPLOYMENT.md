@@ -46,7 +46,7 @@ The one piece of this product currently running unattended in production.
 | Start command | `python src/ingest.py` |
 | Schedule | Cron `0 6 * * *` (06:00 UTC, daily) |
 | Restart policy | `NEVER` — it's a one-shot job, not a long-running service |
-| Env vars | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `GEMINI_API_KEY_CLASSIFICATION`, `DATABASE_URL` |
+| Env vars | `GEMINI_API_KEY_CLASSIFICATION`, `DATABASE_URL` — `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` were removed 2026-08-03 (Adzuna retired, no license to keep using it); the three replacement sources (Greenhouse, Lever, Ashby) are public and need no credentials. **Action needed**: remove these two variables from the `job-sync` service in the Railway dashboard — they're stale now, not read by any code, but should be cleaned up rather than left dangling. |
 
 `DATABASE_URL` is set to the Railway variable reference `${{Postgres.DATABASE_URL}}` —
 Postgres's *internal* private-network address, not its public proxy URL. Services in
@@ -65,31 +65,41 @@ boundary.
 
 `ingest.py` runs four steps every time it fires:
 
-1. **Fetch** — for each of 12 curated job titles across 3 role categories (Designer,
-   Product Manager, Engineer — see `ROLE_SEARCH_TERMS` in `ingest.py`), pull live UK
-   postings from the Adzuna Jobs API (`backend/src/adzuna_client.py`), last 3 days.
-2. **Dedupe & store** — insert only postings not already seen, keyed on Adzuna's own
-   `id` (`backend/src/raw_postings.py`). `raw_postings` is append-only: a posting is
-   never updated after first sight, since expired listings vanish from Adzuna's index
-   permanently and this is the only chance to capture them.
+1. **Fetch** — for each company in each source adapter's curated list
+   (`backend/src/sources/greenhouse.py`, `lever.py`, `ashby.py` — 15, 5, and 15
+   companies respectively as of 2026-08-03), pull that company's full published job
+   board. **Adzuna was retired 2026-08-03** (license no longer permits use) — see
+   `changes/2026-07-28-multi-source-job-data-ingestion.md`. Unlike Adzuna's
+   search-term-based fetch, these three ATS platforms return a company's entire board
+   with no server-side "tech roles only" filter, so classification's `"other"`
+   escape hatch does that filtering downstream instead.
+2. **Dedupe & store** — insert only postings not already seen, keyed on
+   `id = f"{source}:{source_ref}"` (`backend/src/raw_postings.py`). `raw_postings` is
+   append-only: a posting is never updated after first sight, since a company can
+   edit or remove a listing at any time with no way to recover its prior state.
 3. **Classify** — every newly-ingested posting is classified into a closed taxonomy
    (role category / sub-specialization / seniority / track) by Gemini
    (`backend/src/classification.py`), batched and rate-limited to survive the free
    tier. Titles already classified in a past run, or duplicated within this run, are
-   never sent to the LLM twice — classification depends only on title text.
+   never sent to the LLM twice — classification depends only on title text. Expect a
+   materially higher volume through this step (and a higher `other` rate) than under
+   Adzuna, since the new sources aren't pre-filtered by search term.
 4. **Record** — exactly one row is written to `ingestion_runs`
    (`backend/src/ingestion_runs.py`) per run, success or failure, with counts and any
-   anomalies detected (a search term that suddenly returns 0 results, an "other"-rate
+   anomalies detected (a company that suddenly returns 0 results, an "other"-rate
    that jumps relative to the last 5 runs). This is what makes a run's outcome
    inspectable from the database — see "How to verify it actually ran," below.
 
 ### Data model (Postgres, created by `backend/src/db.py`)
 
 ```
-raw_postings     — id (Adzuna's own), role_family_query, title, raw_response (JSONB), fetched_at
+raw_postings     — id (f"{source}:{source_ref}"), source, source_ref, company,
+                    role_family_query (legacy Adzuna-era, NULL for new rows), title,
+                    raw_response (JSONB), fetched_at
 classifications  — posting_id → raw_postings, role_category, sub_specialization,
                     seniority, track, taxonomy_version, model, classified_at
-ingestion_runs   — started_at / completed_at, status, terms_processed (JSONB),
+ingestion_runs   — started_at / completed_at, status, terms_processed (JSONB — now
+                    {source, company, fetched, inserted, error} per entry),
                     fetch/insert/classify counts, other_rate, anomalies (JSONB), error_message
 ```
 

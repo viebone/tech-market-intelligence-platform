@@ -92,8 +92,10 @@ def record_run(
     total_inserted: int = 0,
     total_classified: int = 0,
     cache_hits: int = 0,
+    heuristic_filtered: int = 0,
     llm_classified: int = 0,
     other_count: int = 0,
+    budget_reached: bool = False,
     error_message: str | None = None,
 ) -> None:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -106,13 +108,15 @@ def record_run(
             """
             INSERT INTO ingestion_runs
                 (started_at, completed_at, status, terms_processed, total_fetched,
-                 total_inserted, total_classified, cache_hits, llm_classified,
-                 other_count, other_rate, anomalies, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 total_inserted, total_classified, cache_hits, heuristic_filtered,
+                 llm_classified, other_count, other_rate, budget_reached, anomalies,
+                 error_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 started_at, completed_at, status, json.dumps(terms_processed), total_fetched,
-                total_inserted, total_classified, cache_hits, llm_classified,
-                other_count, other_rate, json.dumps(anomalies), error_message,
+                total_inserted, total_classified, cache_hits, heuristic_filtered,
+                llm_classified, other_count, other_rate, budget_reached, json.dumps(anomalies),
+                error_message,
             ),
         )

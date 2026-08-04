@@ -4,6 +4,7 @@ feature: market-health
 directive: low
 status: active
 created: 2026-06-15
+updated: 2026-08-03
 ---
 
 # Provenance Panel — Component Spec
@@ -113,6 +114,15 @@ Section heading: **"Sources"**
 Content: `signal.source` rendered as a paragraph. Omit this section entirely if
 `signal` is null.
 
+**Updated 2026-08-03**: `signal.source` is still a single descriptive string (no change to the
+`ProvenanceData` shape above) — but as of the multi-source ingestion change
+(`changes/2026-07-28-multi-source-job-data-ingestion.md`) that string may now name more than one
+platform in one sentence, e.g. "Company job boards hosted on Greenhouse, Lever, and Ashby" —
+never collapsed into a vaguer generic label like "job board data" that would hide which specific
+sources actually contributed. This panel does not attempt to break a count down *per* source
+(e.g. "40 from Greenhouse, 12 from Lever") — the platform's own data queries don't compute that
+breakdown today, and this panel must never display a breakdown it wasn't actually given.
+
 ---
 
 ### API calls (briefing only, always shown)
@@ -122,8 +132,15 @@ Section heading: **"API calls"**
 Content: two monospaced lines:
 ```
 GET /api/market-health/summary
-GET /api/market-health/trends
+GET /api/market-health/openings
 ```
+
+**Corrected 2026-08-03**: the second line previously read `GET /api/market-health/trends` — that
+endpoint was never implemented; the real endpoint the shipped opening briefing calls is
+`/api/market-health/openings` (see `backend/specs/market-health/api.md`'s note on this same
+discrepancy). Fixed here while this file was already open for the sourcing update — this panel's
+entire purpose is showing users the real API calls behind an answer, so a stale endpoint name in
+its own spec was a direct (if narrow) breach of that promise.
 
 Always shown for briefing turns, even when signal is null.
 Never shown for chat turns.

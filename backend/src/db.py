@@ -65,8 +65,23 @@ CREATE TABLE IF NOT EXISTS classifications (
     UNIQUE (posting_id)
 );
 
+-- Compensation Signal / enriched Demand Signal migration (2026-08-04):
+-- raw_postings already has live production rows, so this evolves the
+-- existing table rather than assuming a fresh CREATE. See
+-- backend/specs/market-health/api.md — Data Models — RawPosting (migration
+-- note 2026-08-04). No backfill against existing rows — these are derived
+-- at ingestion time going forward; existing rows simply keep them NULL.
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_min INTEGER;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_max INTEGER;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_currency TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_confidence TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_extraction_method TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_raw_postings_fetched_at ON raw_postings (fetched_at);
 CREATE INDEX IF NOT EXISTS idx_raw_postings_source ON raw_postings (source);
+CREATE INDEX IF NOT EXISTS idx_raw_postings_country ON raw_postings (country);
 CREATE INDEX IF NOT EXISTS idx_classifications_role_category ON classifications (role_category);
 
 CREATE TABLE IF NOT EXISTS ingestion_runs (
@@ -85,6 +100,14 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     anomalies          JSONB NOT NULL DEFAULT '[]',
     error_message      TEXT
 );
+
+-- Classification LLM-call-reduction migration (2026-08-04): ingestion_runs
+-- already has live production rows, so this evolves the existing table
+-- rather than assuming a fresh CREATE. See backend/specs/market-health/
+-- api.md — Data Models — IngestionRun. Idempotent — safe to run on every
+-- startup, same pattern as raw_postings' 2026-08-03 migration above.
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS heuristic_filtered INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS budget_reached BOOLEAN NOT NULL DEFAULT false;
 """
 
 

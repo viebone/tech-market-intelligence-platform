@@ -45,12 +45,20 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO raw_postings (id, source, source_ref, company, title, raw_response, fetched_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO raw_postings (
+                    id, source, source_ref, company, title, raw_response, fetched_at,
+                    country, city, salary_min, salary_max, salary_currency,
+                    salary_confidence, salary_extraction_method
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 [
-                    (pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at)
+                    (
+                        pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at,
+                        p.country, p.city, p.salary_min, p.salary_max, p.salary_currency,
+                        p.salary_confidence, p.salary_extraction_method,
+                    )
                     for pid, p in new
                 ],
             )
@@ -60,13 +68,21 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
 
 def get_all_unclassified() -> list[dict]:
     """
-    Postings across every source that don't have a classification row yet.
+    Postings across every source that don't have a classification row yet,
+    oldest-first by fetched_at.
 
     Deliberately not scoped to a single source or company: classification is
     run once across everything newly ingested (see ingest.py), not once per
     company, so the title-based dedup cache in classification.py sees the
     widest possible pool for catching duplicate titles before any LLM call —
     e.g. a "Product Designer" posting surfacing on both Greenhouse and Ashby.
+
+    Oldest-first ordering added 2026-08-04: under a bounded daily
+    classification budget (see backend/specs/market-health/api.md — Business
+    Logic — Classification — Per-run classification budget), which postings
+    actually get classified is no longer guaranteed to be "all of them," so
+    processing order now matters — the longest-waiting backlog is prioritized
+    over newly-arrived postings, rather than left arbitrary.
     """
     with get_connection() as conn:
         rows = conn.execute(
@@ -75,6 +91,7 @@ def get_all_unclassified() -> list[dict]:
             FROM raw_postings rp
             LEFT JOIN classifications c ON c.posting_id = rp.id
             WHERE c.posting_id IS NULL
+            ORDER BY rp.fetched_at ASC
             """
         ).fetchall()
     return [{"id": row[0], "title": row[1]} for row in rows]

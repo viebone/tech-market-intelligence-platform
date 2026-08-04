@@ -93,10 +93,15 @@ time — not by guessing upfront what categories will eventually matter.
 
 ## Classification Method
 
-Each posting is classified by an LLM call (technical implementation defined in
-`backend/specs/market-health/api.md`), constrained to return only values from the Role
-Category, Seniority, and Track sets defined above — it cannot invent a category outside this
-taxonomy.
+Each posting is classified either by an LLM call, or — for titles that are unambiguously
+not tech roles at all (e.g. "Account Executive," "Payroll Specialist," "Legal Counsel") — by
+a cheap heuristic pre-filter that resolves straight to `other` without spending a model call
+(technical implementation defined in `backend/specs/market-health/api.md`). Both paths are
+constrained to the same closed sets: the pre-filter can only ever produce `other`, never
+invent or guess a real category, and the LLM path returns only values from the Role
+Category, Seniority, and Track sets defined above. Which path a given posting takes is a
+cost optimization, not a taxonomy decision — it changes nothing about what `other` means or
+what qualifies for it, only how cheaply the obvious cases are reached.
 
 **The `other` escape hatch:** a posting that genuinely does not fit is classified `other`
 rather than forced into the closest match. For example, a real posting encountered while

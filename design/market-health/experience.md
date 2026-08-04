@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-07-22
+updated: 2026-08-04
 ---
 
 # Market Health — Experience Spec
@@ -18,6 +18,19 @@ See: `outcomes/understand-market-health-before-searching.md`
 ## Primary question this experience answers
 
 > "How is the tech job market trending right now — and has it been getting better or worse?"
+
+The opening view answers this one question, deliberately kept singular (Principle 3,
+`design/foundations.md` — Exceptions Define the Experience: the fixed view should not grow
+into a dashboard of every available metric). Two other questions this experience now
+answers — **only through follow-up conversation, never in the fixed opening view** — are:
+
+> "What salary should I expect for this role?" (**Compensation Signal**)
+> "How is demand shifting for a more specific slice of the market — a sub-specialization,
+> a seniority level, a track, a location?" (**Demand Signal**, enriched)
+
+Both are reached the same way the existing example already works ("Is User Experience
+Designer or Product Designer more in demand right now?") — by asking, not by a new control
+appearing on load. See User Flow and Edge Cases, below.
 
 ---
 
@@ -75,8 +88,13 @@ The user interprets and decides what to do with it.
 5. The user optionally switches the time range (This Year / Past 5 Years / All Time).
    The chart updates. The summary regenerates for the new window.
 6. The user types a follow-up question in the chat input — anything from a specific comparison
-   ("Is User Experience Designer or Product Designer more in demand right now?") to something
-   the platform's data can't possibly cover ("What was demand like in 2019?").
+   ("Is User Experience Designer or Product Designer more in demand right now?"), to a
+   narrower demand slice ("Are Staff-level Engineering roles growing?", "Are IC or management
+   roles more common right now?", "How does demand for Backend Engineers differ between the US
+   and Europe?"), to a compensation question ("What salary should I expect for a Senior
+   Product Designer?", "What's the typical pay range for a Backend Engineer in San
+   Francisco?"), to something the platform's data can't possibly cover ("What was demand like
+   in 2019?").
 7. The AI answers by actually analysing the platform's own data for that specific question —
    not repeating a fixed canned summary. It states the answer's time window plainly, grounded
    in when live data collection actually began (e.g. "since we started tracking on 20 July
@@ -89,6 +107,18 @@ The user interprets and decides what to do with it.
    blended without saying which is which. The detailed *how* — what was queried, what was
    searched — belongs in the drill-down (see Thinking process accordion, below), not
    necessarily spelled out in the visible answer; the *source* always is.
+7a. **Compensation Signal answers carry an additional, non-negotiable honesty requirement**:
+   not every posting discloses salary, and the postings that do aren't equally reliable —
+   some come from a structured field the source itself provides, others are inferred from
+   free-text job descriptions. The AI never blends these into one undifferentiated number.
+   It leads with the more reliable figures, states how many postings the figure is based on,
+   and if a lower-confidence estimate is included at all, it is explicitly labelled as an
+   estimate, never presented with the same certainty as a disclosed figure (e.g. "Based on
+   14 postings with disclosed salary ranges, Senior Product Designers typically earn
+   $130K–$165K. A further 6 postings mention compensation only within the job description
+   text — those estimates are noisier and are not included in the range above unless you ask
+   for them."). If no role in the queried slice has any disclosed compensation data, the AI
+   says so plainly rather than guessing from seniority alone.
 8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
@@ -121,20 +151,30 @@ The user interprets and decides what to do with it.
 its header: a small chevron link labelled "How this was generated". Collapsed by default.
 When expanded, it shows:
 
-- **Filters applied** — the active role, seniority, location, and time range as tag chips.
-  Role and seniority values follow the canonical taxonomy defined in
-  `design/market-health/job-classification.md`.
+- **Filters applied** — the active role, sub-specialization, seniority, track, location, and
+  time range as tag chips, whichever the question actually used — a broad question shows
+  fewer chips, a narrow one shows more. Role, sub-specialization, seniority, and track values
+  follow the canonical taxonomy defined in `design/market-health/job-classification.md`.
+  Location was previously listed here ahead of the data existing to back it; as of this
+  update it reflects a real, normalized value per posting, not a placeholder.
 - **Context sent to Claude** — the market signal verdict and trend direction, demand signal count,
-  compensation signal count, layoff event count, and the model used
-- **Sources** — for the opening briefing, the data source description. For a follow-up chat
-  turn, this is where the *how* lives: what the platform's data was queried or analysed for
-  (and the data's time window), what — if anything — was searched externally, and why. The
-  visible answer always states which source class it came from (platform data vs. external);
-  this section is where the specific queries and searches behind that are inspectable, for the
-  user who wants to verify rather than just trust. Never shows a source that wasn't actually
-  consulted for that response. This is the same commitment `design/ai-reasoning-panel/experience.md`
-  already makes product-wide (its "Sources & Tools" section) — a follow-up turn's Sources entry
-  here is that same disclosure, applied to this feature's questions.
+  compensation signal count (and, when a compensation question was asked, how many of those
+  postings had disclosed vs. inferred salary data), layoff event count, and the model used
+- **Sources** — for the opening briefing, the data source description — now potentially more
+  than one, since postings are ingested from several company job boards rather than a single
+  provider. When more than one source contributed to what's shown, each is named (e.g.
+  "Company job boards hosted on Greenhouse, Lever, and Ashby"), not collapsed into a generic
+  "job board data" label — the user can tell a Greenhouse-sourced count from a Lever-sourced one
+  if they ask, even though the chart and summary blend all sources together by default. For a
+  follow-up chat turn, this is where the *how* lives: what the platform's data was queried or
+  analysed for (and the data's time window), what — if anything — was searched externally, and
+  why. The visible answer always states which source class it came from (platform data vs.
+  external); this section is where the specific queries and searches behind that are
+  inspectable, for the user who wants to verify rather than just trust. Never shows a source
+  that wasn't actually consulted for that response. This is the same commitment
+  `design/ai-reasoning-panel/experience.md` already makes product-wide (its "Sources & Tools"
+  section) — a follow-up turn's Sources entry here is that same disclosure, applied to this
+  feature's questions.
 - **API calls** — the internal endpoints queried to build the response (briefing turns only)
 
 The accordion is read-only. It cannot be edited or shared. It appears on every AI turn —
@@ -205,6 +245,8 @@ concentrated in the first half of the year — the last three months have been f
 | Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
 | Ask a question in chat, answerable from the platform's data | AI analyses the platform's data specifically for that question (not a fixed canned summary), states the answer's time window, and the accordion shows what was queried. |
 | Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began) | AI says plainly that the platform doesn't have that data, then answers from a real, citable external source (article, report, named study) — never from unverified recall. Response and accordion both make clear it's an external source, not platform data. |
+| Ask a compensation question in chat (e.g. "What should I expect to earn as a Senior Backend Engineer?") | AI answers using disclosed-salary postings first, states how many postings the figure is based on, and — if a lower-confidence, inferred-from-text estimate is included at all — labels it explicitly as an estimate rather than blending it into the headline range. States plainly if no postings in that slice disclose compensation. |
+| Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 
@@ -232,6 +274,29 @@ concentrated in the first half of the year — the last three months have been f
   doesn't have that data or a source for it, rather than inventing a plausible-sounding one.
   Never cite a source — platform data or external — that wasn't actually consulted for that
   response.
+- **Coverage is a curated set of companies, not the whole market:** Postings come from a
+  maintained list of companies whose job boards are hosted on Greenhouse, Lever, or Ashby — not
+  a survey of every employer. This is a real, honest limit, not a bug: large organisations
+  running custom career sites or a legacy ATS aren't captured. The main chart and written
+  summary describe what the tracked companies show ("tech job openings" shorthand, unchanged for
+  readability) without claiming completeness; the accordion's Sources section is where the
+  actual coverage (which platforms, i.e. not "the entire market") is disclosed for anyone who
+  asks. If a user's chat question depends on coverage the tracked company list doesn't include
+  (e.g. "what about jobs at [a company not on any tracked list]?"), the AI says so plainly rather
+  than implying the platform tracks every employer.
+- **No disclosed compensation data for the queried role/slice:** Say so plainly (e.g. "None of
+  the tracked postings for this role currently disclose a salary range"). Never fall back to
+  guessing a figure from seniority or role alone — an absent number is more honest than an
+  invented one.
+- **Compensation data exists but only at low confidence (inferred from free-text job
+  descriptions, not a structured field):** Never presented as if it were a disclosed figure.
+  Either offered only when the user asks for more detail beyond the headline range, or included
+  with an explicit "estimated" label and the reasoning shown in the accordion — never silently
+  blended into the same number as higher-confidence data.
+- **Compensation or narrower demand question depends on location, but the posting's location
+  couldn't be normalized to a specific country/city:** The AI excludes that posting from a
+  location-specific answer rather than guessing its location, and says so if it materially
+  affects the sample size (e.g. "12 of 20 matching postings had a usable location").
 
 ---
 
@@ -243,6 +308,8 @@ concentrated in the first half of the year — the last three months have been f
 | Direction comprehension | Post-task question: "Is the market rising, flat, or declining?" | ≥ 85% correct |
 | Time range switch rate | Analytics — % of sessions where user changes from default range | Track, no target yet |
 | Chat engagement rate | Analytics — % of sessions where user sends at least one follow-up | Track, no target yet |
+| Compensation question rate | Analytics — % of sessions that include at least one salary-related question | Track, no target yet |
+| Confidence comprehension | Post-task question, after a compensation answer: "Was this figure based on disclosed salary data, an estimate, or a mix?" | ≥ 85% correct |
 
 ---
 
@@ -257,6 +324,32 @@ concentrated in the first half of the year — the last three months have been f
   change updates this spec's accordion content (the Sources entry) to carry the new attribution
   rule without resolving which naming is canonical — that reconciliation is out of scope here
   and should be its own future change request.
+- Should a Compensation Signal answer ever include a small inline visual (e.g. a min–max range
+  bar) instead of prose-only numbers? Deliberately left text-only in this update to avoid
+  inventing a new visual component and IA term before there's evidence users want one —
+  revisit once the Compensation question rate metric (below) shows real usage.
+- Should the fixed opening view ever surface Compensation Signal by default (e.g. a salary
+  range annotation on the trend chart) rather than purely on request? Deliberately kept
+  conversation-only in this update, per Principle 3 (Exceptions Define the Experience) — not
+  every user's first question is about pay, and the opening view is already deliberately
+  minimal. Revisit if the Compensation question rate metric shows most sessions ask for it
+  anyway, which would argue for promoting it to the default view.
+
+**Resolved (2026-08-04):** Compensation Signal (salary) is now in scope, reached only through
+follow-up conversation — never added to the fixed opening view. Demand Signal now supports
+sub-specialization, seniority, track, and location as follow-up drill-down dimensions, using
+the "Thinking process" accordion's already-anticipated filter chips (previously listed ahead
+of real data existing to back them). Neither addition changes the opening chart, the written
+summary, or the opening prompt — see `changes/2026-08-04-compensation-signal-gap.md`.
+
+**Resolved (2026-08-03):** Job data now comes from multiple company-job-board sources
+(Greenhouse, Lever, Ashby — see `changes/2026-07-28-multi-source-job-data-ingestion.md`), not a
+single aggregator. This spec's User Flow and Edge Cases were already written in source-agnostic
+language ("the platform's own data," never naming a specific provider) and needed only two
+additions: the Sources accordion entry can now name more than one platform, and a new Edge Case
+makes the curated-company-list coverage limit explicit rather than implied. No change to the
+chart, written summary, or opening prompt — those already describe outcomes ("tech job
+openings"), not where the data comes from.
 
 **Resolved (2026-07-16):** Role categories are fixed in v1 — Designer, Product Manager,
 Engineer. This was already committed by `design/information-architecture.md` Content Taxonomy
