@@ -66,6 +66,15 @@ RETRYABLE_ERROR_RETRY_DELAY = 60
 # failure, and must not be conflated with `stopped_early` below.
 MAX_BATCHES_PER_RUN = 12
 
+# Cross-run daily budget (added 2026-08-05, fixing a real gap: MAX_BATCHES_PER_RUN above
+# used to reset per run invocation, so two "Run now" triggers on the same day could
+# together attempt nearly double the real daily ceiling — narrowly avoided by luck during
+# manual testing, not by design. See backend/specs/market-health/api.md — Business Logic —
+# Classification — Cross-run daily budget. Named/configurable so raising the quota later
+# (e.g. upgrading billing) is a one-line change.
+DAILY_REQUEST_BUDGET = 20   # confirmed Gemini free-tier ceiling
+RETRY_HEADROOM = 8          # reserved across ALL of today's runs combined, not per run
+
 # Denylist, not allowlist — deliberately. An allowlist (only send recognized
 # tech keywords to the LLM) would silently starve the unusual-but-real tech
 # titles design/market-health/job-classification.md's "Raw Title" section
@@ -222,12 +231,22 @@ def _is_retryable_error(exc: Exception) -> bool:
     )
 
 
-async def _complete_with_retry(prompt: str, system: str) -> str:
+async def _complete_with_retry(prompt: str, system: str, request_counter: dict) -> str:
+    """
+    request_counter is a mutable {"requests": int}, incremented once per actual
+    API call attempt — success or failure, including every retry — so the
+    caller can track real request usage against the daily quota even when a
+    batch ultimately fails after exhausting retries. A failed attempt still
+    consumed a real request; `llm_classified` (successful titles) alone would
+    undercount it. See backend/specs/market-health/api.md — Business Logic —
+    Classification — Cross-run daily budget.
+    """
     # Dedicated key, separate from /api/chat's GEMINI_API_KEY — classification
     # and live chat must never compete for the same quota pool (see
     # backend/specs/market-health/api.md — Scheduled ingestion agent).
     provider = providers.gemini(CLASSIFICATION_MODEL, api_key=os.environ["GEMINI_API_KEY_CLASSIFICATION"])
     for attempt in range(1, MAX_RETRIES + 1):
+        request_counter["requests"] += 1
         try:
             return await provider.complete(prompt=prompt, system=system)
         except Exception as exc:
@@ -241,16 +260,17 @@ async def _complete_with_retry(prompt: str, system: str) -> str:
     raise RuntimeError("unreachable")  # loop always returns or raises
 
 
-async def classify_batch(postings: list[dict]) -> list[dict]:
+async def classify_batch(postings: list[dict], request_counter: dict) -> list[dict]:
     """
     Classify a batch of up to BATCH_SIZE {id, title} postings.
     Returns one validated classification dict per input posting, in the same
     order requested — postings the model omits are classified "other".
+    `request_counter` — see _complete_with_retry.
     """
     if not postings:
         return []
 
-    response_text = await _complete_with_retry(_build_prompt(postings), SYSTEM_INSTRUCTION)
+    response_text = await _complete_with_retry(_build_prompt(postings), SYSTEM_INSTRUCTION, request_counter)
     parsed = {entry.get("id"): _validate(entry) for entry in _parse_response(response_text)}
 
     return [
@@ -296,14 +316,24 @@ def insert_classifications(classifications: list[dict]) -> None:
             )
 
 
-async def classify_postings(postings: list[dict]) -> dict:
+async def classify_postings(postings: list[dict], already_used_today: int = 0) -> dict:
     """
     Classify and store an arbitrary-length list of {id, title} postings.
     Returns stats for the IngestionRun record: {cache_hits,
     heuristic_filtered, llm_classified, other_count, total_classified,
-    stopped_early, budget_reached}. `postings` is expected oldest-first (see
-    raw_postings.get_all_unclassified) so that when demand exceeds this run's
-    budget, the longest-waiting backlog is what actually gets classified.
+    stopped_early, budget_reached, llm_requests_used}. `postings` is expected
+    oldest-first (see raw_postings.get_all_unclassified) so that when demand
+    exceeds this run's budget, the longest-waiting backlog is what actually
+    gets classified.
+
+    `already_used_today` — real LLM requests already made by other runs today
+    (see ingestion_runs.get_requests_used_today), summed across all of today's
+    runs, not just this one. This run's effective batch ceiling is
+    `min(MAX_BATCHES_PER_RUN, DAILY_REQUEST_BUDGET - RETRY_HEADROOM -
+    already_used_today)`, floored at 0 — fixes a real gap where multiple
+    same-day runs each got their own fresh MAX_BATCHES_PER_RUN allowance,
+    together exceeding the real daily quota. See backend/specs/market-health/
+    api.md — Business Logic — Classification — Cross-run daily budget.
 
     Three layers run before any LLM call, since classification depends only
     on title (see _get_title_cache):
@@ -331,7 +361,7 @@ async def classify_postings(postings: list[dict]) -> dict:
     empty_stats = {
         "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
         "other_count": 0, "total_classified": 0,
-        "stopped_early": False, "budget_reached": False,
+        "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
     }
     if not postings:
         return empty_stats
@@ -390,14 +420,26 @@ async def classify_postings(postings: list[dict]) -> dict:
     stopped_early = False
     budget_reached = False
     batches_attempted = 0
+    request_counter = {"requests": 0}
+
+    # Cross-run daily clamp — see backend/specs/market-health/api.md — Business
+    # Logic — Classification — Cross-run daily budget. Floored at 0: if prior
+    # runs today already used up the budget, this run attempts zero LLM
+    # batches (cache hits and heuristic filtering above still happen for free).
+    effective_batch_cap = max(0, min(
+        MAX_BATCHES_PER_RUN,
+        DAILY_REQUEST_BUDGET - RETRY_HEADROOM - already_used_today,
+    ))
 
     num_batches = (len(llm_titles) + BATCH_SIZE - 1) // BATCH_SIZE
     for batch_num, i in enumerate(range(0, len(llm_titles), BATCH_SIZE), start=1):
-        if batches_attempted >= MAX_BATCHES_PER_RUN:
+        if batches_attempted >= effective_batch_cap:
             budget_reached = True
             logger.info(
-                "classify_postings: reached MAX_BATCHES_PER_RUN (%d), %d/%d batches left for "
-                "a future run", MAX_BATCHES_PER_RUN, num_batches - batches_attempted, num_batches,
+                "classify_postings: reached today's effective batch cap (%d, already used "
+                "%d/%d of the daily budget), %d/%d batches left for a future run",
+                effective_batch_cap, already_used_today, DAILY_REQUEST_BUDGET,
+                num_batches - batches_attempted, num_batches,
             )
             break
         title_batch = llm_titles[i : i + BATCH_SIZE]
@@ -405,7 +447,7 @@ async def classify_postings(postings: list[dict]) -> dict:
             # classify_batch takes {id, title} pairs; here each unique title
             # stands in as its own id since we're classifying titles, not
             # individual postings.
-            results = await classify_batch([{"id": t, "title": t} for t in title_batch])
+            results = await classify_batch([{"id": t, "title": t} for t in title_batch], request_counter)
         except Exception as exc:
             logger.error(
                 "classify batch %d/%d failed, stopping this run early (already-classified "
@@ -420,7 +462,7 @@ async def classify_postings(postings: list[dict]) -> dict:
         other_count += _count_other(fresh_rows)
         batches_attempted += 1
         logger.info("classified batch %d/%d (%d unique titles)", batch_num, num_batches, len(title_batch))
-        if batch_num < num_batches and batches_attempted < MAX_BATCHES_PER_RUN:
+        if batch_num < num_batches and batches_attempted < effective_batch_cap:
             await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
 
     return {
@@ -431,4 +473,5 @@ async def classify_postings(postings: list[dict]) -> dict:
         "total_classified": cache_hits + heuristic_filtered + llm_classified,
         "stopped_early": stopped_early,
         "budget_reached": budget_reached,
+        "llm_requests_used": request_counter["requests"],
     }

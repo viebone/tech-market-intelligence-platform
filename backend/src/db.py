@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
 -- startup, same pattern as raw_postings' 2026-08-03 migration above.
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS heuristic_filtered INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS budget_reached BOOLEAN NOT NULL DEFAULT false;
+
+-- Cross-run daily budget migration (2026-08-05): ingestion_runs already has
+-- live production rows, so this evolves the existing table rather than
+-- assuming a fresh CREATE. See backend/specs/market-health/api.md — Data
+-- Models — IngestionRun. Idempotent — safe to run on every startup.
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS llm_requests_used INTEGER NOT NULL DEFAULT 0;
 """
 
 

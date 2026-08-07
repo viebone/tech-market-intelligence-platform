@@ -27,9 +27,9 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from classification import classify_postings
+from classification import DAILY_REQUEST_BUDGET, classify_postings
 from db import init_schema
-from ingestion_runs import record_run
+from ingestion_runs import get_requests_used_today, record_run
 from raw_postings import get_all_unclassified, insert_new_postings
 from sources import ALL_SOURCE_ADAPTERS
 from sources.base import SourceFetchError
@@ -87,7 +87,10 @@ async def run() -> None:
 
         unclassified = get_all_unclassified()
         logger.info("classify: %d unclassified postings across all sources", len(unclassified))
-        stats = await classify_postings(unclassified)
+        already_used_today = get_requests_used_today()
+        logger.info("classify: %d/%d of today's LLM request budget already used by prior runs",
+                    already_used_today, DAILY_REQUEST_BUDGET)
+        stats = await classify_postings(unclassified, already_used_today=already_used_today)
 
     except Exception as exc:
         # Something outside per-company/per-adapter fault isolation went
@@ -121,6 +124,7 @@ async def run() -> None:
         llm_classified=stats["llm_classified"],
         other_count=stats["other_count"],
         budget_reached=stats["budget_reached"],
+        llm_requests_used=stats["llm_requests_used"],
     )
     logger.info("ingestion run recorded: status=%s", status)
 

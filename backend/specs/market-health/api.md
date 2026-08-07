@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: draft
 created: 2026-06-13
-updated: 2026-08-04
+updated: 2026-08-05
 ---
 
 # Market Health — Backend Architecture Spec
@@ -60,7 +60,7 @@ its prior state, so nothing here is ever mutated after insert.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `str` (PK) | The dedupe key — a posting is fetched and stored at most once, regardless of how many daily ingestion runs re-surface it while still live. For rows from an adapter (Greenhouse/Lever/Ashby, going forward), `id` is derived as `f"{source}:{source_ref}"` — e.g. `"greenhouse:acme-corp/123456"` — so uniqueness never depends on a source's native id being globally unique by itself. **Legacy exception**: rows ingested before 2026-08-03 keep their original bare Adzuna job id (immutable — never rewritten); see the migration note below for how they're reconciled with `source`/`source_ref`. |
+| `id` | `str` (PK) | The dedupe key — a posting is fetched and stored at most once, regardless of how many daily ingestion runs re-surface it while still live. `id` is derived as `f"{source}:{source_ref}"` — e.g. `"greenhouse:acme-corp/123456"` — so uniqueness never depends on a source's native id being globally unique by itself. **Adzuna-era rows (which used a bare, undelimited id) were fully removed 2026-08-05** (`changes/2026-08-05-adzuna-data-removal.md`, a license-driven data deletion, not a schema change) — every current row uses this `source:source_ref` shape. **Load-bearing invariant, verified 2026-08-05**: "only new postings are ever stored" is enforced at the database level via this `PRIMARY KEY`, not just application logic — `raw_postings.insert_new_postings()`'s `existing_ids()` pre-check is an efficiency optimization (skip work we already know is redundant), but the constraint itself is what actually guarantees no duplicate row can ever exist, even if that pre-check were ever bypassed by a future bug. Confirmed directly against production data: zero duplicate ids, and zero cases of the same posting's full content or description text appearing under two different ids (checked by hash comparison, not just by id or title). |
 | `source` | `str` | Which adapter produced this row: `"greenhouse"`, `"lever"`, `"ashby"` (closed set, validated in application code the same way `role_category` is — see Business Logic). `"adzuna"` for legacy rows (backfilled, no longer a live source). |
 | `source_ref` | `str` | The posting's identifier within its source, scoped to be unique on its own within that source — `f"{company}/{native_id}"` for all three ATS adapters, since none of the three platforms guarantees its native id is unique *across* companies on that platform (only within one company's board), only that it's unique *within* one company's board. `NULL` for legacy Adzuna rows (backfilled to equal `id`; see migration note). |
 | `company` | `str \| None` | The company whose job board produced this row — the Greenhouse `board_token`, Lever `site`, or Ashby job-board name used to fetch it. `NULL` for legacy Adzuna rows, which were never fetched per-company (see `role_family_query` below). |
@@ -103,7 +103,7 @@ without re-fetching anything.
 | Field | Type | Description |
 |---|---|---|
 | `id` | `int` (PK) | |
-| `posting_id` | `str` (FK → `raw_postings.id`) | |
+| `posting_id` | `str` (FK → `raw_postings.id`) | **Load-bearing invariant, verified 2026-08-05**: "a posting is classified at most once, ever" is enforced at the database level via a `UNIQUE` constraint on this column, not just application logic — `get_all_unclassified()`'s `LEFT JOIN ... WHERE c.posting_id IS NULL` filter is an efficiency optimization (never send an already-classified title to the LLM again), but the constraint is what actually prevents a duplicate classification row even if that filter were ever bypassed. Confirmed directly against production data: zero postings with more than one classification row. |
 | `role_category` | `"Designer" \| "Product Manager" \| "Engineer" \| "other"` | Closed set from `job-classification.md`. `"other"` is the escape hatch for postings that don't genuinely fit. |
 | `sub_specialization` | `str \| None` | e.g. `"UX Designer"`, `"Backend Engineer"`. `None` when `role_category` is `"other"`. |
 | `seniority` | `"entry" \| "junior" \| "mid" \| "senior" \| "lead" \| "principal" \| "manager" \| "director" \| "vp" \| "exec" \| None` | `None` when `role_category` is `"other"`. |
@@ -132,6 +132,7 @@ human happened to be watching in a terminal.
 | `heuristic_filtered` | `int` | **Added 2026-08-04.** Titles resolved straight to `other` by the pre-classification denylist filter — zero LLM calls (see Business Logic — Classification — Pre-classification filter) |
 | `llm_classified` | `int` | Titles that required a fresh LLM call — excludes both cache hits and heuristic-filtered titles |
 | `budget_reached` | `bool` | **Added 2026-08-04.** `true` if this run stopped because `MAX_BATCHES_PER_RUN` was reached with no errors (see Business Logic — Classification — Per-run classification budget), not because the backlog was exhausted. Distinguishes "still more backlog waiting for tomorrow" from "fully caught up today" without needing to infer it from counts. |
+| `llm_requests_used` | `int` | **Added 2026-08-05.** The actual count of LLM requests made this run, including retries — deliberately distinct from `llm_classified`, which counts successfully-classified unique titles, not requests. A batch that needed 3 retries before succeeding consumes 3 requests against the real daily quota but produces only 1 batch's worth of classifications; `llm_classified` alone would undercount real usage. This is the field the cross-run daily budget (see Business Logic — Classification — Per-run classification budget) is actually computed from. |
 | `other_count` | `int` | |
 | `other_rate` | `float` | `other_count / total_classified` for this run, `0.0` if nothing was classified |
 | `anomalies` | `JSON` | List of flagged issue strings (see Business Logic — Anomaly flagging); empty list if none |
@@ -465,17 +466,39 @@ day's new arrivals, leaving a permanent gap instead of one that closes over the 
 days.
 
 **Per-run classification budget — stopping on purpose is success, not degradation.** A
-single run attempts at most `MAX_BATCHES_PER_RUN` batches (an implementation constant sized
-with headroom under the 20-request/day ceiling, leaving room for this-run retries on
-transient errors — see Tech Decisions), not "every unclassified title that exists." Reaching
-that budget with zero errors sets `budget_reached: true` (Data Models — IngestionRun) and
-`status: "success"` — the run did exactly what it was designed to do. This is a deliberate
-redefinition: previously, running out of anything (backlog or quota) short of "classified
-everything" had no vocabulary except the failure-flavored `"partial"`. Under a real daily
-ceiling, "classified everything" is no longer an achievable definition of success, so
-conflating a by-design stopping point with a degraded one would make every future run look
-broken when it's actually working as intended. `status: "partial"` remains reserved
-strictly for a batch that fails after exhausting retries on a genuine, non-budget error (see
+single run attempts at most `MAX_BATCHES_PER_RUN` batches, not "every unclassified title
+that exists." Reaching that budget with zero errors sets `budget_reached: true` (Data
+Models — IngestionRun) and `status: "success"` — the run did exactly what it was designed
+to do. This is a deliberate redefinition: previously, running out of anything (backlog or
+quota) short of "classified everything" had no vocabulary except the failure-flavored
+`"partial"`. Under a real daily ceiling, "classified everything" is no longer an achievable
+definition of success, so conflating a by-design stopping point with a degraded one would
+make every future run look broken when it's actually working as intended. `status:
+"partial"` remains reserved strictly for a batch that fails after exhausting retries on a
+genuine, non-budget error (see
+
+**Cross-run daily budget — corrected 2026-08-05, a real gap, not a hypothetical one.**
+`MAX_BATCHES_PER_RUN` was originally sized "with headroom under the 20-request/day
+ceiling" — true only if exactly one run happens per calendar day. It does not: manual "Run
+now" testing repeatedly triggered multiple runs on the same day, and each run independently
+got its own fresh batch allowance, meaning two runs in one day could together attempt
+nearly double the real daily ceiling. This directly contradicted the budget's own stated
+purpose and was narrowly avoided by luck during testing, not by design. Fixed via two
+explicit, configurable constants (see Tech Decisions for exact values):
+- `DAILY_REQUEST_BUDGET` — the confirmed Gemini free-tier ceiling (20). Raise this if the
+  classification key's billing plan is ever upgraded.
+- `RETRY_HEADROOM` — reserved across **all** of today's runs combined, not per run, for
+  transient-error retries (Retry policy, above).
+
+A given run's actual ceiling is now dynamic: `min(MAX_BATCHES_PER_RUN, DAILY_REQUEST_BUDGET
+- RETRY_HEADROOM - already_used_today)`, where `already_used_today` is the sum of
+`llm_requests_used` (Data Models — IngestionRun) across every run since the daily boundary.
+UTC calendar day is used as that boundary — Gemini's exact quota reset time isn't
+documented/confirmed, so this is a deliberately conservative proxy (a safety margin, not a
+precision claim), consistent with this pipeline's existing bias toward under-using the
+budget rather than assuming the most generous interpretation of an unconfirmed external
+constraint. A second same-day run now correctly sees a reduced (or zero) remaining budget
+rather than a fresh 12-batch allowance.
 Retry policy, above) — the distinction that matters operationally is "we chose to stop"
 versus "something is actually wrong."
 
@@ -745,6 +768,13 @@ ingestion agent for why these are kept separate.
   `MAX_BATCHES_PER_RUN` should leave enough headroom under 20 requests/day to absorb this-run
   retries on transient errors (Business Logic — Classification — Retry policy) without itself
   causing a `429` — sizing it at the full 20 would leave zero margin for a single retry.
+- **`DAILY_REQUEST_BUDGET = 20` and `RETRY_HEADROOM = 8` (added 2026-08-05)** — named,
+  configurable constants backing the cross-run daily budget (Business Logic —
+  Classification — Cross-run daily budget). Named explicitly (not left as inline numbers)
+  specifically so raising the quota later — e.g. upgrading the classification key's billing
+  plan — is a one-line change, not a re-derivation. `RETRY_HEADROOM = 8` mirrors
+  `MAX_BATCHES_PER_RUN = 12`'s existing 20/12/8 split (12 usable, 8 reserved) — same ratio,
+  now applied across a day's runs instead of assumed for a single one.
 - `raw_postings.raw_response` is stored as a JSON/JSONB column — store each source's response
   verbatim, do not project it down to the fields we currently use, since it is the only
   chance to ever capture a given posting.

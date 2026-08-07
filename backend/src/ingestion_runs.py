@@ -83,6 +83,27 @@ def detect_anomalies(terms_processed: list[dict], other_rate: float, total_class
     return anomalies
 
 
+def get_requests_used_today() -> int:
+    """
+    Sum of llm_requests_used across every run started today (UTC calendar
+    day) — feeds classify_postings()'s already_used_today parameter so a
+    second same-day run sees a reduced (or zero) remaining budget instead of
+    a fresh MAX_BATCHES_PER_RUN allowance. UTC calendar day is a deliberately
+    conservative proxy for Gemini's actual (undocumented) quota reset time —
+    see backend/specs/market-health/api.md — Business Logic — Classification
+    — Cross-run daily budget.
+    """
+    with get_connection() as conn:
+        total = conn.execute(
+            """
+            SELECT COALESCE(SUM(llm_requests_used), 0)
+            FROM ingestion_runs
+            WHERE started_at::date = (now() AT TIME ZONE 'UTC')::date
+            """
+        ).fetchone()[0]
+    return total
+
+
 def record_run(
     started_at: datetime,
     completed_at: datetime | None,
@@ -96,6 +117,7 @@ def record_run(
     llm_classified: int = 0,
     other_count: int = 0,
     budget_reached: bool = False,
+    llm_requests_used: int = 0,
     error_message: str | None = None,
 ) -> None:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -109,14 +131,14 @@ def record_run(
             INSERT INTO ingestion_runs
                 (started_at, completed_at, status, terms_processed, total_fetched,
                  total_inserted, total_classified, cache_hits, heuristic_filtered,
-                 llm_classified, other_count, other_rate, budget_reached, anomalies,
-                 error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 llm_classified, other_count, other_rate, budget_reached,
+                 llm_requests_used, anomalies, error_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 started_at, completed_at, status, json.dumps(terms_processed), total_fetched,
                 total_inserted, total_classified, cache_hits, heuristic_filtered,
-                llm_classified, other_count, other_rate, budget_reached, json.dumps(anomalies),
-                error_message,
+                llm_classified, other_count, other_rate, budget_reached,
+                llm_requests_used, json.dumps(anomalies), error_message,
             ),
         )
