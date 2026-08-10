@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-08-04
+updated: 2026-08-09
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -144,6 +144,34 @@ language from the experience spec's User Flow 7a) are plain prose text streamed 
 `AIMessage`'s existing follow-up markdown rendering — same as any other follow-up answer,
 no new component. Same pattern as the two reviews above: a backend-and-design change fully
 absorbed by existing generic frontend infrastructure.
+
+**Reviewed 2026-08-09** (change: Requirements Signal + industry tagging + synthesis
+questions, `changes/2026-08-09-skills-and-industry-signal.md`): confirmed no frontend
+changes needed — but this one required tracing the *specific* rendering concern (a
+two-part, "data then judgment, never blended" answer) against the real component, not just
+the general pattern of the three reviews above. Two real findings from that trace:
+
+1. **This file's component names are stale** (as the disclaimer at the top of this
+   document already warns) — there is no `AIMessage.tsx`. The opening turn is
+   `MarketBriefingMessage.tsx`; follow-up turns are rendered inline in
+   `ConversationThread.tsx`, both wrapped by `AITurn.tsx`. Noted here rather than silently
+   worked around, consistent with this file's standing disclaimer that a full
+   spec-vs-code reconciliation is a separate future pass, not something to do piecemeal.
+2. **Follow-up answers are not markdown-rendered at all** — `ConversationThread.tsx`
+   renders `assistant.content` as plain text in a single `<p className="...
+   whitespace-pre-wrap">`, no markdown library, no rich formatting. This actually answers
+   the open question cleanly: a two-part synthesis answer's separation is achieved by the
+   model writing two paragraphs (a blank line between them), which `whitespace-pre-wrap`
+   already renders as a visible paragraph break — the same mechanism that already displays
+   every other multi-sentence answer today. The "never blended" requirement
+   (`design/market-health/experience.md` User Flow 7b) is a **content/wording discipline**
+   enforced by the synthesis-stage system prompt (`backend/specs/market-health/api.md`),
+   not a rendering capability this frontend lacks. `query_requirements_data` (the third
+   query tool) needs no frontend change for the same reason as the other two — it's
+   consumed server-side only.
+
+Same underlying pattern as the three reviews above, arrived at with more scrutiny given the
+genuinely new *kind* of answer involved.
 
 ---
 

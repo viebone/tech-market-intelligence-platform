@@ -104,6 +104,25 @@ def get_requests_used_today() -> int:
     return total
 
 
+def get_requirements_requests_used_today() -> int:
+    """
+    Same purpose and mechanism as get_requests_used_today(), scoped to
+    requirements_requests_used instead — this pipeline's own, separate daily
+    budget (Business Logic — Requirements extraction). Deliberately not
+    combined with the classification query: the two budgets must stay
+    independently reasoned about, not summed together.
+    """
+    with get_connection() as conn:
+        total = conn.execute(
+            """
+            SELECT COALESCE(SUM(requirements_requests_used), 0)
+            FROM ingestion_runs
+            WHERE started_at::date = (now() AT TIME ZONE 'UTC')::date
+            """
+        ).fetchone()[0]
+    return total
+
+
 def record_run(
     started_at: datetime,
     completed_at: datetime | None,
@@ -118,6 +137,9 @@ def record_run(
     other_count: int = 0,
     budget_reached: bool = False,
     llm_requests_used: int = 0,
+    requirements_extracted: int = 0,
+    requirements_requests_used: int = 0,
+    requirements_budget_reached: bool = False,
     error_message: str | None = None,
 ) -> None:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -132,13 +154,15 @@ def record_run(
                 (started_at, completed_at, status, terms_processed, total_fetched,
                  total_inserted, total_classified, cache_hits, heuristic_filtered,
                  llm_classified, other_count, other_rate, budget_reached,
-                 llm_requests_used, anomalies, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 llm_requests_used, requirements_extracted, requirements_requests_used,
+                 requirements_budget_reached, anomalies, error_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 started_at, completed_at, status, json.dumps(terms_processed), total_fetched,
                 total_inserted, total_classified, cache_hits, heuristic_filtered,
                 llm_classified, other_count, other_rate, budget_reached,
-                llm_requests_used, json.dumps(anomalies), error_message,
+                llm_requests_used, requirements_extracted, requirements_requests_used,
+                requirements_budget_reached, json.dumps(anomalies), error_message,
             ),
         )

@@ -79,10 +79,51 @@ ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_currency TEXT;
 ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_confidence TEXT;
 ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_extraction_method TEXT;
 
+-- Skills/industry migration (2026-08-09): raw_postings already has live
+-- production rows, same evolve-not-recreate pattern. See
+-- backend/specs/market-health/api.md — Data Models — RawPosting (migration
+-- note 2026-08-09). No backfill — industry is populated at ingestion time
+-- going forward; existing rows keep it NULL (never re-fetched, per the id
+-- dedupe invariant, so there is no future moment that would fill it in).
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS industry TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_raw_postings_fetched_at ON raw_postings (fetched_at);
 CREATE INDEX IF NOT EXISTS idx_raw_postings_source ON raw_postings (source);
 CREATE INDEX IF NOT EXISTS idx_raw_postings_country ON raw_postings (country);
 CREATE INDEX IF NOT EXISTS idx_classifications_role_category ON classifications (role_category);
+
+-- Requirements Signal tables (2026-08-09): brand new tables, not evolving an
+-- existing one — plain CREATE TABLE IF NOT EXISTS is sufficient, no ALTER
+-- TABLE dance needed. See backend/specs/market-health/api.md — Data Models —
+-- PostingRequirements/PostingSkill/PostingLanguage.
+CREATE TABLE IF NOT EXISTS posting_requirements (
+    posting_id             TEXT PRIMARY KEY REFERENCES raw_postings(id),
+    education_level        TEXT NOT NULL DEFAULT 'not_mentioned',
+    responsibilities_summary TEXT,
+    other_requirements     TEXT,
+    model                  TEXT NOT NULL,
+    extracted_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS posting_skills (
+    id                 SERIAL PRIMARY KEY,
+    posting_id         TEXT NOT NULL REFERENCES raw_postings(id),
+    skill              TEXT NOT NULL,
+    requirement_level  TEXT NOT NULL,
+    UNIQUE (posting_id, skill)
+);
+
+CREATE TABLE IF NOT EXISTS posting_languages (
+    id                 SERIAL PRIMARY KEY,
+    posting_id         TEXT NOT NULL REFERENCES raw_postings(id),
+    language           TEXT NOT NULL,
+    requirement_level  TEXT NOT NULL,
+    UNIQUE (posting_id, language)
+);
+
+CREATE INDEX IF NOT EXISTS idx_posting_skills_skill ON posting_skills (skill);
+CREATE INDEX IF NOT EXISTS idx_posting_skills_posting_id ON posting_skills (posting_id);
+CREATE INDEX IF NOT EXISTS idx_posting_languages_posting_id ON posting_languages (posting_id);
 
 CREATE TABLE IF NOT EXISTS ingestion_runs (
     id                 SERIAL PRIMARY KEY,
@@ -114,6 +155,13 @@ ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS budget_reached BOOLEAN NOT N
 -- assuming a fresh CREATE. See backend/specs/market-health/api.md — Data
 -- Models — IngestionRun. Idempotent — safe to run on every startup.
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS llm_requests_used INTEGER NOT NULL DEFAULT 0;
+
+-- Requirements extraction migration (2026-08-09): same idempotent pattern,
+-- kept separate from the classification fields above (Business Logic —
+-- Requirements extraction — own dedicated budget, not a shared pool).
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_extracted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_requests_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_budget_reached BOOLEAN NOT NULL DEFAULT false;
 """
 
 

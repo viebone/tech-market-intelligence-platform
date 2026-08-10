@@ -44,7 +44,7 @@ from ai_interaction_settings import (
     TOOL_STAGE_HISTORY_MESSAGES,
 )
 from market_health import _resolve_signal, _filter_demand, _filter_compensation, _serialise
-from market_query import query_compensation_data, query_market_data
+from market_query import query_compensation_data, query_market_data, query_requirements_data
 from mock_data import LAYOFF_SIGNALS
 from models import ReasoningStep, ReasoningTrace, SourceAccess
 
@@ -96,14 +96,19 @@ def _render_transcript(messages: list[ChatMessage]) -> str:
 # ---------------------------------------------------------------------------
 
 _DATA_STAGE_SYSTEM_TEMPLATE = """You are a market intelligence assistant for tech professionals. \
-Today's date is {today}. You have two tools to examine real, live-classified job posting data \
-— call whichever fits (or both) as needed to answer the user's question with real numbers:
+Today's date is {today}. You have three tools to examine real, live-classified job posting \
+data — call whichever fit (or several) as needed to answer the user's question with real numbers:
 - query_market_data: demand/volume questions — counts, trends, comparisons across role, \
 sub-specialization, seniority, track, or country.
 - query_compensation_data: salary/pay questions. Never blend its structured_count and \
 parsed_count figures into one number — lead with the structured (disclosed) figure when it \
 exists, mention the parsed (estimated) one separately and label it as an estimate, and say \
 plainly if neither exists rather than guessing.
+- query_requirements_data: skills/education/language questions, and the data half of any \
+synthesis question ("should I learn X", "what should I focus on"). Every extracted field is \
+an interpretation of free text, not a verified fact — report findings as proportions of \
+total_matching ("42% of postings mention X"), never as absolute claims. If total_matching is \
+small, say so and be cautious about drawing a firm conclusion from it.
 
 Below is the recent conversation. Answer the LAST message in it, using the earlier messages \
 only to understand what a short reply like "yes please" or "what about X" is referring to.
@@ -140,7 +145,7 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
     response = await provider.complete_with_tools(
         prompt=_render_transcript(recent_messages),
         system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
-        tools=[query_market_data, query_compensation_data],
+        tools=[query_market_data, query_compensation_data, query_requirements_data],
     )
     return response.text, response.tool_calls
 
@@ -219,6 +224,15 @@ def _build_synthesis_system(
         "If RAW PLATFORM DATA is empty and no external search was done, say plainly that you "
         "don't have enough information rather than guessing. Never cite a source that isn't "
         "listed above.",
+        "",
+        "If the question asks for a judgment or recommendation (e.g. \"should I learn X\", "
+        "\"what should I focus on\") rather than a plain lookup, and query_requirements_data "
+        "was called: write the answer in two clearly separated parts — first the underlying "
+        "data (the actual proportions/counts), then, separated by its own sentence or "
+        "paragraph break, your judgment built on that data. Never blend the two into one "
+        "statement. If that tool's total_matching is too small to support a confident "
+        "conclusion, give the data alone and say plainly that the sample is too small to "
+        "recommend anything from it — do not guess a recommendation anyway.",
     ]
     return "\n".join(sections)
 

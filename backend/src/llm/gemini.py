@@ -8,6 +8,16 @@ from google.genai import types
 
 from llm.base import GroundedResponse, GroundingSource, ToolCall, ToolCallResponse
 
+# Models confirmed (at runtime, in this process) to reject thinking_budget=0
+# outright — see complete()'s fallback. Remembered process-wide, keyed by
+# model name, so once a model's rejection is known, every subsequent call
+# skips straight to budget=1 instead of spending a real API call (and real
+# daily quota) on an attempt already known to fail. A fresh GeminiAdapter is
+# constructed per call site (see requirements.py's _complete_with_retry), so
+# this can't live on the instance — it has to be module-level to actually
+# save anything across calls.
+_MODELS_REJECTING_ZERO_THINKING_BUDGET: set[str] = set()
+
 
 class GeminiAdapter:
     """Adapter for the Google Gemini API (google-genai SDK)."""
@@ -52,17 +62,39 @@ class GeminiAdapter:
         # classification response to a few tokens, well before the output
         # budget's worth of real text. Left enabled for stream(), which is
         # used for higher-quality conversational answers.
+        starting_budget = 1 if self._model in _MODELS_REJECTING_ZERO_THINKING_BUDGET else 0
         config_kwargs: dict = {
             "max_output_tokens": 8192,
-            "thinking_config": types.ThinkingConfig(thinking_budget=0),
+            "thinking_config": types.ThinkingConfig(thinking_budget=starting_budget),
         }
         if system:
             config_kwargs["system_instruction"] = system
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=prompt,
-            config=types.GenerateContentConfig(**config_kwargs),
-        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+        except Exception as exc:
+            # Some newer model generations reject thinking_budget=0 outright
+            # (400 INVALID_ARGUMENT) — confirmed empirically on gemini-flash-latest,
+            # which only accepts budget=0 disabled entirely; a minimal non-zero
+            # budget (1) is the closest equivalent it does accept. gemini-2.5-flash
+            # never hits this branch since budget=0 already succeeds for it.
+            if starting_budget != 0 or "400" not in str(exc) or "invalid_argument" not in str(exc).lower():
+                raise
+            # Remember this model rejects budget=0 so every later call (this
+            # process, any adapter instance) skips straight to budget=1 —
+            # each fallback here is a second real API call against the same
+            # daily quota as the first, so repeating the doomed attempt on
+            # every single call effectively halves real throughput per day.
+            _MODELS_REJECTING_ZERO_THINKING_BUDGET.add(self._model)
+            config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=1)
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
         return response.text or ""
 
     async def complete_with_tools(

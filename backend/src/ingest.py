@@ -29,8 +29,13 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from classification import DAILY_REQUEST_BUDGET, classify_postings
 from db import init_schema
-from ingestion_runs import get_requests_used_today, record_run
-from raw_postings import get_all_unclassified, insert_new_postings
+from ingestion_runs import (
+    get_requests_used_today,
+    get_requirements_requests_used_today,
+    record_run,
+)
+from raw_postings import get_all_needing_requirements, get_all_unclassified, insert_new_postings
+from requirements import REQUIREMENTS_DAILY_REQUEST_BUDGET, extract_requirements
 from sources import ALL_SOURCE_ADAPTERS
 from sources.base import SourceFetchError
 
@@ -92,6 +97,22 @@ async def run() -> None:
                     already_used_today, DAILY_REQUEST_BUDGET)
         stats = await classify_postings(unclassified, already_used_today=already_used_today)
 
+        # Requirements extraction runs as its own phase after classification,
+        # only over postings classification already confirmed are real roles
+        # — see backend/specs/market-health/api.md — Business Logic —
+        # Requirements extraction. Own dedicated daily budget, tracked
+        # separately from classification's.
+        needing_requirements = get_all_needing_requirements()
+        logger.info("requirements: %d postings need extraction", len(needing_requirements))
+        requirements_already_used_today = get_requirements_requests_used_today()
+        logger.info(
+            "requirements: %d/%d of today's requirements request budget already used by prior runs",
+            requirements_already_used_today, REQUIREMENTS_DAILY_REQUEST_BUDGET,
+        )
+        requirements_stats = await extract_requirements(
+            needing_requirements, already_used_today=requirements_already_used_today
+        )
+
     except Exception as exc:
         # Something outside per-company/per-adapter fault isolation went
         # wrong (e.g. the database itself is unreachable) — this run
@@ -109,8 +130,11 @@ async def run() -> None:
     # budget_reached alone is a clean, intentional stop, not a degradation —
     # only an actual error (a failed company or an exhausted-retries batch)
     # makes this "partial". See backend/specs/market-health/api.md — Business
-    # Logic — Classification — Per-run classification budget.
-    status = "partial" if (any_company_failed or stats["stopped_early"]) else "success"
+    # Logic — Classification — Per-run classification budget. Same rule
+    # applies to requirements_stats["stopped_early"].
+    status = "partial" if (
+        any_company_failed or stats["stopped_early"] or requirements_stats["stopped_early"]
+    ) else "success"
     record_run(
         started_at=started_at,
         completed_at=datetime.now(timezone.utc),
@@ -125,6 +149,9 @@ async def run() -> None:
         other_count=stats["other_count"],
         budget_reached=stats["budget_reached"],
         llm_requests_used=stats["llm_requests_used"],
+        requirements_extracted=requirements_stats["requirements_extracted"],
+        requirements_requests_used=requirements_stats["requirements_requests_used"],
+        requirements_budget_reached=requirements_stats["requirements_budget_reached"],
     )
     logger.info("ingestion run recorded: status=%s", status)
 

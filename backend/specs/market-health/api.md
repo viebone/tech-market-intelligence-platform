@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: draft
 created: 2026-06-13
-updated: 2026-08-05
+updated: 2026-08-09
 ---
 
 # Market Health — Backend Architecture Spec
@@ -76,6 +76,7 @@ its prior state, so nothing here is ever mutated after insert.
 | `salary_currency` | `str \| None` | ISO currency code (e.g. `"USD"`), `NULL` iff `salary_min`/`salary_max` are `NULL`. |
 | `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
 | `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/seniority/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
+| `industry` | `str \| None` | The tracked company's industry (e.g. `"Fintech"`, `"AI"`, `"Social Media"`) — a static, curated lookup keyed by `company`, **not** an LLM inference (see Business Logic — Industry tagging). `NULL` for any company not yet tagged in the lookup; never guessed. |
 
 **Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
 the already-live `raw_postings` table via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (not just
@@ -95,6 +96,12 @@ backfill pass is deliberately scoped as its own change. Still consistent with th
 immutability rule: these are derived-once, source-agnostic-shape columns filled in at the
 same moment a row is first inserted, not a later mutation of an existing row's captured data.
 
+**Migration note (2026-08-09).** `industry` is a new nullable column, same pattern. No
+backfill — populated going forward at ingestion time from the static lookup (Business
+Logic — Industry tagging); existing rows keep it `NULL` until re-fetched (they won't be,
+since postings aren't re-fetched once stored — see the `id` dedupe invariant above) or a
+backfill is deliberately scoped separately.
+
 ### Classification (`classifications` table)
 Keyed to `raw_postings`, one row per posting. Kept separate from `RawPosting` so
 classification logic can be revised and re-run against everything already captured,
@@ -111,6 +118,51 @@ without re-fetching anything.
 | `taxonomy_version` | `str` | The version of `job-classification.md` active when this row was produced. Never rewritten retroactively when the taxonomy changes. |
 | `model` | `str` | Provider/model that produced this classification, e.g. `"gemini/gemini-2.5-flash"` — or `"heuristic-keyword-filter"` when the posting was resolved by the pre-classification denylist filter (see Business Logic — Classification) rather than an LLM call. Kept as a free-text field specifically so provenance stays honest about which path produced a given `"other"`. |
 | `classified_at` | `datetime` | |
+
+### PostingRequirements (`posting_requirements` table) — added 2026-08-09
+One row per posting, 1:1 with `raw_postings` — the singular (non-repeating) fields of
+Requirements Signal (`design/information-architecture.md` Content Taxonomy;
+`design/market-health/job-classification.md` — Requirements Taxonomy). Repeating fields
+(skills, languages) live in their own tables below, not as arrays here, so they can be
+aggregated with a plain `GROUP BY` rather than JSONB array manipulation.
+
+| Field | Type | Description |
+|---|---|---|
+| `posting_id` | `str` (PK, FK → `raw_postings.id`) | One row per posting — a `PRIMARY KEY` here (not just `UNIQUE`, since there's no separate surrogate id needed) enforces "extracted at most once per posting" at the database level, same discipline as `classifications.posting_id`. |
+| `education_level` | `"not_mentioned" \| "bootcamp_or_equivalent" \| "bachelors" \| "masters" \| "phd"` | Closed set from `job-classification.md` — Education level. `"not_mentioned"` is the default and is explicitly **not** evidence that no degree is required (see that section's honesty rule). |
+| `responsibilities_summary` | `str \| None` | 2-4 sentence LLM-generated summary of the posting's core responsibilities. Deliberately not a closed taxonomy (`job-classification.md` — Responsibilities) — day-to-day duties are too varied to force into a fixed set. `NULL` only if extraction hasn't reached this posting yet. |
+| `other_requirements` | `str \| None` | The freeform catch-all (`job-classification.md` — Other requirements) — captures both untracked skill mentions and any other notable requirement (certification, clearance, portfolio) that doesn't fit a standard field. Never forced into a standard field just to avoid using this one. |
+| `model` | `str` | Provider/model that produced this extraction, same free-text provenance pattern as `classifications.model`. |
+| `extracted_at` | `datetime` | |
+
+### PostingSkill (`posting_skills` table) — added 2026-08-09
+One row per posting **per tracked skill mention** — many rows per posting, zero rows if
+none of that posting's Role Category's tracked skills were mentioned at all. Only ever
+holds a closed-set `skill` value (`job-classification.md` — Skills) — an untracked mention
+goes into `posting_requirements.other_requirements` instead, never forced in here.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` (PK) | |
+| `posting_id` | `str` (FK → `raw_postings.id`) | |
+| `skill` | `str` | One of the closed values for that posting's `role_category` (`job-classification.md` — Skills table). Validated against that closed set the same way `role_category` itself is. |
+| `requirement_level` | `"must_have" \| "nice_to_have"` | |
+
+`UNIQUE (posting_id, skill)` — the same tracked skill is never recorded twice for one
+posting, even if mentioned in multiple places in the description.
+
+### PostingLanguage (`posting_languages` table) — added 2026-08-09
+One row per posting per language requirement mentioned — many rows per posting, zero if
+none mentioned (the common case — most postings never state a spoken-language requirement).
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` (PK) | |
+| `posting_id` | `str` (FK → `raw_postings.id`) | |
+| `language` | `str` | Free text (e.g. `"English"`, `"German"`) — `job-classification.md` explicitly notes no closed list is needed here, unlike skills, since language names are already a stable, unambiguous set. |
+| `requirement_level` | `"required" \| "preferred"` | |
+
+`UNIQUE (posting_id, language)`.
 
 ### IngestionRun (`ingestion_runs` table)
 One row per execution of the scheduled ingestion agent (see Business Logic — Scheduled
@@ -135,6 +187,9 @@ human happened to be watching in a terminal.
 | `llm_requests_used` | `int` | **Added 2026-08-05.** The actual count of LLM requests made this run, including retries — deliberately distinct from `llm_classified`, which counts successfully-classified unique titles, not requests. A batch that needed 3 retries before succeeding consumes 3 requests against the real daily quota but produces only 1 batch's worth of classifications; `llm_classified` alone would undercount real usage. This is the field the cross-run daily budget (see Business Logic — Classification — Per-run classification budget) is actually computed from. |
 | `other_count` | `int` | |
 | `other_rate` | `float` | `other_count / total_classified` for this run, `0.0` if nothing was classified |
+| `requirements_extracted` | `int` | **Added 2026-08-09.** Postings that got a `posting_requirements` row this run (see Business Logic — Requirements extraction). A separate phase from classification, so this is 0 on runs that only classified without reaching the requirements phase. |
+| `requirements_requests_used` | `int` | **Added 2026-08-09.** Same discipline as `llm_requests_used`, tracked separately since requirements extraction uses its own dedicated key/budget (see Business Logic — Requirements extraction) — conflating the two would make either budget impossible to reason about independently. |
+| `requirements_budget_reached` | `bool` | **Added 2026-08-09.** Same meaning as `budget_reached`, scoped to the requirements extraction phase's own daily budget. |
 | `anomalies` | `JSON` | List of flagged issue strings (see Business Logic — Anomaly flagging); empty list if none |
 | `error_message` | `str \| None` | Set only when `status` is `"failed"` |
 
@@ -383,7 +438,20 @@ production database directly before writing this, not assumed:
   classification-budget change was built to solve, at a larger scale (thousands of
   Greenhouse postings vs. a few thousand unique *titles*). If this coverage gap ever becomes
   a real product priority, it deserves its own explicitly-budgeted change — not a quiet
-  LLM call added here.
+  LLM call added here. **Note (2026-08-09): this is the exact same class of concern that
+  Requirements extraction (below) revisits and finds now-viable** — the difference is real
+  production volume turned out to be much smaller than assumed when this exclusion was
+  written, not a change in the underlying cost logic.
+
+**Industry tagging (at ingestion time, no LLM) — added 2026-08-09.** `industry` (Data
+Models — RawPosting) is a static, curated lookup keyed by `company` — e.g.
+`{"stripe": "Fintech", "openai": "AI", "reddit": "Social Media", ...}` — maintained with the
+same discipline as each adapter's curated `COMPANIES` list (reviewed periodically, not
+exhaustive, a company simply has `industry: NULL` until someone tags it). Deliberately not
+LLM-inferred: with only 35 tracked companies, a one-time manual tag is both cheaper and more
+reliable than asking a model to guess an industry from a company name. This directly
+supports Requirements Signal-adjacent questions like "which industries are hiring the most
+designers" without needing any new LLM cost.
 
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every
@@ -475,7 +543,8 @@ quota) short of "classified everything" had no vocabulary except the failure-fla
 definition of success, so conflating a by-design stopping point with a degraded one would
 make every future run look broken when it's actually working as intended. `status:
 "partial"` remains reserved strictly for a batch that fails after exhausting retries on a
-genuine, non-budget error (see
+genuine, non-budget error (see Retry policy, above) — the distinction that matters
+operationally is "we chose to stop" versus "something is actually wrong."
 
 **Cross-run daily budget — corrected 2026-08-05, a real gap, not a hypothetical one.**
 `MAX_BATCHES_PER_RUN` was originally sized "with headroom under the 20-request/day
@@ -499,8 +568,54 @@ precision claim), consistent with this pipeline's existing bias toward under-usi
 budget rather than assuming the most generous interpretation of an unconfirmed external
 constraint. A second same-day run now correctly sees a reduced (or zero) remaining budget
 rather than a fresh 12-batch allowance.
-Retry policy, above) — the distinction that matters operationally is "we chose to stop"
-versus "something is actually wrong."
+
+**Requirements extraction (daily, after classification) — added 2026-08-09, per-posting not
+per-title.** Populates `PostingRequirements`/`PostingSkill`/`PostingLanguage` (Data Models)
+per `design/market-health/job-classification.md`'s Requirements Taxonomy. Structurally
+different from classification above: there is no title-cache shortcut, because two postings
+sharing a title can have entirely different actual requirements — extraction reads a
+posting's full *description*, not its title (`job-classification.md` — Requirements
+Extraction Method). This is the exact class of per-posting cost concern that excluded
+Greenhouse from Compensation extraction; it's revisited here because real production volume
+has since been confirmed much smaller than assumed at that time (~43-115 new postings/day
+steady-state, not thousands — see the Business Logic — Classification's cost analysis,
+which was based on a one-time migration burst, not ongoing load).
+
+- **Scope**: only postings with a real classification (`role_category != "other"`) and no
+  existing `posting_requirements` row. No point extracting requirements for postings
+  already known to be irrelevant, and — same invariant as classification — never
+  re-extract a posting already processed (`posting_requirements.posting_id` is a
+  `PRIMARY KEY`, DB-enforced, same discipline as `classifications.posting_id`).
+- **Ordering**: oldest-first by `fetched_at`, same reasoning and same mechanism as
+  classification's backlog processing order.
+- **Dedicated key**: a separate credential (e.g. `GEMINI_API_KEY_REQUIREMENTS`), same
+  "dedicated key per concern" discipline as classification's own key versus `/api/chat`'s.
+  Honesty caveat, same one already on record for the classification key: this only grants a
+  truly independent quota if it's a different Google Cloud project than the other keys —
+  unconfirmed either way. If it turns out to share a project, real recent usage
+  (classification now uses only ~1 request/day at steady state, backlog long cleared)
+  suggests there's likely ample shared headroom regardless.
+- **Own daily budget, same pattern as classification** — its own
+  `REQUIREMENTS_DAILY_REQUEST_BUDGET`/`REQUIREMENTS_RETRY_HEADROOM` constants, its own
+  cross-run tracking via `IngestionRun.requirements_requests_used` (Data Models), its own
+  `requirements_budget_reached` flag. Reaching this budget is success, not degradation —
+  identical reasoning to classification's redefinition, above. Kept as a **separate** budget
+  from classification's, not a shared pool, so a heavy classification day and a heavy
+  requirements-extraction day can't silently starve each other — same principle that
+  justified separating `/api/chat`'s key from classification's in the first place.
+- **Batching**: multiple postings' full descriptions per call, not one-per-call, same
+  cost-control principle as classification — but a materially smaller batch size than
+  classification's 100-titles/batch, since each item now needs a full description as input
+  and a richer structured output (skills, education, language, a responsibilities summary,
+  and the catch-all) rather than four short classification fields. Exact batch size is an
+  implementation constant, not spec'd here — same "tuned as real data comes in" precedent
+  already used for `BATCH_SIZE` and the denylist keyword list.
+- **One call produces all of it.** A single extraction call for a posting yields its
+  `PostingRequirements` row (education level, responsibilities summary, catch-all) and its
+  `PostingSkill`/`PostingLanguage` rows together — not separate calls per field. Skill and
+  language values are validated against `job-classification.md`'s closed sets the same way
+  `role_category` is; anything that doesn't validate is folded into
+  `other_requirements` rather than discarded or forced into the nearest match.
 
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their
@@ -595,8 +710,32 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    fields are `null` and the model states plainly that no postings in that slice disclose
    compensation (Edge Cases — no fallback guess from seniority/role alone).
 
-2. **Google Search grounding (tried only when steps 1/1a can't answer the question).**
-   Triggered when neither data tool returns anything usable for a request that should be
+1b. **`query_requirements_data` tool (added 2026-08-09, tried alongside the other two, same
+   stage).** A third read-only, parameterised tool for skills/education/language questions —
+   yet another different aggregation shape (frequency counts per closed taxonomy value, not
+   a numeric range or a role/seniority `GROUP BY`). Accepts the same filter dimensions as the
+   other two tools. Returns:
+   ```json
+   {
+     "skills": [
+       { "skill": "Front-end coding (HTML/CSS/JS)", "must_have_count": 3, "nice_to_have_count": 7 },
+       { "skill": "Design systems", "must_have_count": 19, "nice_to_have_count": 4 }
+     ],
+     "education_levels": { "not_mentioned": 29, "bachelors": 8, "masters": 1 },
+     "languages": [{ "language": "English", "required_count": 2, "preferred_count": 0 }],
+     "data_range": { "earliest": "2026-07-20", "latest": "2026-08-09" },
+     "total_matching": 38
+   }
+   ```
+   `total_matching` is the count of postings in the matched slice that actually have a
+   `PostingRequirements` row — i.e. the real denominator for any percentage the model states
+   (e.g. "27% of postings" must be computed against this number, not against
+   `query_market_data`'s broader count, which includes postings requirements extraction
+   hasn't reached yet). This is also the field a synthesis question's "sample too small"
+   check (`design/market-health/experience.md` — Edge Cases) is computed from.
+
+2. **Google Search grounding (tried only when steps 1/1a/1b can't answer the question).**
+   Triggered when none of the data tools return anything usable for a request that should be
    inside their domain but isn't inside the data's time window, or when the question is
    categorically outside what the dataset could ever contain (general career advice, market
    history before this pipeline existed, industry context). Implemented as a **separate,
@@ -607,11 +746,17 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    source titles/URLs) becomes the trace's external sources — never a source that wasn't
    actually returned by the grounded call.
 
-3. **Never silently substitute one for the other.** If steps 1/1a find a partial answer and
-   step 2 is needed to fill a gap, the response says which parts came from which. If nothing
-   can answer the question, the model says so rather than guessing — this is a prompt-level
-   instruction, and was confirmed insufficient on its own through testing (see the
-   anti-fabrication guard below); a code-level check backs it up.
+3. **Never silently substitute one for the other.** If steps 1/1a/1b find a partial answer
+   and step 2 is needed to fill a gap, the response says which parts came from which. If
+   nothing can answer the question, the model says so rather than guessing — this is a
+   prompt-level instruction, and was confirmed insufficient on its own through testing (see
+   the anti-fabrication guard below); a code-level check backs it up.
+   **Synthesis questions (added 2026-08-09) get an additional rule**: when the data supports
+   a judgment, not just a lookup (`design/market-health/experience.md` — User Flow 7b), the
+   final answer must present the data and the judgment as two clearly separated parts, never
+   blended into one statement — and must decline to judge (data only) if `total_matching`
+   from `query_requirements_data` is too small to support a confident conclusion (exact
+   threshold is an implementation/prompt-tuning detail, not spec'd as a precise number here).
 
 **Bounded conversation history, not the full transcript.** Each stage gets only as much
 recent conversation as it actually needs, not everything since the conversation began — see
@@ -627,8 +772,9 @@ when the user questioned it. Giving the tool stages a small bounded window of re
 (not the full history a longer conversation would otherwise need) fixed this directly.
 
 **Anti-fabrication guard — a code-level check, not just a prompt instruction.** If the
-data-query stage makes zero calls to *either* data tool (`query_market_data` or
-`query_compensation_data`) AND doesn't emit the `NEEDS_EXTERNAL` marker, its text is
+data-query stage makes zero calls to *any* of the three data tools (`query_market_data`,
+`query_compensation_data`, `query_requirements_data`) AND doesn't emit the `NEEDS_EXTERNAL`
+marker, its text is
 discarded outright before it can reach the synthesis stage — confirmed by testing that a
 confused model will sometimes answer with fabricated content instead of abstaining,
 regardless of what the system prompt says. The synthesis stage is also grounded directly in
@@ -640,7 +786,8 @@ past the first guard.
 `backend/specs/ai-reasoning-panel/api.md` currently states trace assembly is "synchronous and
 pre-LLM... input context and sources are known before the LLM call." That premise no longer
 holds for `/api/chat`: `sources_and_tools` must now be built from whichever data tool(s) were
-actually called (`query_market_data`, `query_compensation_data` — added 2026-08-04 — or both)
+actually called (`query_market_data`; `query_compensation_data`, added 2026-08-04;
+`query_requirements_data`, added 2026-08-09 — any combination)
 and any Google Search grounding call actually made during generation, in real order, not
 assembled beforehand. The trace-building code must not hardcode a single tool name/purpose
 string the way it could when only one data tool existed — it now needs to reflect whichever
@@ -775,6 +922,20 @@ ingestion agent for why these are kept separate.
   plan — is a one-line change, not a re-derivation. `RETRY_HEADROOM = 8` mirrors
   `MAX_BATCHES_PER_RUN = 12`'s existing 20/12/8 split (12 usable, 8 reserved) — same ratio,
   now applied across a day's runs instead of assumed for a single one.
+- **Requirements extraction gets its own dedicated key, budget constants, and batch size —
+  added 2026-08-09, not spec'd exactly here.** `GEMINI_API_KEY_REQUIREMENTS` (or equivalent),
+  `REQUIREMENTS_DAILY_REQUEST_BUDGET`/`REQUIREMENTS_RETRY_HEADROOM`, and the requirements
+  batch size are all implementation constants, same "policy is spec'd, exact numbers are
+  tuned as real data comes in" precedent as classification's constants above. Kept
+  deliberately separate from classification's constants (Business Logic — Requirements
+  extraction) rather than reused, so the two extraction types can't silently starve each
+  other's budget.
+- **Industry lookup is a static Python dict, not a database table** — 35 entries, reviewed
+  the same way the curated `COMPANIES` lists are, not a new schema concept. Simplicity is
+  deliberate: a real company→industry mapping table would be over-engineering for 35
+  hand-maintained values, and would blur the line this change explicitly draws around not
+  building company-level infrastructure speculatively (Decision Log,
+  `changes/2026-08-09-skills-and-industry-signal.md`).
 - `raw_postings.raw_response` is stored as a JSON/JSONB column — store each source's response
   verbatim, do not project it down to the fields we currently use, since it is the only
   chance to ever capture a given posting.

@@ -303,3 +303,146 @@ def query_compensation_data(
         },
         "total_matching": total_matching,
     }
+
+
+def query_requirements_data(
+    role_category: list[str] | None = None,
+    sub_specialization: list[str] | None = None,
+    seniority: list[str] | None = None,
+    track: list[str] | None = None,
+    country: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """
+    Query real extracted requirements (skills, education, language) from the
+    platform's own database. Use this for any question about what a role's
+    postings actually ask for — must-have vs. nice-to-have skills, education
+    level, language requirements — including "should I learn X" style
+    synthesis questions, where this tool supplies the data half of the answer.
+
+    Every extracted field is an LLM's interpretation of free text a company
+    wrote, not a verified fact — state findings in proportional terms ("42%
+    of postings mention X"), never as absolute claims ("all postings require
+    X"), and always state total_matching as the sample size. If total_matching
+    is small, say so explicitly rather than drawing a confident conclusion —
+    for a synthesis question, give the data but decline to recommend if the
+    sample is too small to support it.
+
+    Args:
+        role_category, sub_specialization, seniority, track, country: same filters
+            as query_market_data — narrow to a specific slice of the market.
+        date_from, date_to: ISO dates (YYYY-MM-DD), same meaning as query_market_data.
+
+    Returns:
+        A dict with:
+        - skills: [{skill, must_have_count, nice_to_have_count}, ...] for every tracked
+          skill mentioned at least once in the matched slice
+        - education_levels: {education_level: count, ...}
+        - languages: [{language, required_count, preferred_count}, ...]
+        - data_range, total_matching: total_matching is the count of postings in the
+          matched slice that actually have extracted requirements — the real denominator
+          for any percentage stated, not the same as query_market_data's broader count
+    """
+    role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
+    sub_specializations = _as_list(sub_specialization)
+    seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
+    tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
+    countries = _country_filter(country)
+
+    where = ["c.role_category != 'other'"]
+    params: list = []
+    if role_categories:
+        where.append("c.role_category = ANY(%s)")
+        params.append(role_categories)
+    if sub_specializations:
+        where.append("c.sub_specialization = ANY(%s)")
+        params.append(sub_specializations)
+    if seniorities:
+        where.append("c.seniority = ANY(%s)")
+        params.append(seniorities)
+    if tracks:
+        where.append("c.track = ANY(%s)")
+        params.append(tracks)
+    if countries:
+        where.append("rp.country = ANY(%s)")
+        params.append(countries)
+    if date_from:
+        where.append("rp.fetched_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("rp.fetched_at <= %s")
+        params.append(date_to)
+    where_sql = " AND ".join(where)
+
+    with get_connection() as conn:
+        total_matching = conn.execute(
+            f"""
+            SELECT count(*) FROM posting_requirements pr
+            JOIN raw_postings rp ON rp.id = pr.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()[0]
+
+        skill_rows = conn.execute(
+            f"""
+            SELECT ps.skill, ps.requirement_level, count(*)
+            FROM posting_skills ps
+            JOIN raw_postings rp ON rp.id = ps.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            GROUP BY ps.skill, ps.requirement_level
+            """,
+            params,
+        ).fetchall()
+
+        education_rows = conn.execute(
+            f"""
+            SELECT pr.education_level, count(*)
+            FROM posting_requirements pr
+            JOIN raw_postings rp ON rp.id = pr.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            GROUP BY pr.education_level
+            """,
+            params,
+        ).fetchall()
+
+        language_rows = conn.execute(
+            f"""
+            SELECT pl.language, pl.requirement_level, count(*)
+            FROM posting_languages pl
+            JOIN raw_postings rp ON rp.id = pl.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            GROUP BY pl.language, pl.requirement_level
+            """,
+            params,
+        ).fetchall()
+
+        earliest, latest = conn.execute(
+            "SELECT min(fetched_at), max(fetched_at) FROM raw_postings"
+        ).fetchone()
+
+    skills: dict[str, dict] = {}
+    for skill, level, n in skill_rows:
+        entry = skills.setdefault(skill, {"skill": skill, "must_have_count": 0, "nice_to_have_count": 0})
+        entry[f"{level}_count"] = n
+
+    languages: dict[str, dict] = {}
+    for language, level, n in language_rows:
+        entry = languages.setdefault(language, {"language": language, "required_count": 0, "preferred_count": 0})
+        entry[f"{level}_count"] = n
+
+    return {
+        "skills": list(skills.values()),
+        "education_levels": {level: n for level, n in education_rows},
+        "languages": list(languages.values()),
+        "data_range": {
+            "earliest": earliest.date().isoformat() if earliest else None,
+            "latest": latest.date().isoformat() if latest else None,
+        },
+        "total_matching": total_matching,
+    }

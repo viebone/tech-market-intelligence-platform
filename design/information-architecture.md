@@ -1,9 +1,9 @@
 ---
 id: information-architecture
-version: 2.0
+version: 2.1
 status: active
 created: 2026-06-11
-updated: 2026-06-21
+updated: 2026-08-09
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
@@ -111,7 +111,8 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Role Category** | One of the three tracked job categories: Designer, Product Manager, Engineer. | Charts, labels, filters |
 | **Time Range** | The period shown by a trend chart: This Year, Past 5 Years, or All Time. | Chart controls |
 | **Demand Signal** | A data point representing job posting volume trend for a given role or skill. | Working Space, Output Panel |
-| **Compensation Signal** | A data point representing salary range trend for a given role, seniority, or location. | Future tasks |
+| **Compensation Signal** | A data point representing salary range trend for a given role, seniority, or location. | Working Space, Output Panel |
+| **Requirements Signal** | A data point representing the skills (must-have vs. nice-to-have), responsibilities, education level, and language requirements extracted from a single job posting, with a freeform catch-all for anything outside that standard structure. | Future tasks |
 | **Layoff Signal** | A reported or confirmed layoff event affecting a company or sector. | Future tasks |
 | **Data Freshness** | The age and source of the data behind any given output. | Shown as a label on all data-backed claims |
 | **Exception** | A signal or event that crosses a threshold and requires the user's attention. | Future: Alert Centre |

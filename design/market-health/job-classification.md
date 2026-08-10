@@ -4,6 +4,7 @@ feature: market-health
 directive: low
 status: active
 created: 2026-07-16
+updated: 2026-08-09
 ---
 
 # Job Classification Taxonomy — Reference Spec
@@ -11,9 +12,12 @@ created: 2026-07-16
 ## What this spec is
 
 Defines the canonical taxonomy used to classify every job posting ingested for Market Health:
-role category, seniority, and track. This is the single source of truth for these values —
-`backend/specs/market-health/api.md` and `frontend/specs/market-health/architecture.md` must
-reference this file rather than each defining their own version of these enums.
+role category, seniority, and track — plus, as of 2026-08-09, the **Requirements Taxonomy**
+(skills, education level, language requirements) backing the IA's **Requirements Signal**
+(`design/information-architecture.md` Content Taxonomy). This is the single source of truth
+for all of these values — `backend/specs/market-health/api.md` and
+`frontend/specs/market-health/architecture.md` must reference this file rather than each
+defining their own version of these enums.
 
 `Role Category` is not a new concept — it is the same term already defined in
 `design/information-architecture.md` Content Taxonomy (`Role Category`: "One of the three
@@ -91,6 +95,97 @@ time — not by guessing upfront what categories will eventually matter.
 
 ---
 
+## Requirements Taxonomy (Requirements Signal)
+
+Added 2026-08-09, backing the IA's **Requirements Signal**
+(`design/information-architecture.md` Content Taxonomy). Defines the closed-ish sets used
+to extract structured requirements from a posting's full *description* — a different input
+than Role Category/Seniority/Track above, which classify from the *title* alone (see
+Requirements Extraction Method, below, for why that distinction matters). Same discipline
+as the rest of this document: closed sets to keep answers reliably aggregatable, with an
+explicit freeform catch-all so a posting's genuinely unusual requirement is never silently
+discarded just because it wasn't anticipated.
+
+### Skills
+
+Closed per Role Category, reviewed periodically — same "starts narrow, widens once real
+data justifies it" discipline already established for sub-specializations, not exhaustive
+on day one.
+
+| Role Category | Tracked skills (v1) |
+|---|---|
+| Designer | Figma / design tooling, Design systems, UX research, Prototyping, Visual/UI design, Accessibility, Front-end coding (HTML/CSS/JS), Data & analytics literacy, AI-assisted design tools |
+| Product Manager | Data analysis / SQL, Experimentation (A/B testing), Roadmapping & prioritization, Stakeholder management, Technical/API fluency, User research, AI/ML product experience, Business strategy (GTM, pricing) |
+| Engineer | Frontend frameworks, Backend frameworks, Cloud/infrastructure, Databases, System design, ML/AI, Mobile, DevOps/SRE, Security |
+
+Each tracked skill mention is captured with a requirement level: `must_have` or
+`nice_to_have`. A skill mentioned in a posting that doesn't map to any tracked skill for
+that posting's Role Category goes into **Other requirements** (below) rather than being
+forced into the nearest match or silently dropped — the same principle as the `other` Role
+Category escape hatch.
+
+**Why per-category, not one shared list:** a shared list would either be too generic to be
+useful (only skills that apply everywhere) or too long to be a meaningful closed set (every
+discipline's skills at once). Scoping to the Role Category a posting is already classified
+under keeps each list a genuinely reviewable size.
+
+### Education level
+
+A single closed value per posting, when mentioned at all:
+
+```
+not_mentioned → bootcamp_or_equivalent → bachelors → masters → phd
+```
+
+`not_mentioned` is the default and is **not itself informative** — most postings don't state
+an education requirement at all, and that absence must never be read as "no degree needed."
+
+### Language requirements
+
+Spoken/written language proficiency — not programming languages (those are covered under
+Skills, above). Relevant mainly for region-specific or client-facing roles. Captured as a
+list of `{language, requirement_level}` pairs, `requirement_level` being `required` or
+`preferred`. No closed list of languages is needed here — natural language names are already
+a stable, unambiguous set (unlike skill phrasing, which varies) and don't need a curation
+pass the way skills or role categories do.
+
+### Responsibilities
+
+Deliberately **not** a closed taxonomy — captured as a short, LLM-generated summary (2-4
+sentences) of the core responsibilities, since day-to-day duties are too varied and specific
+to force into a small fixed set the way skills or education can be. This is a summary of
+what the posting says, not an extracted structured fact — held to the same "interpretation,
+not a verified fact" honesty as everything else in this section (see Requirements
+Extraction Method, below).
+
+### Other requirements (the catch-all)
+
+A freeform field capturing anything notable in a posting's description that doesn't fit
+skills, education, or language requirements above — e.g. a specific certification, a
+security clearance, a portfolio requirement. Never forced into one of the standard fields
+just to avoid using this one. This is what keeps the standard structure honest: a posting
+with a genuinely unusual requirement doesn't get that detail silently discarded just
+because the schema didn't anticipate it.
+
+## Requirements Extraction Method
+
+Distinct from Classification Method (below), which classifies Role Category/Seniority/Track
+from a posting's *title* alone. Requirements extraction reads a posting's full
+*description* — there is no per-title shortcut here, since two postings sharing a title can
+have entirely different actual requirements (see `backend/specs/market-health/api.md` —
+Business Logic — Requirements extraction, for the technical/cost implications of that
+difference).
+
+**This is interpretation, not verified fact.** Every extracted field is the LLM's reading of
+free text a company wrote in whatever style and phrasing it chose — never treat it as a
+guarantee the posting's true requirements were captured perfectly. Answers built from this
+data must speak in aggregate/proportional terms ("42% of postings mention X") rather than
+absolute claims ("all postings require X"), and must always disclose how many postings an
+answer is based on — the same discipline already established for Compensation Signal
+(`design/market-health/experience.md`, User Flow 7a).
+
+---
+
 ## Classification Method
 
 Each posting is classified either by an LLM call, or — for titles that are unambiguously
@@ -130,3 +225,11 @@ labels together.
   revising this taxonomy, not a product surface
 - Reclassifying historical postings silently when the taxonomy changes — old classifications
   keep their original `taxonomy_version`
+- Forcing a mentioned skill into the nearest tracked skill for its Role Category, or
+  silently dropping it, when it doesn't genuinely match — it belongs in the freeform catch-all
+- Treating `education_level: not_mentioned` as evidence that no degree is required — absence
+  of a stated requirement is not itself a signal
+- Presenting a Requirements Signal answer as an absolute claim ("all X roles require Y") —
+  it is always a proportion of an interpreted sample, and must be stated as such
+- Trying to fit day-to-day responsibilities into a closed taxonomy the way skills or
+  education are — responsibilities are summarized, not classified into a fixed set

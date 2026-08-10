@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timezone
 
 from db import get_connection
+from industries import industry_for
 from sources.base import FetchedPosting
 
 
@@ -48,16 +49,16 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
                 INSERT INTO raw_postings (
                     id, source, source_ref, company, title, raw_response, fetched_at,
                     country, city, salary_min, salary_max, salary_currency,
-                    salary_confidence, salary_extraction_method
+                    salary_confidence, salary_extraction_method, industry
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 [
                     (
                         pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at,
                         p.country, p.city, p.salary_min, p.salary_max, p.salary_currency,
-                        p.salary_confidence, p.salary_extraction_method,
+                        p.salary_confidence, p.salary_extraction_method, industry_for(p.company),
                     )
                     for pid, p in new
                 ],
@@ -95,3 +96,29 @@ def get_all_unclassified() -> list[dict]:
             """
         ).fetchall()
     return [{"id": row[0], "title": row[1]} for row in rows]
+
+
+def get_all_needing_requirements() -> list[dict]:
+    """
+    Real (role_category != "other") classified postings with no
+    posting_requirements row yet, oldest-first by fetched_at — same fairness
+    principle as get_all_unclassified(). Scoped to already-classified postings
+    only: no point spending a requirements-extraction call on a posting
+    already known to be irrelevant. See backend/specs/market-health/api.md —
+    Business Logic — Requirements extraction.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT rp.id, rp.source, rp.raw_response, c.role_category
+            FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+            WHERE c.role_category != 'other' AND pr.posting_id IS NULL
+            ORDER BY rp.fetched_at ASC
+            """
+        ).fetchall()
+    return [
+        {"id": row[0], "source": row[1], "raw_response": row[2], "role_category": row[3]}
+        for row in rows
+    ]

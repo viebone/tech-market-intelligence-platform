@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-08-04
+updated: 2026-08-09
 ---
 
 # Market Health — Experience Spec
@@ -27,10 +27,15 @@ answers — **only through follow-up conversation, never in the fixed opening vi
 > "What salary should I expect for this role?" (**Compensation Signal**)
 > "How is demand shifting for a more specific slice of the market — a sub-specialization,
 > a seniority level, a track, a location?" (**Demand Signal**, enriched)
+> "What does the market actually want from someone in this role — skills, education,
+> languages — and what does that mean for me?" (**Requirements Signal**, added 2026-08-09)
 
-Both are reached the same way the existing example already works ("Is User Experience
+All three are reached the same way the existing example already works ("Is User Experience
 Designer or Product Designer more in demand right now?") — by asking, not by a new control
-appearing on load. See User Flow and Edge Cases, below.
+appearing on load. Requirements Signal introduces a genuinely new *kind* of answer, not just
+a new data dimension: a **synthesis question** ("should I learn to code as a UX designer?")
+asks for a judgment, not a lookup — see User Flow step 7b and Edge Cases, below, for how
+that's handled honestly.
 
 ---
 
@@ -93,8 +98,12 @@ The user interprets and decides what to do with it.
    roles more common right now?", "How does demand for Backend Engineers differ between the US
    and Europe?"), to a compensation question ("What salary should I expect for a Senior
    Product Designer?", "What's the typical pay range for a Backend Engineer in San
-   Francisco?"), to something the platform's data can't possibly cover ("What was demand like
-   in 2019?").
+   Francisco?"), to a requirements question ("What skills are Senior UX Designer postings
+   asking for?", "How often do Product Manager roles require SQL?", "What education level do
+   most Engineering roles require?"), to a synthesis question that asks for a judgment, not
+   a lookup ("Should I learn to code as a UX Designer?", "What should I focus on learning to
+   move from Mid to Senior?"), to something the platform's data can't possibly cover ("What
+   was demand like in 2019?").
 7. The AI answers by actually analysing the platform's own data for that specific question —
    not repeating a fixed canned summary. It states the answer's time window plainly, grounded
    in when live data collection actually began (e.g. "since we started tracking on 20 July
@@ -119,6 +128,21 @@ The user interprets and decides what to do with it.
    text — those estimates are noisier and are not included in the range above unless you ask
    for them."). If no role in the queried slice has any disclosed compensation data, the AI
    says so plainly rather than guessing from seniority alone.
+7b. **Requirements Signal answers carry their own honesty requirement, different in kind
+   from Compensation Signal's**: every extracted skill, education level, or language
+   requirement is the AI's *interpretation* of free text a company wrote, not a verified
+   fact — there's no structured-vs-parsed confidence split the way compensation has, because
+   no source ever provides this as a structured field. Answers must speak in proportional
+   terms ("42% of postings mention X"), never absolute ones ("all postings require X"), and
+   must state the sample size (e.g. "based on 38 Senior UX Designer postings"). **A synthesis
+   question ("Should I learn to code as a UX Designer?") gets a two-part answer, and the two
+   parts are never blended**: first the data — the actual aggregate (e.g. "Front-end coding
+   appears in 27% of Senior UX Designer postings, almost always tagged nice-to-have rather
+   than must-have — design systems and prototyping are far more commonly required") — then,
+   clearly separated, the AI's judgment built on that data (e.g. "Given that, coding is
+   unlikely to be the highest-leverage thing to learn next — design systems fluency would
+   affect more of your applications"). If the sample is too small to support a confident
+   judgment, the AI says so and gives the data alone rather than a shaky recommendation.
 8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
@@ -159,7 +183,9 @@ When expanded, it shows:
   update it reflects a real, normalized value per posting, not a placeholder.
 - **Context sent to Claude** — the market signal verdict and trend direction, demand signal count,
   compensation signal count (and, when a compensation question was asked, how many of those
-  postings had disclosed vs. inferred salary data), layoff event count, and the model used
+  postings had disclosed vs. inferred salary data), requirements signal count (and, when a
+  synthesis question was asked, the sample size the judgment was built on — see User Flow
+  7b), layoff event count, and the model used
 - **Sources** — for the opening briefing, the data source description — now potentially more
   than one, since postings are ingested from several company job boards rather than a single
   provider. When more than one source contributed to what's shown, each is named (e.g.
@@ -247,6 +273,8 @@ concentrated in the first half of the year — the last three months have been f
 | Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began) | AI says plainly that the platform doesn't have that data, then answers from a real, citable external source (article, report, named study) — never from unverified recall. Response and accordion both make clear it's an external source, not platform data. |
 | Ask a compensation question in chat (e.g. "What should I expect to earn as a Senior Backend Engineer?") | AI answers using disclosed-salary postings first, states how many postings the figure is based on, and — if a lower-confidence, inferred-from-text estimate is included at all — labels it explicitly as an estimate rather than blending it into the headline range. States plainly if no postings in that slice disclose compensation. |
 | Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
+| Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. |
+| Ask a synthesis question that asks for a judgment (e.g. "Should I learn to code as a UX Designer?") | AI answers in two clearly separated parts: the underlying data first, then its judgment built on that data — never blended into one undifferentiated statement. If the sample is too small to support a confident judgment, gives the data alone and says so. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 
@@ -297,6 +325,18 @@ concentrated in the first half of the year — the last three months have been f
   couldn't be normalized to a specific country/city:** The AI excludes that posting from a
   location-specific answer rather than guessing its location, and says so if it materially
   affects the sample size (e.g. "12 of 20 matching postings had a usable location").
+- **No extracted requirements data for the queried role/slice:** Say so plainly rather than
+  guessing what a role "probably" requires from general knowledge — the same "absent is more
+  honest than invented" rule as compensation.
+- **Sample too small to support a synthesis question's judgment:** The AI gives the
+  underlying data (even a small amount) but explicitly declines to draw a recommendation
+  from it, rather than reasoning confidently over too few postings (e.g. "Only 4 postings
+  match this slice — not enough to draw a reliable conclusion, but here's what they show...").
+- **A requirement doesn't map to any tracked skill/education/language value:** Captured in
+  the freeform catch-all (`design/market-health/job-classification.md` — Other requirements)
+  rather than forced into the nearest standard value or dropped. If a user's question depends
+  specifically on catch-all content, the AI can surface it, but always distinguishes it from
+  the standard taxonomy's closed-set values.
 
 ---
 
@@ -310,6 +350,8 @@ concentrated in the first half of the year — the last three months have been f
 | Chat engagement rate | Analytics — % of sessions where user sends at least one follow-up | Track, no target yet |
 | Compensation question rate | Analytics — % of sessions that include at least one salary-related question | Track, no target yet |
 | Confidence comprehension | Post-task question, after a compensation answer: "Was this figure based on disclosed salary data, an estimate, or a mix?" | ≥ 85% correct |
+| Requirements question rate | Analytics — % of sessions that include at least one skills/requirements or synthesis question | Track, no target yet |
+| Data-vs-judgment comprehension | Post-task question, after a synthesis answer: "Which part was factual data, and which part was the AI's opinion?" | ≥ 85% correct |
 
 ---
 
@@ -334,6 +376,24 @@ concentrated in the first half of the year — the last three months have been f
   every user's first question is about pay, and the opening view is already deliberately
   minimal. Revisit if the Compensation question rate metric shows most sessions ask for it
   anyway, which would argue for promoting it to the default view.
+- Should skills/requirements ever get a dedicated visual (e.g. a frequency bar chart across
+  the tracked skills for a role) instead of prose-only proportions? Same reasoning as
+  Compensation Signal's equivalent open question — deliberately left text-only until the
+  Requirements question rate metric shows real usage, rather than inventing a visual
+  component speculatively.
+- The tracked skills list per Role Category (`design/market-health/job-classification.md`)
+  is a v1 starting point, explicitly expected to be reviewed and widened once real
+  extraction data shows which mentioned skills don't map to any tracked value and recur
+  often enough to justify adding — same "Raw Title" discipline already used for
+  sub-specializations, not a one-time decision.
+
+**Resolved (2026-08-09):** Requirements Signal (skills, education, language requirements,
+plus a freeform catch-all) is now in scope, reached only through follow-up conversation —
+same conversation-only pattern as Compensation Signal, never added to the fixed opening
+view. This also introduces the experience's first **synthesis question** capability
+(User Flow 7b) — a judgment built on data, always presented as two clearly separated parts,
+never blended — distinct from every prior question type, which was a direct data lookup.
+See `changes/2026-08-09-skills-and-industry-signal.md`.
 
 **Resolved (2026-08-04):** Compensation Signal (salary) is now in scope, reached only through
 follow-up conversation — never added to the fixed opening view. Demand Signal now supports
