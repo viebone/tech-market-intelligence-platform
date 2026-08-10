@@ -169,6 +169,48 @@ anywhere in the product today.
       original test). `model` column correctly shows `gemini-flash-latest` for these new
       rows, distinct from the earlier test rows' `gemini-2.5-flash` — honest per-row
       provenance intact.
+
+      **Addendum, 2026-08-10 (real backlog backfill + a second real defect found)**: at
+      the user's request, ran the real `ingest.py` locally against production (fetch +
+      classify + extract), to make real progress on the ~2,356-posting backlog today and
+      leave a clean baseline for the deployed cron to continue "from tomorrow." Result:
+      `status: partial`, 53 postings' requirements extracted (batches 1-5 of 348), then a
+      real `429 RESOURCE_EXHAUSTED` on batch 6 — Google's own error confirmed the daily
+      cap: `limit: 20, model: gemini-3.6-flash` (the concrete model `gemini-flash-latest`
+      currently resolves to). This is expected/designed behavior (graceful stop, run
+      correctly recorded as `partial`, not a crash) — but the *number* of batches
+      completed before hitting it exposed a real defect: our own budget ledger
+      (`requirements_requests_used`) only counts outer retry attempts in
+      `_complete_with_retry`, but each successful call on this model was silently costing
+      **two** real Google API calls — the guaranteed-fail `budget=0` attempt plus the
+      `budget=1` fallback from the 2026-08-10 fix above — both billed against the same
+      real 20/day quota, only one counted against ours. So the ledger thought it had
+      spent ~5 requests when Google's server-side count was ~10, causing real exhaustion
+      well before our own cap would have stopped it. Fixed in `llm/gemini.py`: a
+      module-level `_MODELS_REJECTING_ZERO_THINKING_BUDGET` set, populated the first time
+      a model's `budget=0` attempt fails this way, consulted on every subsequent call
+      (any adapter instance, since a fresh one is constructed per call site) to skip
+      straight to `budget=1` — eliminating the wasted doomed-to-fail call for the rest of
+      the process's lifetime. `gemini-2.5-flash` never populates this set, so
+      classification/chat are unaffected. This roughly doubles real daily throughput for
+      `gemini-flash-latest` going forward (each successful batch now costs 1 real call,
+      not 2), meaning `MAX_BATCHES_PER_RUN` (12) should become the binding constraint
+      instead of real quota exhaustion on future runs. Not re-verified end-to-end today
+      since real quota for this key is now genuinely exhausted until Google's daily reset
+      — compile-checked only; will be confirmed by the first real run after deploy.
+      **Backlog status after today**: 59 of 2,362 real classified postings now have
+      requirements extracted (2,303 remaining). At the pre-fix rate this would have taken
+      ~40+ days; post-fix, roughly 12 batches/day × ~14 postings/batch ≈ 160-170/day is
+      the realistic expectation, ballparking full backlog clearance around 2-3 weeks of
+      daily cron runs — an estimate, not a commitment, per this pipeline's standing
+      "tuned as real data comes in" precedent.
+      **Still outstanding**: none of this session's code (including today's fixes) is
+      deployed. `job-sync`'s Railway cron is still running the pre-this-change `ingest.py`
+      and has no `GEMINI_API_KEY_REQUIREMENTS` env var. For the backlog to keep clearing
+      automatically "from tomorrow" as intended, this needs: commit + push to `main`, add
+      `GEMINI_API_KEY_REQUIREMENTS` to `job-sync`'s Railway env vars, and an explicit
+      Railway deploy trigger (auto-deploy is off for this repo per `DEPLOYMENT.md`) —
+      pending the user's go-ahead, not yet done.
 - [x] Step 6: `/implement-frontend` — confirmed no-op, verified two ways rather than trusting
       Step 4's spec review alone: (1) read `ConversationThread.tsx` directly — line 100-102
       renders `assistant.content` in a single `<p className="... whitespace-pre-wrap">`,
