@@ -108,7 +108,7 @@ export function MarketHealthPage() {
   const { messages, input, handleInputChange, handleSubmit, isLoading, data } = useChat({
     api: "/api/chat",
     streamProtocol: "data",
-    body: { context: { role: "all", seniority: "all", location: "all" } },
+    body: { context: { role: "all", level: "all", location: "all" } },
     onFinish: (message) => {
       setTraces((prev) =>
         new Map(prev).set(message.id, {

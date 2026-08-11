@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: draft
 created: 2026-06-13
-updated: 2026-08-09
+updated: 2026-08-11
 ---
 
 # Market Health — Backend Architecture Spec
@@ -13,8 +13,11 @@ updated: 2026-08-09
 See: `design/market-health/experience.md`
 
 ## Taxonomy this uses
-See: `design/market-health/job-classification.md` — canonical `Role Category`, `Seniority`,
-and `Track` enums. This spec references that taxonomy rather than redefining it.
+See: `design/market-health/job-classification.md` — canonical `Role Category`,
+`Specialization`, `Level`, and `Track` enums (**`Specialization`/`Level` renamed/restructured
+2026-08-11**, replacing `Sub-specialization`/`Seniority` — see
+`changes/2026-08-11-classification-taxonomy-redesign.md`). This spec references that taxonomy
+rather than redefining it.
 
 ---
 
@@ -75,7 +78,7 @@ its prior state, so nothing here is ever mutated after insert.
 | `salary_max` | `int \| None` | Upper bound, same rule as `salary_min`. |
 | `salary_currency` | `str \| None` | ISO currency code (e.g. `"USD"`), `NULL` iff `salary_min`/`salary_max` are `NULL`. |
 | `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
-| `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/seniority/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
+| `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/specialization/level/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
 | `industry` | `str \| None` | The tracked company's industry (e.g. `"Fintech"`, `"AI"`, `"Social Media"`) — a static, curated lookup keyed by `company`, **not** an LLM inference (see Business Logic — Industry tagging). `NULL` for any company not yet tagged in the lookup; never guessed. |
 
 **Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
@@ -107,17 +110,39 @@ Keyed to `raw_postings`, one row per posting. Kept separate from `RawPosting` so
 classification logic can be revised and re-run against everything already captured,
 without re-fetching anything.
 
+**Restructured 2026-08-11** — see `changes/2026-08-11-classification-taxonomy-redesign.md`
+and `design/market-health/job-classification.md` (Level, Track, Unknown vs. Other) for the
+taxonomy content this implements.
+
 | Field | Type | Description |
 |---|---|---|
 | `id` | `int` (PK) | |
 | `posting_id` | `str` (FK → `raw_postings.id`) | **Load-bearing invariant, verified 2026-08-05**: "a posting is classified at most once, ever" is enforced at the database level via a `UNIQUE` constraint on this column, not just application logic — `get_all_unclassified()`'s `LEFT JOIN ... WHERE c.posting_id IS NULL` filter is an efficiency optimization (never send an already-classified title to the LLM again), but the constraint is what actually prevents a duplicate classification row even if that filter were ever bypassed. Confirmed directly against production data: zero postings with more than one classification row. |
-| `role_category` | `"Designer" \| "Product Manager" \| "Engineer" \| "other"` | Closed set from `job-classification.md`. `"other"` is the escape hatch for postings that don't genuinely fit. |
-| `sub_specialization` | `str \| None` | e.g. `"UX Designer"`, `"Backend Engineer"`. `None` when `role_category` is `"other"`. |
-| `seniority` | `"entry" \| "junior" \| "mid" \| "senior" \| "lead" \| "principal" \| "manager" \| "director" \| "vp" \| "exec" \| None` | `None` when `role_category` is `"other"`. |
-| `track` | `"ic" \| "management" \| None` | `None` when `role_category` is `"other"`. Always captured alongside seniority, never inferred from it. |
-| `taxonomy_version` | `str` | The version of `job-classification.md` active when this row was produced. Never rewritten retroactively when the taxonomy changes. |
+| `role_category` | `"Designer" \| "Product Manager" \| "Engineer" \| "other" \| "unknown"` | Closed set from `job-classification.md`. `"other"` = confidently not a tracked occupation. `"unknown"` (**added 2026-08-11**) = the title alone doesn't give enough evidence to classify, even though the posting might plausibly be one of the tracked occupations — a genuinely different failure mode from `"other"` (see job-classification.md — Unknown vs. Other). |
+| `specialization` | `str \| None \| "unknown"` | **Renamed from `sub_specialization` 2026-08-11.** e.g. `"UX Designer"`, `"Backend Engineer"`. `None` when `role_category` is `"other"` or `"unknown"`. `"unknown"` (new) when `role_category` is a real tracked category but the title doesn't disambiguate which specialization within it — e.g. "Senior Designer – Digital Products" → `role_category: "Designer", specialization: "unknown"`. Distinct from `None`: `None` means "not applicable," `"unknown"` means "applicable but undetermined." |
+| `level` | `"entry" \| "junior" \| "mid" \| "senior" \| "lead" \| "principal" \| "director" \| "vp" \| "executive" \| "unknown" \| None` | **New 2026-08-11, replaces `seniority`.** `None` when `role_category` is `"other"` or `"unknown"`. `"unknown"` when the title gives no real seniority signal. Never `"manager"` — organizational function belongs to `track`, not `level` (see below); this is the exact bug this column exists to fix. |
+| `track` | `"ic" \| "management" \| "unknown" \| None` | `None` when `role_category` is `"other"` or `"unknown"`. `"unknown"` added 2026-08-11, same reasoning as `level`'s. Always captured alongside `level`, never inferred from it. |
+| `classification_confidence` | `"low" \| "medium" \| "high"` | **New 2026-08-11.** The LLM's own self-reported confidence in this classification — an interpretation, not a measured accuracy figure (same honesty framing as Requirements extraction's fields). Exists so classifications can be filtered by confidence for sensitive analyses, and so a human reviewer has a place to start (low-confidence rows first) instead of reviewing uniformly. |
+| `taxonomy_version` | `str` | The version of `job-classification.md` active when this row was produced. Never rewritten retroactively when the taxonomy changes — see Business Logic — Taxonomy reprocessing (2026-08-11) for how this specific revision is the deliberate exception that proves the rule. |
 | `model` | `str` | Provider/model that produced this classification, e.g. `"gemini/gemini-2.5-flash"` — or `"heuristic-keyword-filter"` when the posting was resolved by the pre-classification denylist filter (see Business Logic — Classification) rather than an LLM call. Kept as a free-text field specifically so provenance stays honest about which path produced a given `"other"`. |
 | `classified_at` | `datetime` | |
+
+**Migration note (2026-08-11) — a deliberate exception to this product's additive-only
+migration pattern.** Every prior migration in this file (`ADD COLUMN IF NOT EXISTS`, never a
+rename or drop) was additive because the new columns held genuinely new information that
+simply didn't exist for old rows. This one is different in kind: `seniority`'s stored values
+are not merely incomplete, they're actively wrong for the exact population this revision
+exists to fix (see job-classification.md — Level, the 160-posting `seniority: "manager"`
+collapse). Keeping the old column around as dead data would preserve a bug's output
+indefinitely for no benefit — nothing downstream should ever read it again. So:
+`ALTER TABLE classifications RENAME COLUMN sub_specialization TO specialization` (data
+preserved, reprocessed in place per Business Logic below); `ALTER TABLE classifications DROP
+COLUMN seniority` followed by `ALTER TABLE classifications ADD COLUMN level TEXT` (data not
+preserved — there is no valid mapping from the old lossy values to the new ones, it must be
+re-derived from the title, which reprocessing does anyway); `ADD COLUMN classification_confidence
+TEXT`. This is a one-time, logged exception (this change request is the audit trail), not a
+new general pattern — future migrations should default back to the additive-only approach
+unless a similarly strong case exists.
 
 ### PostingRequirements (`posting_requirements` table) — added 2026-08-09
 One row per posting, 1:1 with `raw_postings` — the singular (non-repeating) fields of
@@ -130,26 +155,53 @@ aggregated with a plain `GROUP BY` rather than JSONB array manipulation.
 |---|---|---|
 | `posting_id` | `str` (PK, FK → `raw_postings.id`) | One row per posting — a `PRIMARY KEY` here (not just `UNIQUE`, since there's no separate surrogate id needed) enforces "extracted at most once per posting" at the database level, same discipline as `classifications.posting_id`. |
 | `education_level` | `"not_mentioned" \| "bootcamp_or_equivalent" \| "bachelors" \| "masters" \| "phd"` | Closed set from `job-classification.md` — Education level. `"not_mentioned"` is the default and is explicitly **not** evidence that no degree is required (see that section's honesty rule). |
+| `education_required` | `"required" \| "preferred" \| "not_mentioned"` | **New 2026-08-11.** Whether `education_level` is a hard requirement or a stated preference. |
+| `equivalent_experience_accepted` | `bool` | **New 2026-08-11.** `true` when the posting explicitly accepts equivalent professional experience in place of the stated `education_level` (e.g. "Bachelor's degree or equivalent professional experience"). Exists specifically so an aggregate claim like "38% of Product roles require a bachelor's degree" doesn't silently ignore postings that accept an alternative — see job-classification.md — Education level. |
+| `years_experience_min` | `int \| None` | **New 2026-08-11.** Parsed from patterns like "3+ years," "10+ years of experience." `NULL` when no minimum is stated. |
+| `work_arrangement` | `"onsite" \| "hybrid" \| "remote" \| "not_mentioned"` | **New 2026-08-11.** Parsed from statements like "100% telecommuting permitted," "50% remote work permitted," or an explicit on-site location/time-zone requirement. |
 | `responsibilities_summary` | `str \| None` | 2-4 sentence LLM-generated summary of the posting's core responsibilities. Deliberately not a closed taxonomy (`job-classification.md` — Responsibilities) — day-to-day duties are too varied to force into a fixed set. `NULL` only if extraction hasn't reached this posting yet. |
-| `other_requirements` | `str \| None` | The freeform catch-all (`job-classification.md` — Other requirements) — captures both untracked skill mentions and any other notable requirement (certification, clearance, portfolio) that doesn't fit a standard field. Never forced into a standard field just to avoid using this one. |
+| `other_requirements` | `str \| None` | The freeform catch-all (`job-classification.md` — Other requirements) — captures both untracked skill mentions and any other notable requirement (certification, clearance, portfolio) that doesn't fit a standard field. Never forced into a standard field just to avoid using this one. **Must never contain a salary/compensation figure** (new rule, 2026-08-11) — that's Compensation Signal's data (`RawPosting.salary_min`/`salary_max`/etc., above), not Requirements Signal's; extraction must ignore compensation text entirely rather than re-capture it here. |
 | `model` | `str` | Provider/model that produced this extraction, same free-text provenance pattern as `classifications.model`. |
 | `extracted_at` | `datetime` | |
 
-### PostingSkill (`posting_skills` table) — added 2026-08-09
+**Migration note (2026-08-11).** `education_required`, `equivalent_experience_accepted`,
+`years_experience_min`, `work_arrangement` are new nullable columns, same
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pattern as every migration before the Classification
+one above — purely additive, no rename/drop needed here since there's no equivalent "actively
+wrong data" problem for this table's existing columns. Existing rows (the ~82 postings
+extracted before this revision) keep these four columns `NULL` until reprocessed — see
+Business Logic — Taxonomy reprocessing (2026-08-11).
+
+### PostingSkill (`posting_skills` table) — added 2026-08-09, restructured 2026-08-11
 One row per posting **per tracked skill mention** — many rows per posting, zero rows if
-none of that posting's Role Category's tracked skills were mentioned at all. Only ever
-holds a closed-set `skill` value (`job-classification.md` — Skills) — an untracked mention
-goes into `posting_requirements.other_requirements` instead, never forced in here.
+none of that posting's applicable skill_group(s) were mentioned at all. Only ever holds a
+closed-set `skill_group` value (`job-classification.md` — Skills) — an untracked mention goes
+into `posting_requirements.other_requirements` instead, never forced in here.
 
 | Field | Type | Description |
 |---|---|---|
 | `id` | `int` (PK) | |
 | `posting_id` | `str` (FK → `raw_postings.id`) | |
-| `skill` | `str` | One of the closed values for that posting's `role_category` (`job-classification.md` — Skills table). Validated against that closed set the same way `role_category` itself is. |
+| `raw_skill` | `str` | **New 2026-08-11.** The mention as it actually appears in the posting (e.g. `"React"`, `"AWS"`, `"Kubernetes"`), normalized only for obvious casing/punctuation — not yet canonicalized across spelling variants (a `normalized_skill` field, e.g. collapsing `"React.js"` and `"React"` to one value, is explicitly deferred — see job-classification.md — Skills). This is what makes "which specific technologies are trending" answerable, which `skill_group` alone never could. |
+| `skill_group` | `str` | **Renamed from `skill` 2026-08-11.** One of the closed values applicable to that posting (`job-classification.md` — Skills table), selected by `role_category` + `track` + `specialization` together, not `role_category` alone — see Business Logic — Requirements extraction. Validated against the applicable closed set the same way `role_category` itself is. |
 | `requirement_level` | `"must_have" \| "nice_to_have"` | |
 
-`UNIQUE (posting_id, skill)` — the same tracked skill is never recorded twice for one
-posting, even if mentioned in multiple places in the description.
+`UNIQUE (posting_id, raw_skill)` — **changed from `UNIQUE (posting_id, skill)` 2026-08-11.**
+The old constraint no longer fits: multiple distinct raw mentions can now legitimately map to
+the same `skill_group` (e.g. "Kafka" and "Spark" both under "Data engineering / big data"), so
+uniqueness on `skill_group` alone would silently drop the second one. Uniqueness on
+`raw_skill` instead prevents the same literal mention being recorded twice for one posting,
+while still allowing several distinct mentions to share a group.
+
+**Migration note (2026-08-11).** `ALTER TABLE posting_skills RENAME COLUMN skill TO
+skill_group`, then `ALTER TABLE posting_skills ADD COLUMN raw_skill TEXT`, then drop and
+recreate the `UNIQUE` constraint on the new column pair. Existing rows' `skill_group` values
+are preserved (they're still valid closed-set values, just under the old role_category-only
+selection logic) but `raw_skill` is `NULL` for them until reprocessed — see Business Logic —
+Taxonomy reprocessing (2026-08-11). This is additive-plus-rename, not the same "actively
+wrong data" case as `classifications.seniority` above — existing `skill_group` values aren't
+incorrect, they're just incomplete without their `raw_skill` counterpart, and incomplete rows
+are reprocessed the same way any other pre-revision posting is.
 
 ### PostingLanguage (`posting_languages` table) — added 2026-08-09
 One row per posting per language requirement mentioned — many rows per posting, zero if
@@ -459,16 +511,24 @@ adapter and company together — not once per company, and not scoped by source 
 title-based cache below sees the widest possible pool for catching duplicate titles before any
 LLM call is made. Postings are
 classified in batched LLM calls (not per-posting, to control cost), constrained to the closed
-`Role Category`, `Seniority`, and `Track` sets defined in `design/market-health/job-classification.md`;
-the response is parsed and validated against those sets in application code (see `Tech
-Decisions` — `LLMProvider` has no native schema-constrained output today, so validation is
-the caller's job, not the provider's). A posting whose returned value doesn't validate, or
-that doesn't genuinely fit any Role Category, is classified `role_category: "other"` and
-logged for human review, per the `other` escape hatch defined in that spec, rather than
-forced into the nearest match. Every classification row is stamped with the
+`Role Category`, `Specialization`, `Level`, `Track`, and `Classification Confidence` sets
+defined in `design/market-health/job-classification.md` (**Specialization/Level/Track/
+Classification Confidence added or restructured 2026-08-11** — see Data Models above and
+Taxonomy reprocessing, below); the response is parsed and validated against those sets in
+application code (see `Tech Decisions` — `LLMProvider` has no native schema-constrained output
+today, so validation is the caller's job, not the provider's). A posting whose returned value
+doesn't validate, or that doesn't genuinely fit any Role Category, is classified
+`role_category: "other"` and logged for human review, per the `other` escape hatch defined in
+that spec, rather than forced into the nearest match. A posting whose title gives too little
+signal to classify at all — even though it might plausibly be a tracked occupation — is
+classified `role_category: "unknown"` instead (**new 2026-08-11**, distinct from `"other"`;
+see job-classification.md — Unknown vs. Other); the same `unknown` value is valid
+independently at the `specialization`, `level`, and `track` fields when the category itself is
+known but one of those finer dimensions isn't. Every classification row is stamped with the
 `taxonomy_version` active in `job-classification.md` at classification time; if the taxonomy
 is later revised, existing rows keep their original version rather than being silently
-relabeled.
+relabeled — except for a deliberate, logged reprocessing pass like this revision's own (see
+Taxonomy reprocessing, below), which is a conscious migration, not a silent one.
 
 **Retry policy — transient provider errors, not just rate limits.** Each classification
 batch call retries with backoff (up to 5 attempts, 60s between attempts) on any retryable
@@ -606,16 +666,91 @@ which was based on a one-time migration burst, not ongoing load).
 - **Batching**: multiple postings' full descriptions per call, not one-per-call, same
   cost-control principle as classification — but a materially smaller batch size than
   classification's 100-titles/batch, since each item now needs a full description as input
-  and a richer structured output (skills, education, language, a responsibilities summary,
-  and the catch-all) rather than four short classification fields. Exact batch size is an
+  and a richer structured output (skills, education, years of experience, work arrangement,
+  language, a responsibilities summary, and the catch-all) rather than four short
+  classification fields. **Grouping key changed 2026-08-11**: a batch groups postings that
+  share the same applicable skill_group list(s) (derived from `role_category`/`track`/
+  `specialization`, see above), not `role_category` alone — since two postings with the same
+  `role_category` can now need different system-prompt content. Exact batch size is an
   implementation constant, not spec'd here — same "tuned as real data comes in" precedent
   already used for `BATCH_SIZE` and the denylist keyword list.
 - **One call produces all of it.** A single extraction call for a posting yields its
-  `PostingRequirements` row (education level, responsibilities summary, catch-all) and its
+  `PostingRequirements` row (education level/required/equivalent-experience, years of
+  experience, work arrangement, responsibilities summary, catch-all) and its
   `PostingSkill`/`PostingLanguage` rows together — not separate calls per field. Skill and
   language values are validated against `job-classification.md`'s closed sets the same way
   `role_category` is; anything that doesn't validate is folded into
   `other_requirements` rather than discarded or forced into the nearest match.
+- **Skill_group selection is (Role Category × Track × Specialization)-aware, not Role
+  Category alone (changed 2026-08-11).** Before building the extraction prompt for a batch,
+  look up that batch's applicable `skill_group` list(s) from `job-classification.md`'s Skills
+  table using the posting's already-known `classifications` row (`role_category`, `track`,
+  `specialization`) — e.g. a `track: "management"` posting gets the People Leadership list
+  regardless of `role_category`; an Engineer posting with `specialization` in {Solutions
+  Engineer, Solutions Architect, Customer Engineer, Support Engineer, Forward Deployed
+  Engineer, Forward Deployed Software Engineer} gets Pre-sales & Solutions instead of the
+  hands-on technical list. More than one list can apply to a single posting (e.g. a Designer
+  `track: "management"` posting is checked against both People Leadership and the Designer IC
+  list) — see job-classification.md — Skills for the full selection table. This is why
+  batching (below) groups by the same **applicable skill_group list(s)**, not by
+  `role_category` alone as before this revision — two Engineer postings with different
+  `track`/`specialization` combinations may need different system-prompt content and can no
+  longer share a batch just because they share a `role_category`.
+- **Years of experience, work arrangement, and education nuance are extracted alongside
+  skills (new 2026-08-11).** `years_experience_min` (parsed from "X+ years" patterns),
+  `work_arrangement` (onsite/hybrid/remote/not_mentioned), `education_required`, and
+  `equivalent_experience_accepted` are new extraction targets in the same prompt/response as
+  the original fields — see job-classification.md — Years of experience, Work arrangement,
+  Education level.
+- **Never extract compensation (new rule, 2026-08-11).** The extraction prompt explicitly
+  instructs the model to ignore salary/compensation text entirely — not just to leave it out
+  of the closed fields, but to never place a compensation figure in `other_requirements`
+  either. That data belongs to Compensation Signal (`RawPosting.salary_min`/etc., Data
+  Models, above), which already extracts it with its own structured/parsed confidence
+  distinction; a figure re-appearing here would be a second, uncoordinated source of truth
+  for the same fact. Real production `other_requirements` text captured before this rule
+  existed did occasionally include a salary figure — confirmed during this revision's
+  evidence-gathering — which is exactly the duplication this rule closes.
+
+**Taxonomy reprocessing (2026-08-11) — a one-time, explicit migration, not a recurring
+pattern.** Covers how the ~5,105 already-classified postings and the ~82 already-
+requirements-extracted postings move onto this revision's taxonomy. Tracked entirely by
+`changes/2026-08-11-classification-taxonomy-redesign.md` as its audit trail — this is the
+deliberate, logged exception `taxonomy_version`'s "never silently reclassify" rule
+anticipates (Data Models — Classification, above), not a violation of it.
+
+- **Classification reprocessing is cheap — title-only, cacheable, same mechanism as ongoing
+  daily classification.** A new backlog query returns *every* `raw_postings` row (not just
+  unclassified ones, unlike `get_all_unclassified()`) for this one-time pass. Because
+  classification depends only on title text, the same title-cache mechanism collapses the
+  real distinct-title workload well below the raw 5,105-posting count — consistent with why
+  ongoing daily classification now costs only ~1 request/day at steady state despite a much
+  larger posting volume. Since `classifications.posting_id` is `UNIQUE` (Data Models, above),
+  reprocessing a posting **updates its existing row in place** (new `specialization`,
+  `level`, `track`, `classification_confidence`, `taxonomy_version: "2026-08-11"`) rather than
+  inserting a second row — the schema has no way to hold two `taxonomy_version`s for the same
+  posting simultaneously, and adding that capability was judged out of scope for this change
+  (a bigger structural change than the taxonomy content itself calls for). This pass follows
+  the same oldest-first, daily-budget-bounded discipline as ongoing classification — it is
+  simply a larger backlog than usual, and will take multiple days to fully clear under the
+  20-request/day ceiling, same as any other backlog surge this pipeline has handled before.
+- **Requirements reprocessing is not cache-able — per-posting, not per-title, real cost.**
+  The ~82 postings already extracted before this revision need genuine re-extraction, costing
+  ~82 postings' worth of real requests again against `GEMINI_API_KEY_REQUIREMENTS`'s daily
+  budget (small relative to the 2,300+-posting backlog this key already processes daily, but
+  real, not free). Mechanism: delete the existing `posting_requirements`/`posting_skills`/
+  `posting_languages` rows for those ~82 postings first — their `PRIMARY KEY`/`UNIQUE`
+  constraints otherwise block re-insertion under the existing `ON CONFLICT DO NOTHING`
+  pattern — then let the normal `get_all_needing_requirements()` backlog query pick them back
+  up automatically on the next run. No bespoke reprocessing script needed: once deleted, those
+  postings are indistinguishable from "never extracted" to the existing pipeline.
+- **Ordering matters: classification reprocessing must reach a posting before requirements
+  reprocessing does.** Skill_group selection (Business Logic — Requirements extraction,
+  above) now depends on the posting's `role_category`/`track`/`specialization` — running
+  requirements reprocessing against a posting whose classification row is still on the old
+  taxonomy would select the wrong skill_group list, silently reintroducing the exact bug this
+  revision fixes. The requirements-reprocessing delete step should only target postings whose
+  classification row already carries `taxonomy_version: "2026-08-11"`.
 
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their
@@ -658,22 +793,27 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    `design/market-health/experience.md` — already work through this exact tool, unchanged.
    No backend change was needed for those three dimensions; only `country` (below) is new.**
    Parameters:
-   - `group_by`: one or more of `role_category`, `sub_specialization`, `seniority`, `track`,
+   - `group_by`: one or more of `role_category`, `specialization`, `level`, `track`,
      `country` (new 2026-08-04), `month`
-   - `role_category`, `sub_specialization`, `seniority`, `track`: optional filters, each
-     restricted to the closed sets in `design/market-health/job-classification.md`
+   - `role_category`, `specialization`, `level`, `track`: optional filters, each restricted to
+     the closed sets in `design/market-health/job-classification.md`. **Renamed 2026-08-11**:
+     `sub_specialization` → `specialization`, `seniority` → `level` — see Data Models —
+     Classification, above. `role_category: "unknown"` and per-field `"unknown"` values are
+     valid filter values like any other closed-set member, not treated specially by this tool.
    - `country` (new 2026-08-04): optional filter — a non-empty string, parameterised the same
      safe way as the closed-set filters, but validated only as "non-empty" rather than against
-     a fixed set, since normalized country values aren't a small enum the way role/seniority
+     a fixed set, since normalized country values aren't a small enum the way role/level
      are (Business Logic — Location normalization)
    - `date_from`, `date_to`: optional ISO dates
-   Always excludes `role_category: "other"` rows, matching the trend-aggregation rule. Rows
-   with `country IS NULL` are excluded whenever `country` is used as a filter or `group_by`
-   dimension — never guessed in to pad a count.
+   Always excludes `role_category: "other"` rows, matching the trend-aggregation rule.
+   `role_category: "unknown"` rows are **not** excluded by default — they're a real,
+   plausibly-tracked population, unlike `"other"` — but a caller can filter them out
+   explicitly if a question calls for it. Rows with `country IS NULL` are excluded whenever
+   `country` is used as a filter or `group_by` dimension — never guessed in to pad a count.
    Returns:
    ```json
    {
-     "rows": [{ "role_category": "Designer", "sub_specialization": "Product Designer", "count": 33 }],
+     "rows": [{ "role_category": "Designer", "specialization": "Product Designer", "count": 33 }],
      "data_range": { "earliest": "2026-07-20", "latest": "2026-07-22" },
      "total_matching": 297
    }
@@ -687,9 +827,9 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    questions need a different aggregation shape than demand questions — `AVG`/`MIN`/`MAX`
    over a numeric range plus a disclosed-vs-estimated breakdown, not a `GROUP BY` count.
    Accepts the same filter dimensions as `query_market_data` (`role_category`,
-   `sub_specialization`, `seniority`, `track`, `country` — see Location normalization,
-   above, for how `country` is derived) so a compensation question can be scoped exactly
-   like a demand question. Returns:
+   `specialization`, `level`, `track`, `country` — **renamed 2026-08-11**, see Data Models —
+   Classification, above, for how `country` is derived) so a compensation question can be
+   scoped exactly like a demand question. Returns:
    ```json
    {
      "structured_count": 14,
@@ -713,20 +853,35 @@ citation bug happened. The new design gives the model two tools and a fixed deci
 1b. **`query_requirements_data` tool (added 2026-08-09, tried alongside the other two, same
    stage).** A third read-only, parameterised tool for skills/education/language questions —
    yet another different aggregation shape (frequency counts per closed taxonomy value, not
-   a numeric range or a role/seniority `GROUP BY`). Accepts the same filter dimensions as the
-   other two tools. Returns:
+   a numeric range or a role/level `GROUP BY`). Accepts the same filter dimensions as the
+   other two tools (`role_category`, `specialization`, `level`, `track`, `country`), plus,
+   **new 2026-08-11**: `skill_group` (optional filter, restricted to the closed sets in
+   `design/market-health/job-classification.md` — Skills), `work_arrangement`, and
+   `education_required`. Returns:
    ```json
    {
      "skills": [
-       { "skill": "Front-end coding (HTML/CSS/JS)", "must_have_count": 3, "nice_to_have_count": 7 },
-       { "skill": "Design systems", "must_have_count": 19, "nice_to_have_count": 4 }
+       { "skill_group": "Front-end coding (HTML/CSS/JS)", "must_have_count": 3, "nice_to_have_count": 7,
+         "raw_skills": [{ "raw_skill": "React", "count": 5 }, { "raw_skill": "Vue", "count": 2 }] },
+       { "skill_group": "Design systems", "must_have_count": 19, "nice_to_have_count": 4, "raw_skills": [] }
      ],
      "education_levels": { "not_mentioned": 29, "bachelors": 8, "masters": 1 },
+     "equivalent_experience_accepted_count": 5,
+     "years_experience_min": { "min": 2, "median": 5, "max": 12 },
+     "work_arrangement": { "onsite": 4, "hybrid": 9, "remote": 6, "not_mentioned": 19 },
      "languages": [{ "language": "English", "required_count": 2, "preferred_count": 0 }],
      "data_range": { "earliest": "2026-07-20", "latest": "2026-08-09" },
      "total_matching": 38
    }
    ```
+   `skills[].raw_skills` (**new 2026-08-11**) is what makes "which specific technologies are
+   trending" answerable — a per-skill_group breakdown of the actual `raw_skill` mentions
+   behind its aggregate count, sorted by frequency. `equivalent_experience_accepted_count` is
+   the count of matching postings where that boolean is `true`, specifically so a claim like
+   "38% of Product roles require a bachelor's degree" can be checked against how many of those
+   also accept equivalent experience (job-classification.md — Education level), rather than
+   silently overstating a hard requirement. `years_experience_min` aggregates only over
+   postings where that field is non-`NULL`.
    `total_matching` is the count of postings in the matched slice that actually have a
    `PostingRequirements` row — i.e. the real denominator for any percentage the model states
    (e.g. "27% of postings" must be computed against this number, not against

@@ -121,7 +121,11 @@ CREATE TABLE IF NOT EXISTS posting_languages (
     UNIQUE (posting_id, language)
 );
 
-CREATE INDEX IF NOT EXISTS idx_posting_skills_skill ON posting_skills (skill);
+-- idx_posting_skills_skill's column reference is fixed up post-rename, below
+-- (2026-08-11 migration) — CREATE INDEX IF NOT EXISTS still validates the
+-- column list even when the index name already exists, so a static
+-- reference to the pre-rename "skill" column here would fail on every
+-- startup after the first (confirmed the hard way against real production).
 CREATE INDEX IF NOT EXISTS idx_posting_skills_posting_id ON posting_skills (posting_id);
 CREATE INDEX IF NOT EXISTS idx_posting_languages_posting_id ON posting_languages (posting_id);
 
@@ -162,6 +166,93 @@ ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS llm_requests_used INTEGER NO
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_extracted INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_requests_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_budget_reached BOOLEAN NOT NULL DEFAULT false;
+
+-- Classification taxonomy redesign migration (2026-08-11): the one deliberate
+-- non-additive migration in this file — see backend/specs/market-health/
+-- api.md — Data Models — Classification (migration note) for the full
+-- reasoning. RENAME COLUMN has no native IF EXISTS-style guard in Postgres,
+-- so the renames are wrapped in DO blocks that check information_schema
+-- first, keeping this idempotent across repeated startups the same as every
+-- other statement here.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'classifications' AND column_name = 'sub_specialization'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'classifications' AND column_name = 'specialization'
+    ) THEN
+        ALTER TABLE classifications RENAME COLUMN sub_specialization TO specialization;
+    END IF;
+END $$;
+
+-- seniority's stored values are actively wrong for the population this
+-- revision fixes (see job-classification.md — Level), not merely
+-- incomplete — dropped rather than preserved, since there is no valid
+-- mapping from the old lossy values to the new ones; level is re-derived
+-- from title by the reprocessing pass instead.
+ALTER TABLE classifications DROP COLUMN IF EXISTS seniority;
+ALTER TABLE classifications ADD COLUMN IF NOT EXISTS level TEXT;
+ALTER TABLE classifications ADD COLUMN IF NOT EXISTS classification_confidence TEXT;
+
+-- Requirements Signal fields (2026-08-11): purely additive, same pattern as
+-- every posting_requirements migration before it.
+ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS education_required TEXT;
+ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS equivalent_experience_accepted BOOLEAN;
+ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS years_experience_min INTEGER;
+ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS work_arrangement TEXT;
+
+-- posting_skills restructure (2026-08-11): skill -> skill_group rename plus
+-- a new raw_skill column, same DO-block guard pattern as classifications'
+-- rename above. Existing skill_group values are preserved (still valid
+-- closed-set values, just missing their raw_skill counterpart until
+-- reprocessed) — this is additive-plus-rename, not the same "actively
+-- wrong data" case as classifications.seniority.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'posting_skills' AND column_name = 'skill'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'posting_skills' AND column_name = 'skill_group'
+    ) THEN
+        ALTER TABLE posting_skills RENAME COLUMN skill TO skill_group;
+    END IF;
+END $$;
+ALTER TABLE posting_skills ADD COLUMN IF NOT EXISTS raw_skill TEXT;
+
+-- UNIQUE(posting_id, skill) no longer fits now that multiple raw mentions
+-- can share one skill_group (e.g. "Kafka" and "Spark" both under "Data
+-- engineering / big data") — replaced with UNIQUE(posting_id, raw_skill).
+-- RENAME COLUMN does not rename the constraint that referenced the old
+-- column name, so the old constraint is dropped explicitly by its
+-- (Postgres-default) auto-generated name and the new one added, each
+-- guarded so this stays idempotent across repeated startups.
+ALTER TABLE posting_skills DROP CONSTRAINT IF EXISTS posting_skills_posting_id_skill_key;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'posting_skills_posting_id_raw_skill_key'
+    ) THEN
+        ALTER TABLE posting_skills
+            ADD CONSTRAINT posting_skills_posting_id_raw_skill_key UNIQUE (posting_id, raw_skill);
+    END IF;
+END $$;
+
+-- New index for the raw_skill breakdown query_requirements_data now needs
+-- (Business Logic — query tools).
+CREATE INDEX IF NOT EXISTS idx_posting_skills_raw_skill ON posting_skills (raw_skill);
+
+-- Corrected, post-rename column reference for the index originally created
+-- (pre-2026-08-11) as `idx_posting_skills_skill ON posting_skills (skill)`.
+-- On an already-migrated database this index already exists under this name
+-- and IF NOT EXISTS skips it (now safely, since skill_group genuinely
+-- exists). On a fresh database this is what actually creates it, since the
+-- original early CREATE INDEX statement above was removed for the reason
+-- explained there.
+CREATE INDEX IF NOT EXISTS idx_posting_skills_skill ON posting_skills (skill_group);
 """
 
 

@@ -100,25 +100,70 @@ def get_all_unclassified() -> list[dict]:
 
 def get_all_needing_requirements() -> list[dict]:
     """
-    Real (role_category != "other") classified postings with no
+    Real (role_category not in "other"/"unknown") classified postings with no
     posting_requirements row yet, oldest-first by fetched_at — same fairness
     principle as get_all_unclassified(). Scoped to already-classified postings
     only: no point spending a requirements-extraction call on a posting
-    already known to be irrelevant. See backend/specs/market-health/api.md —
+    already known to be irrelevant, or on one whose role_category (and
+    therefore applicable skill_group list — see job-classification.md —
+    Skills) isn't even known yet. "unknown" excluded 2026-08-11 for the same
+    reason "other" always was. See backend/specs/market-health/api.md —
     Business Logic — Requirements extraction.
     """
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT rp.id, rp.source, rp.raw_response, c.role_category
+            SELECT rp.id, rp.source, rp.raw_response, c.role_category, c.track, c.specialization
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
             LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
-            WHERE c.role_category != 'other' AND pr.posting_id IS NULL
+            WHERE c.role_category NOT IN ('other', 'unknown') AND pr.posting_id IS NULL
             ORDER BY rp.fetched_at ASC
             """
         ).fetchall()
     return [
-        {"id": row[0], "source": row[1], "raw_response": row[2], "role_category": row[3]}
+        {
+            "id": row[0], "source": row[1], "raw_response": row[2],
+            "role_category": row[3], "track": row[4], "specialization": row[5],
+        }
         for row in rows
     ]
+
+
+def get_all_for_reclassification() -> list[dict]:
+    """
+    Every raw_postings row, oldest-first, regardless of whether it already
+    has a classification — used only by the one-time 2026-08-11 taxonomy
+    reprocessing pass (see backend/specs/market-health/api.md — Business
+    Logic — Taxonomy reprocessing). Distinct from get_all_unclassified(),
+    which only returns postings with no classification row at all and is
+    what the ongoing daily pipeline still uses.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, title FROM raw_postings ORDER BY fetched_at ASC"
+        ).fetchall()
+    return [{"id": row[0], "title": row[1]} for row in rows]
+
+
+def get_requirements_reprocess_targets(taxonomy_version: str) -> list[str]:
+    """
+    Posting ids that already have a posting_requirements row AND whose
+    classification has already been reprocessed onto `taxonomy_version` —
+    the ordering dependency from Business Logic — Taxonomy reprocessing:
+    a posting's requirements must never be reprocessed against a still-stale
+    classification, since skill_group selection depends on
+    role_category/track/specialization. One-time use only, same as
+    get_all_for_reclassification().
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT pr.posting_id
+            FROM posting_requirements pr
+            JOIN classifications c ON c.posting_id = pr.posting_id
+            WHERE c.taxonomy_version = %s
+            """,
+            (taxonomy_version,),
+        ).fetchall()
+    return [row[0] for row in rows]

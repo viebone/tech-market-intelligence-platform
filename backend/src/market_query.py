@@ -7,17 +7,24 @@ sourcing.
 Not raw SQL execution: group-by fields and filter values are validated against
 closed sets before ever reaching a query string, since this function is called
 directly by the LLM via automatic function calling (see llm/gemini.py).
+
+Field names renamed 2026-08-11 (sub_specialization -> specialization,
+seniority -> level) per the classification taxonomy redesign — see
+design/market-health/job-classification.md and
+backend/specs/market-health/api.md — Data Models — Classification.
 """
 
 from db import get_connection
 
-_ALLOWED_GROUP_BY = {"role_category", "sub_specialization", "seniority", "track", "country", "month"}
-_ALLOWED_ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer"}
-_ALLOWED_SENIORITY = {
+_ALLOWED_GROUP_BY = {"role_category", "specialization", "level", "track", "country", "month"}
+_ALLOWED_ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer", "other", "unknown"}
+_ALLOWED_LEVEL = {
     "entry", "junior", "mid", "senior", "lead",
-    "principal", "manager", "director", "vp", "exec",
+    "principal", "director", "vp", "executive", "unknown",
 }
-_ALLOWED_TRACK = {"ic", "management"}
+_ALLOWED_TRACK = {"ic", "management", "unknown"}
+_ALLOWED_WORK_ARRANGEMENT = {"onsite", "hybrid", "remote", "not_mentioned"}
+_ALLOWED_EDUCATION_REQUIRED = {"required", "preferred", "not_mentioned"}
 
 
 def _as_list(value) -> list:
@@ -37,7 +44,7 @@ def _as_list(value) -> list:
 
 def _country_filter(country: list[str] | None) -> list[str]:
     """
-    Country isn't a small closed set the way role/seniority are (Business
+    Country isn't a small closed set the way role/level are (Business
     Logic — Location normalization), so it's validated only as "non-empty,
     2-letter-ish" rather than against a fixed enum — still fully parameterised,
     never string-interpolated into SQL.
@@ -48,8 +55,8 @@ def _country_filter(country: list[str] | None) -> list[str]:
 def query_market_data(
     group_by: list[str],
     role_category: list[str] | None = None,
-    sub_specialization: list[str] | None = None,
-    seniority: list[str] | None = None,
+    specialization: list[str] | None = None,
+    level: list[str] | None = None,
     track: list[str] | None = None,
     country: list[str] | None = None,
     date_from: str | None = None,
@@ -59,22 +66,24 @@ def query_market_data(
     Query real, live-classified job postings from the platform's own database.
 
     Use this to answer any question about tech job market demand — comparisons
-    between role categories, specializations, seniority levels, track, or
-    location, and trends over time. Always try this before assuming a question
-    can't be answered from the platform's data. For compensation/salary
-    questions, use query_compensation_data instead — this tool only counts
-    postings, it does not return salary figures.
+    between role categories, specializations, levels, track, or location, and
+    trends over time. Always try this before assuming a question can't be
+    answered from the platform's data. For compensation/salary questions, use
+    query_compensation_data instead — this tool only counts postings, it does
+    not return salary figures.
 
     Args:
-        group_by: One or more of "role_category", "sub_specialization",
-            "seniority", "track", "country", "month" — how to break the counts down.
+        group_by: One or more of "role_category", "specialization", "level",
+            "track", "country", "month" — how to break the counts down.
         role_category: List of one or more of "Designer", "Product Manager",
             "Engineer" to filter to — pass a single-item list to filter to one.
-        sub_specialization: List of one or more specific specializations to
+            "unknown" (the title alone didn't give enough evidence to classify)
+            is also a valid value here if a question specifically asks about it.
+        specialization: List of one or more specific specializations to
             filter to, e.g. ["UX Designer"] or ["UX Designer", "Product Designer"]
             to compare two.
-        seniority: List of one or more of "entry", "junior", "mid", "senior",
-            "lead", "principal", "manager", "director", "vp", "exec" to filter to.
+        level: List of one or more of "entry", "junior", "mid", "senior",
+            "lead", "principal", "director", "vp", "executive" to filter to.
         track: List of one or more of "ic", "management" to filter to.
         country: List of one or more ISO-2 country codes (e.g. "US", "GB") to filter
             to. Postings whose location couldn't be normalized are always excluded
@@ -97,23 +106,27 @@ def query_market_data(
         valid_group_by = ["role_category"]
 
     role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
-    sub_specializations = _as_list(sub_specialization)
-    seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
+    specializations = _as_list(specialization)
+    levels = [v for v in _as_list(level) if v in _ALLOWED_LEVEL]
     tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
     countries = _country_filter(country)
 
+    # "other" is always excluded (confidently not a tracked occupation).
+    # "unknown" (2026-08-11) is NOT excluded by default — it's a real,
+    # plausibly-tracked population, unlike "other" — a caller filters it out
+    # explicitly via role_category if a question calls for that.
     where = ["c.role_category != 'other'"]
     params: list = []
 
     if role_categories:
         where.append(f"c.role_category = ANY(%s)")
         params.append(role_categories)
-    if sub_specializations:
-        where.append("c.sub_specialization = ANY(%s)")
-        params.append(sub_specializations)
-    if seniorities:
-        where.append("c.seniority = ANY(%s)")
-        params.append(seniorities)
+    if specializations:
+        where.append("c.specialization = ANY(%s)")
+        params.append(specializations)
+    if levels:
+        where.append("c.level = ANY(%s)")
+        params.append(levels)
     if tracks:
         where.append("c.track = ANY(%s)")
         params.append(tracks)
@@ -179,8 +192,8 @@ def query_market_data(
 
 def query_compensation_data(
     role_category: list[str] | None = None,
-    sub_specialization: list[str] | None = None,
-    seniority: list[str] | None = None,
+    specialization: list[str] | None = None,
+    level: list[str] | None = None,
     track: list[str] | None = None,
     country: list[str] | None = None,
     date_from: str | None = None,
@@ -200,10 +213,10 @@ def query_compensation_data(
     only mention the parsed/estimated count separately, explicitly labelled as
     an estimate — never blend the two into one number. If both counts are 0,
     say plainly that no postings in this slice disclose compensation — never
-    guess a figure from seniority or role alone.
+    guess a figure from level or role alone.
 
     Args:
-        role_category, sub_specialization, seniority, track, country: same filters
+        role_category, specialization, level, track, country: same filters
             as query_market_data — narrow to a specific slice of the market.
         date_from, date_to: ISO dates (YYYY-MM-DD), same meaning as query_market_data.
 
@@ -218,8 +231,8 @@ def query_compensation_data(
         - data_range, total_matching: same meaning as query_market_data
     """
     role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
-    sub_specializations = _as_list(sub_specialization)
-    seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
+    specializations = _as_list(specialization)
+    levels = [v for v in _as_list(level) if v in _ALLOWED_LEVEL]
     tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
     countries = _country_filter(country)
 
@@ -228,12 +241,12 @@ def query_compensation_data(
     if role_categories:
         where.append("c.role_category = ANY(%s)")
         params.append(role_categories)
-    if sub_specializations:
-        where.append("c.sub_specialization = ANY(%s)")
-        params.append(sub_specializations)
-    if seniorities:
-        where.append("c.seniority = ANY(%s)")
-        params.append(seniorities)
+    if specializations:
+        where.append("c.specialization = ANY(%s)")
+        params.append(specializations)
+    if levels:
+        where.append("c.level = ANY(%s)")
+        params.append(levels)
     if tracks:
         where.append("c.track = ANY(%s)")
         params.append(tracks)
@@ -307,18 +320,23 @@ def query_compensation_data(
 
 def query_requirements_data(
     role_category: list[str] | None = None,
-    sub_specialization: list[str] | None = None,
-    seniority: list[str] | None = None,
+    specialization: list[str] | None = None,
+    level: list[str] | None = None,
     track: list[str] | None = None,
     country: list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    skill_group: list[str] | None = None,
+    work_arrangement: list[str] | None = None,
+    education_required: list[str] | None = None,
 ) -> dict:
     """
-    Query real extracted requirements (skills, education, language) from the
-    platform's own database. Use this for any question about what a role's
-    postings actually ask for — must-have vs. nice-to-have skills, education
-    level, language requirements — including "should I learn X" style
+    Query real extracted requirements (skills, education, years of
+    experience, work arrangement, language) from the platform's own
+    database. Use this for any question about what a role's postings
+    actually ask for — must-have vs. nice-to-have skills, specific
+    technologies, education level, years of experience, remote/onsite/hybrid
+    arrangement, language requirements — including "should I learn X" style
     synthesis questions, where this tool supplies the data half of the answer.
 
     Every extracted field is an LLM's interpretation of free text a company
@@ -327,40 +345,58 @@ def query_requirements_data(
     X"), and always state total_matching as the sample size. If total_matching
     is small, say so explicitly rather than drawing a confident conclusion —
     for a synthesis question, give the data but decline to recommend if the
-    sample is too small to support it.
+    sample is too small to support it. Never state a compensation/salary
+    figure from this tool's results — it does not extract that; use
+    query_compensation_data instead.
 
     Args:
-        role_category, sub_specialization, seniority, track, country: same filters
+        role_category, specialization, level, track, country: same filters
             as query_market_data — narrow to a specific slice of the market.
         date_from, date_to: ISO dates (YYYY-MM-DD), same meaning as query_market_data.
+        skill_group: List of one or more tracked skill group names (see the
+            skills breakdown this tool returns for real examples) to filter to.
+        work_arrangement: List of one or more of "onsite", "hybrid", "remote" to filter to.
+        education_required: List of one or more of "required", "preferred" to filter to.
 
     Returns:
         A dict with:
-        - skills: [{skill, must_have_count, nice_to_have_count}, ...] for every tracked
-          skill mentioned at least once in the matched slice
+        - skills: [{skill_group, must_have_count, nice_to_have_count,
+          raw_skills: [{raw_skill, count}, ...]}, ...] for every applicable skill
+          group mentioned at least once in the matched slice. raw_skills is the
+          specific technology/practice mentions behind that group's count,
+          sorted by frequency — this is what answers "which specific
+          technologies are trending," not just the group-level aggregate.
         - education_levels: {education_level: count, ...}
+        - equivalent_experience_accepted_count: postings where that boolean is true —
+          check this before stating an absolute education requirement claim.
+        - years_experience_min: {min, median, max} across postings where it's stated —
+          omitted fields mean no postings in this slice stated a minimum.
+        - work_arrangement: {onsite, hybrid, remote, not_mentioned: count, ...}
         - languages: [{language, required_count, preferred_count}, ...]
         - data_range, total_matching: total_matching is the count of postings in the
           matched slice that actually have extracted requirements — the real denominator
           for any percentage stated, not the same as query_market_data's broader count
     """
     role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
-    sub_specializations = _as_list(sub_specialization)
-    seniorities = [v for v in _as_list(seniority) if v in _ALLOWED_SENIORITY]
+    specializations = _as_list(specialization)
+    levels = [v for v in _as_list(level) if v in _ALLOWED_LEVEL]
     tracks = [v for v in _as_list(track) if v in _ALLOWED_TRACK]
     countries = _country_filter(country)
+    skill_groups = _as_list(skill_group)
+    work_arrangements = [v for v in _as_list(work_arrangement) if v in _ALLOWED_WORK_ARRANGEMENT]
+    education_requireds = [v for v in _as_list(education_required) if v in _ALLOWED_EDUCATION_REQUIRED]
 
     where = ["c.role_category != 'other'"]
     params: list = []
     if role_categories:
         where.append("c.role_category = ANY(%s)")
         params.append(role_categories)
-    if sub_specializations:
-        where.append("c.sub_specialization = ANY(%s)")
-        params.append(sub_specializations)
-    if seniorities:
-        where.append("c.seniority = ANY(%s)")
-        params.append(seniorities)
+    if specializations:
+        where.append("c.specialization = ANY(%s)")
+        params.append(specializations)
+    if levels:
+        where.append("c.level = ANY(%s)")
+        params.append(levels)
     if tracks:
         where.append("c.track = ANY(%s)")
         params.append(tracks)
@@ -373,6 +409,12 @@ def query_requirements_data(
     if date_to:
         where.append("rp.fetched_at <= %s")
         params.append(date_to)
+    if work_arrangements:
+        where.append("pr.work_arrangement = ANY(%s)")
+        params.append(work_arrangements)
+    if education_requireds:
+        where.append("pr.education_required = ANY(%s)")
+        params.append(education_requireds)
     where_sql = " AND ".join(where)
 
     with get_connection() as conn:
@@ -386,16 +428,37 @@ def query_requirements_data(
             params,
         ).fetchone()[0]
 
+        skill_group_filter_sql = ""
+        skill_params = list(params)
+        if skill_groups:
+            skill_group_filter_sql = " AND ps.skill_group = ANY(%s)"
+            skill_params = skill_params + [skill_groups]
+
         skill_rows = conn.execute(
             f"""
-            SELECT ps.skill, ps.requirement_level, count(*)
+            SELECT ps.skill_group, ps.requirement_level, count(*)
             FROM posting_skills ps
             JOIN raw_postings rp ON rp.id = ps.posting_id
             JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql}
-            GROUP BY ps.skill, ps.requirement_level
+            JOIN posting_requirements pr ON pr.posting_id = ps.posting_id
+            WHERE {where_sql}{skill_group_filter_sql}
+            GROUP BY ps.skill_group, ps.requirement_level
             """,
-            params,
+            skill_params,
+        ).fetchall()
+
+        raw_skill_rows = conn.execute(
+            f"""
+            SELECT ps.skill_group, ps.raw_skill, count(*)
+            FROM posting_skills ps
+            JOIN raw_postings rp ON rp.id = ps.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            JOIN posting_requirements pr ON pr.posting_id = ps.posting_id
+            WHERE {where_sql}{skill_group_filter_sql}
+            GROUP BY ps.skill_group, ps.raw_skill
+            ORDER BY count(*) DESC
+            """,
+            skill_params,
         ).fetchall()
 
         education_rows = conn.execute(
@@ -406,6 +469,42 @@ def query_requirements_data(
             JOIN classifications c ON c.posting_id = rp.id
             WHERE {where_sql}
             GROUP BY pr.education_level
+            """,
+            params,
+        ).fetchall()
+
+        equivalent_experience_accepted_count = conn.execute(
+            f"""
+            SELECT count(*)
+            FROM posting_requirements pr
+            JOIN raw_postings rp ON rp.id = pr.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql} AND pr.equivalent_experience_accepted = true
+            """,
+            params,
+        ).fetchone()[0]
+
+        years_row = conn.execute(
+            f"""
+            SELECT min(pr.years_experience_min),
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY pr.years_experience_min),
+                   max(pr.years_experience_min)
+            FROM posting_requirements pr
+            JOIN raw_postings rp ON rp.id = pr.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql} AND pr.years_experience_min IS NOT NULL
+            """,
+            params,
+        ).fetchone()
+
+        work_arrangement_rows = conn.execute(
+            f"""
+            SELECT pr.work_arrangement, count(*)
+            FROM posting_requirements pr
+            JOIN raw_postings rp ON rp.id = pr.posting_id
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE {where_sql}
+            GROUP BY pr.work_arrangement
             """,
             params,
         ).fetchall()
@@ -427,18 +526,30 @@ def query_requirements_data(
         ).fetchone()
 
     skills: dict[str, dict] = {}
-    for skill, level, n in skill_rows:
-        entry = skills.setdefault(skill, {"skill": skill, "must_have_count": 0, "nice_to_have_count": 0})
-        entry[f"{level}_count"] = n
+    for group, level_, n in skill_rows:
+        entry = skills.setdefault(
+            group, {"skill_group": group, "must_have_count": 0, "nice_to_have_count": 0, "raw_skills": []}
+        )
+        entry[f"{level_}_count"] = n
+    for group, raw_skill, n in raw_skill_rows:
+        if group in skills:
+            skills[group]["raw_skills"].append({"raw_skill": raw_skill, "count": n})
 
     languages: dict[str, dict] = {}
-    for language, level, n in language_rows:
+    for language, level_, n in language_rows:
         entry = languages.setdefault(language, {"language": language, "required_count": 0, "preferred_count": 0})
-        entry[f"{level}_count"] = n
+        entry[f"{level_}_count"] = n
+
+    years_experience_min = None
+    if years_row and years_row[0] is not None:
+        years_experience_min = {"min": years_row[0], "median": years_row[1], "max": years_row[2]}
 
     return {
         "skills": list(skills.values()),
-        "education_levels": {level: n for level, n in education_rows},
+        "education_levels": {level_: n for level_, n in education_rows},
+        "equivalent_experience_accepted_count": equivalent_experience_accepted_count,
+        "years_experience_min": years_experience_min,
+        "work_arrangement": {arrangement: n for arrangement, n in work_arrangement_rows},
         "languages": list(languages.values()),
         "data_range": {
             "earliest": earliest.date().isoformat() if earliest else None,

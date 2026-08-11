@@ -173,6 +173,34 @@ the general pattern of the three reviews above. Two real findings from that trac
 Same underlying pattern as the three reviews above, arrived at with more scrutiny given the
 genuinely new *kind* of answer involved.
 
+**Reviewed 2026-08-11** (change: Classification + Requirements Taxonomy Redesign,
+`changes/2026-08-11-classification-taxonomy-redesign.md`) — **not a clean no-op**, unlike the
+four reviews above. Grepped the real component tree for the old field names
+(`sub_specialization`, `seniority`) and old ladder values rather than assuming the pattern
+held a fifth time. Two real findings:
+
+1. **Three components are confirmed dead code, unreachable from the live app**:
+   `FilterControls.tsx` (hardcodes a `seniority: "all" | "Mid" | "Senior"` filter type — a
+   value set that doesn't even match any version of the real taxonomy, old or new),
+   `ProvenancePanel.tsx`, and `ConversationalArea.tsx`. Verified by grepping for importers of
+   each — none exist outside the files themselves. This matches this spec's own "Out of
+   scope" section, which already lists "Filter controls (role family, seniority, location)"
+   as not part of the shipped experience — these are leftover files from an earlier direction,
+   never deleted, not something this taxonomy change needs to touch (fixing unreachable dead
+   code is its own separate cleanup, not part of this change's scope).
+2. **One live line does carry the old field name**: `MarketHealthPage.tsx:111` sends
+   `body: { context: { role: "all", seniority: "all", location: "all" } }` on every
+   `useChat` call. This is real, reachable code — but the value is always the literal string
+   `"all"`, never an actual taxonomy value, and `ChatContext.seniority` doesn't appear to be
+   read by any real query logic in `chat.py` (the real filtering happens through the model's
+   own tool-calling, not this static context object). So there's no data-correctness bug —
+   nothing this revision changes was ever actually driven by this field's value — but the
+   field name is stale and worth a one-line rename to `level` for consistency, now that
+   `seniority` no longer exists as a concept anywhere else in the taxonomy. Scoped as a
+   trivial `/implement-frontend` fix (Step 6) rather than left as spec-only debt, since it
+   costs nothing and prevents a future reader from assuming this field is wired to something
+   real when it isn't.
+
 ---
 
 ## Tech Decisions

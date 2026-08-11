@@ -387,6 +387,19 @@ concentrated in the first half of the year — the last three months have been f
   often enough to justify adding — same "Raw Title" discipline already used for
   sub-specializations, not a one-time decision.
 
+**Resolved (2026-08-11):** `design/market-health/job-classification.md` underwent a full
+taxonomy redesign (`changes/2026-08-11-classification-taxonomy-redesign.md`) — the old
+`seniority` ladder split into separate `level` and `track` fields, an `unknown` vs `other`
+distinction added, skills restructured with raw text alongside category, and several new
+Requirements fields (years of experience, work arrangement, education nuance) added. Reviewed
+this spec in full against that change and confirmed **no update needed**: line 178's filter-chip
+list already presents "seniority" and "track" as two separate concepts (this spec never
+enumerates the underlying ladder values itself), so the values behind those chips becoming more
+accurate doesn't change any wording, interaction, or chip here. Same reasoning for the trend
+chart's three lines (line 156) — they're the fixed Role Category set, untouched by this
+revision. Confirmed by reading the actual file, not assumed, per this product's standing
+review discipline.
+
 **Resolved (2026-08-09):** Requirements Signal (skills, education, language requirements,
 plus a freeform catch-all) is now in scope, reached only through follow-up conversation —
 same conversation-only pattern as Compensation Signal, never added to the fixed opening

@@ -2,9 +2,10 @@
 LLM-driven requirements extraction — Requirements Signal.
 
 Reads a posting's full *description* (not its title) and extracts skills,
-education level, language requirements, a responsibilities summary, and a
-freeform catch-all, per the closed-set-plus-catch-all taxonomy in
-design/market-health/job-classification.md — Requirements Taxonomy.
+education, years of experience, work arrangement, language requirements, a
+responsibilities summary, and a freeform catch-all, per the closed-set-plus-
+catch-all taxonomy in design/market-health/job-classification.md —
+Requirements Taxonomy.
 
 Deliberately structured as its own module, own dedicated Gemini key, and own
 daily budget, kept separate from classification.py's — see
@@ -12,6 +13,15 @@ backend/specs/market-health/api.md — Business Logic — Requirements extractio
 This is per-posting, not per-title: two postings sharing a title can have
 completely different actual requirements, so there is no cache shortcut here
 the way classification has.
+
+Skill group selection is (role_category × track × specialization)-aware
+(2026-08-11) — see job-classification.md — Skills. A posting's applicable
+skill groups are no longer just its role_category's hands-on technical list:
+track="management" postings (any role_category) also get the People
+Leadership group, and Engineer postings whose specialization is pre-sales/
+customer-facing (Solutions Engineer, Solutions Architect, etc.) get Pre-sales
+& Solutions instead of being scored against a technical list that could never
+match their real requirements.
 """
 
 from __future__ import annotations
@@ -31,10 +41,13 @@ logger = logging.getLogger(__name__)
 
 EXTRACTION_MODEL = "gemini-flash-latest"
 
-# Closed per Role Category — design/market-health/job-classification.md — Skills.
-# Starts narrow, widens once real extraction data justifies it, same discipline
-# as sub-specializations.
-SKILLS_BY_ROLE_CATEGORY: dict[str, list[str]] = {
+# IC/hands-on lists, closed per Role Category — job-classification.md —
+# Skills. Starts narrow, widens once real extraction data justifies it, same
+# discipline as specializations. Engineer gained two groups 2026-08-11 (Data
+# engineering / big data, Blockchain / Web3) after real other_requirements
+# text showed named tools like Kafka/Spark/Airflow and blockchain/smart-
+# contract stacks recurring often enough to promote.
+IC_SKILLS_BY_ROLE_CATEGORY: dict[str, list[str]] = {
     "Designer": [
         "Figma / design tooling", "Design systems", "UX research", "Prototyping",
         "Visual/UI design", "Accessibility", "Front-end coding (HTML/CSS/JS)",
@@ -49,18 +62,49 @@ SKILLS_BY_ROLE_CATEGORY: dict[str, list[str]] = {
     "Engineer": [
         "Frontend frameworks", "Backend frameworks", "Cloud/infrastructure",
         "Databases", "System design", "ML/AI", "Mobile", "DevOps/SRE", "Security",
+        "Data engineering / big data", "Blockchain / Web3",
     ],
 }
 
+# Applies whenever track == "management", any role_category — added
+# 2026-08-11 after real data showed 216 Engineer + 26 PM + 7 Designer
+# management-track postings scored against a hands-on-only list, structurally
+# guaranteed to under-report (job-classification.md — Skills).
+PEOPLE_LEADERSHIP_SKILLS: list[str] = [
+    "Team building & hiring", "Coaching & career development",
+    "Budget & resource planning", "Cross-functional / executive stakeholder management",
+    "Organizational design", "Technical strategy & oversight", "Performance management",
+]
+
+# Applies to Engineer postings whose specialization is pre-sales/customer-
+# facing, not hands-on coding — added 2026-08-11 after real data showed ~265
+# such postings (Solutions Engineer/Architect/Customer Engineer/Support
+# Engineer/Forward Deployed) with nothing in the technical list that could
+# ever match their real requirement text.
+PRESALES_SOLUTIONS_SKILLS: list[str] = [
+    "Technical pre-sales & discovery", "RFP / technical proposal writing",
+    "Executive & technical stakeholder relationship-building",
+    "Co-solutioning & partner enablement", "Technical demoing & solution design",
+    "Escalation & incident troubleshooting", "Customer-facing communication",
+]
+
+PRESALES_SPECIALIZATIONS = {
+    "Solutions Engineer", "Solutions Architect", "Customer Engineer",
+    "Support Engineer", "Forward Deployed Engineer", "Forward Deployed Software Engineer",
+}
+
 EDUCATION_LEVELS = ["not_mentioned", "bootcamp_or_equivalent", "bachelors", "masters", "phd"]
+EDUCATION_REQUIRED_VALUES = {"required", "preferred", "not_mentioned"}
+WORK_ARRANGEMENT_VALUES = {"onsite", "hybrid", "remote", "not_mentioned"}
 SKILL_REQUIREMENT_LEVELS = {"must_have", "nice_to_have"}
 LANGUAGE_REQUIREMENT_LEVELS = {"required", "preferred"}
 
 # Batch size is materially smaller than classification's BATCH_SIZE=100 — each
 # item now needs a full description as input and a richer structured output
-# (skills + education + language + a responsibilities summary + catch-all),
-# not four short classification fields. Not spec'd exactly — tuned as real
-# data comes in, same precedent as classification's BATCH_SIZE and denylist.
+# (skills + education + years of experience + work arrangement + language +
+# a responsibilities summary + catch-all), not four short classification
+# fields. Not spec'd exactly — tuned as real data comes in, same precedent as
+# classification's BATCH_SIZE and denylist.
 BATCH_SIZE = 15
 MAX_DESCRIPTION_CHARS = 3000  # truncate very long descriptions before prompting
 SECONDS_BETWEEN_BATCHES = 13
@@ -76,6 +120,8 @@ REQUIREMENTS_DAILY_REQUEST_BUDGET = 20
 REQUIREMENTS_RETRY_HEADROOM = 8
 
 RETRYABLE_STATUS_CODES = {"429", "500", "502", "503", "504"}
+
+YEARS_EXPERIENCE_RE = re.compile(r"\b(\d{1,2})\s*\+?\s*years?\b", re.IGNORECASE)
 
 
 def _is_retryable_error(exc: Exception) -> bool:
@@ -113,18 +159,49 @@ def _extract_description(source: str, raw_response: dict) -> str:
     return cleaned[:MAX_DESCRIPTION_CHARS]
 
 
-def _system_instruction(role_category: str) -> str:
-    skills = SKILLS_BY_ROLE_CATEGORY[role_category]
-    skills_list = ", ".join(f'"{s}"' for s in skills)
-    return f"""You extract structured requirements from {role_category} job posting \
-descriptions. For each posting, return exactly these fields:
+def applicable_skill_groups(role_category: str, track: str | None, specialization: str | None) -> list[str]:
+    """
+    The union of skill_group values a posting should be checked against, per
+    job-classification.md — Skills. More than one group can apply to the same
+    posting — e.g. a Designer posting with track="management" is checked
+    against both People Leadership and the Designer IC list, since a Design
+    Manager posting sometimes states craft expectations alongside management
+    ones. The IC/hands-on list for the posting's role_category always
+    applies; People Leadership and Pre-sales & Solutions are additive on top
+    of it, not a replacement for it.
+    """
+    groups = list(IC_SKILLS_BY_ROLE_CATEGORY.get(role_category, []))
+    if track == "management":
+        groups.extend(PEOPLE_LEADERSHIP_SKILLS)
+    if role_category == "Engineer" and specialization in PRESALES_SPECIALIZATIONS:
+        groups.extend(PRESALES_SOLUTIONS_SKILLS)
+    return groups
+
+
+def _system_instruction(valid_skills: list[str]) -> str:
+    skills_list = ", ".join(f'"{s}"' for s in valid_skills)
+    return f"""You extract structured requirements from job posting descriptions. For each \
+posting, return exactly these fields:
 - education_level: one of "not_mentioned", "bootcamp_or_equivalent", "bachelors", \
 "masters", "phd" — the minimum level explicitly stated. "not_mentioned" if the posting \
 never states one; never infer it from context.
-- skills: a list of {{"skill": ..., "requirement_level": "must_have" | "nice_to_have"}}. \
-"skill" MUST be exactly one of: {skills_list}. Include a skill only if the posting \
-genuinely mentions it (directly or via a clear synonym). Never invent or include a skill \
-outside this exact list — mention anything else in other_requirements instead.
+- education_required: one of "required", "preferred", "not_mentioned" — whether \
+education_level is a hard requirement or a stated preference.
+- equivalent_experience_accepted: true or false — true only if the posting explicitly says \
+equivalent professional experience is accepted in place of the stated education_level (e.g. \
+"Bachelor's degree or equivalent professional experience").
+- years_experience_min: an integer, or null — the minimum years of experience explicitly \
+stated (e.g. "3+ years" -> 3, "5-8 years" -> 5). null if no minimum is stated.
+- work_arrangement: one of "onsite", "hybrid", "remote", "not_mentioned" — based on explicit \
+statements about remote/telecommuting/on-site work, or a stated location/time-zone \
+requirement implying on-site or hybrid work. "not_mentioned" if genuinely not stated.
+- skills: a list of {{"skill_group": ..., "raw_skill": ..., "requirement_level": "must_have" \
+| "nice_to_have"}}. "skill_group" MUST be exactly one of: {skills_list}. "raw_skill" is the \
+specific mention as it actually appears in the text (e.g. "React", "AWS", "Kubernetes", \
+"RFP writing") — include it even if it's essentially the same as the skill_group name. \
+Include a skill only if the posting genuinely mentions it (directly or via a clear synonym). \
+Never invent or include a skill_group outside this exact list — mention anything else in \
+other_requirements instead.
 - languages: a list of {{"language": ..., "requirement_level": "required" | "preferred"}} \
 for spoken/written language requirements only (not programming languages). Empty list if \
 none mentioned.
@@ -132,10 +209,13 @@ none mentioned.
 responsibilities described in the posting.
 - other_requirements: a short freeform note for anything notable that doesn't fit the \
 fields above — a certification, a security clearance, a portfolio requirement, a mentioned \
-skill outside the fixed list above. Empty string if nothing notable.
+skill outside the fixed list above. Empty string if nothing notable. **Never** include a \
+salary, compensation figure, or pay range here or anywhere else in your response, even if \
+the posting states one — that data is handled by a separate system; ignore compensation \
+text entirely.
 
 Return strictly a JSON array, one object per input posting, each with an "id" field copied \
-from the input plus the five fields above. No prose, no markdown fences."""
+from the input plus the eight fields above. No prose, no markdown fences."""
 
 
 def _build_prompt(postings: list[dict]) -> str:
@@ -155,27 +235,43 @@ def _parse_response(text: str) -> list[dict]:
     return parsed if isinstance(parsed, list) else []
 
 
-def _validate(entry: dict, role_category: str) -> dict:
+def _validate(entry: dict, valid_skills: list[str]) -> dict:
     """
     Coerce an entry to the closed sets. Anything invalid is dropped from its
     standard field and folded into other_requirements instead — never forced
     into the nearest match, never silently discarded. Mirrors
-    classification.py's _validate discipline.
+    classification.py's _validate discipline. `valid_skills` is the specific
+    posting's applicable skill_group union (applicable_skill_groups()), not a
+    fixed per-role_category list — see module docstring.
     """
-    valid_skills = set(SKILLS_BY_ROLE_CATEGORY[role_category])
+    valid_skills_set = set(valid_skills)
     overflow_notes: list[str] = []
 
     education_level = entry.get("education_level")
     if education_level not in EDUCATION_LEVELS:
         education_level = "not_mentioned"
 
+    education_required = entry.get("education_required")
+    if education_required not in EDUCATION_REQUIRED_VALUES:
+        education_required = "not_mentioned"
+
+    equivalent_experience_accepted = bool(entry.get("equivalent_experience_accepted"))
+
+    years_experience_min = entry.get("years_experience_min")
+    if not isinstance(years_experience_min, int) or isinstance(years_experience_min, bool):
+        years_experience_min = None
+
+    work_arrangement = entry.get("work_arrangement")
+    if work_arrangement not in WORK_ARRANGEMENT_VALUES:
+        work_arrangement = "not_mentioned"
+
     skills: list[dict] = []
     for s in entry.get("skills") or []:
-        skill, level = s.get("skill"), s.get("requirement_level")
-        if skill in valid_skills and level in SKILL_REQUIREMENT_LEVELS:
-            skills.append({"skill": skill, "requirement_level": level})
-        elif skill:
-            overflow_notes.append(f"mentioned skill not in tracked list: {skill}")
+        skill_group, raw_skill, level = s.get("skill_group"), s.get("raw_skill"), s.get("requirement_level")
+        if skill_group in valid_skills_set and level in SKILL_REQUIREMENT_LEVELS and raw_skill:
+            skills.append({"skill_group": skill_group, "raw_skill": raw_skill, "requirement_level": level})
+        elif skill_group or raw_skill:
+            overflow_notes.append(f"mentioned skill not in tracked list: {raw_skill or skill_group}")
 
     languages: list[dict] = []
     for entry_lang in entry.get("languages") or []:
@@ -190,6 +286,10 @@ def _validate(entry: dict, role_category: str) -> dict:
     return {
         "id": entry.get("id"),
         "education_level": education_level,
+        "education_required": education_required,
+        "equivalent_experience_accepted": equivalent_experience_accepted,
+        "years_experience_min": years_experience_min,
+        "work_arrangement": work_arrangement,
         "skills": skills,
         "languages": languages,
         "responsibilities_summary": (entry.get("responsibilities_summary") or "").strip() or None,
@@ -214,17 +314,21 @@ async def _complete_with_retry(prompt: str, system: str, request_counter: dict) 
     raise RuntimeError("unreachable")
 
 
-async def extract_batch(postings: list[dict], role_category: str, request_counter: dict) -> list[dict]:
+async def extract_batch(postings: list[dict], valid_skills: list[str], request_counter: dict) -> list[dict]:
     """postings: [{id, description}]. Returns one validated entry per input,
-    in the same order — postings the model omits get an empty/default entry."""
+    in the same order — postings the model omits get an empty/default entry.
+    `valid_skills` — see applicable_skill_groups(); every posting in one
+    batch shares the same applicable list (see _group_into_batches)."""
     if not postings:
         return []
     response_text = await _complete_with_retry(
-        _build_prompt(postings), _system_instruction(role_category), request_counter
+        _build_prompt(postings), _system_instruction(valid_skills), request_counter
     )
-    parsed = {entry.get("id"): _validate(entry, role_category) for entry in _parse_response(response_text)}
+    parsed = {entry.get("id"): _validate(entry, valid_skills) for entry in _parse_response(response_text)}
     default = {
-        "education_level": "not_mentioned", "skills": [], "languages": [],
+        "education_level": "not_mentioned", "education_required": "not_mentioned",
+        "equivalent_experience_accepted": False, "years_experience_min": None,
+        "work_arrangement": "not_mentioned", "skills": [], "languages": [],
         "responsibilities_summary": None, "other_requirements": None,
     }
     return [parsed.get(p["id"], {**default, "id": p["id"]}) for p in postings]
@@ -234,7 +338,9 @@ def insert_requirements(entries: list[dict]) -> None:
     """Writes posting_requirements + posting_skills + posting_languages for a
     batch of validated entries. PRIMARY KEY / UNIQUE constraints on all three
     tables enforce "extracted at most once per posting" at the database
-    level, same discipline as classifications.posting_id."""
+    level, same discipline as classifications.posting_id. posting_skills'
+    UNIQUE constraint moved to (posting_id, raw_skill) 2026-08-11 — see
+    backend/specs/market-health/api.md — Data Models — PostingSkill."""
     if not entries:
         return
     extracted_at = datetime.now(timezone.utc)
@@ -243,27 +349,32 @@ def insert_requirements(entries: list[dict]) -> None:
             cur.executemany(
                 """
                 INSERT INTO posting_requirements
-                    (posting_id, education_level, responsibilities_summary,
-                     other_requirements, model, extracted_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (posting_id, education_level, education_required,
+                     equivalent_experience_accepted, years_experience_min, work_arrangement,
+                     responsibilities_summary, other_requirements, model, extracted_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (posting_id) DO NOTHING
                 """,
                 [
-                    (e["id"], e["education_level"], e["responsibilities_summary"],
-                     e["other_requirements"], EXTRACTION_MODEL, extracted_at)
+                    (
+                        e["id"], e["education_level"], e["education_required"],
+                        e["equivalent_experience_accepted"], e["years_experience_min"],
+                        e["work_arrangement"], e["responsibilities_summary"],
+                        e["other_requirements"], EXTRACTION_MODEL, extracted_at,
+                    )
                     for e in entries
                 ],
             )
             skill_rows = [
-                (e["id"], s["skill"], s["requirement_level"])
+                (e["id"], s["raw_skill"], s["skill_group"], s["requirement_level"])
                 for e in entries for s in e["skills"]
             ]
             if skill_rows:
                 cur.executemany(
                     """
-                    INSERT INTO posting_skills (posting_id, skill, requirement_level)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (posting_id, skill) DO NOTHING
+                    INSERT INTO posting_skills (posting_id, raw_skill, skill_group, requirement_level)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (posting_id, raw_skill) DO NOTHING
                     """,
                     skill_rows,
                 )
@@ -282,32 +393,64 @@ def insert_requirements(entries: list[dict]) -> None:
                 )
 
 
-def _group_into_batches(postings: list[dict]) -> list[tuple[str, list[dict]]]:
+def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
     """
-    Chunk the oldest-first list into (role_category, batch) groups of up to
-    BATCH_SIZE, starting a new batch whenever the category changes — keeps
-    each LLM call single-category (so one closed skill list applies) while
+    Deletes existing posting_requirements/posting_skills/posting_languages
+    rows for the given posting ids, so they become indistinguishable from
+    "never extracted" to get_all_needing_requirements() and are picked back
+    up by the normal backlog on the next run. One-time use only, by the
+    2026-08-11 taxonomy reprocessing pass — see backend/specs/market-health/
+    api.md — Business Logic — Taxonomy reprocessing. Callers must only pass
+    ids whose classification row has already been reprocessed onto the
+    current taxonomy_version (raw_postings.get_requirements_reprocess_targets)
+    — deleting a posting's requirements before its classification is
+    reprocessed would let it be re-extracted against stale
+    role_category/track/specialization, reintroducing the exact bug this
+    revision fixes.
+    """
+    if not posting_ids:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM posting_skills WHERE posting_id = ANY(%s)", (posting_ids,))
+            cur.execute("DELETE FROM posting_languages WHERE posting_id = ANY(%s)", (posting_ids,))
+            cur.execute("DELETE FROM posting_requirements WHERE posting_id = ANY(%s)", (posting_ids,))
+
+
+def _group_into_batches(postings: list[dict]) -> list[tuple[list[str], list[dict]]]:
+    """
+    Chunk the oldest-first list into (valid_skills, batch) groups of up to
+    BATCH_SIZE, starting a new batch whenever the applicable skill_group list
+    changes — keeps each LLM call scoped to one consistent closed set while
     staying as close to true oldest-first order as that constraint allows.
+    Grouping key changed 2026-08-11 from role_category alone to the full
+    applicable-skill-group union (role_category × track × specialization),
+    since two postings sharing a role_category can now need different lists.
+    `postings` must each carry role_category/track/specialization.
     """
-    batches: list[tuple[str, list[dict]]] = []
-    current_category: str | None = None
+    batches: list[tuple[list[str], list[dict]]] = []
+    current_key: tuple[str, ...] | None = None
+    current_valid_skills: list[str] = []
     current: list[dict] = []
     for p in postings:
-        if p["role_category"] != current_category or len(current) >= BATCH_SIZE:
+        key = tuple(applicable_skill_groups(p["role_category"], p.get("track"), p.get("specialization")))
+        if key != current_key or len(current) >= BATCH_SIZE:
             if current:
-                batches.append((current_category, current))
-            current_category = p["role_category"]
+                batches.append((current_valid_skills, current))
+            current_key = key
+            current_valid_skills = list(key)
             current = []
         current.append(p)
     if current:
-        batches.append((current_category, current))
+        batches.append((current_valid_skills, current))
     return batches
 
 
 async def extract_requirements(postings: list[dict], already_used_today: int = 0) -> dict:
     """
     postings: what raw_postings.get_all_needing_requirements() returns
-    ([{id, source, raw_response, role_category}], oldest-first).
+    ([{id, source, raw_response, role_category, track, specialization}],
+    oldest-first).
 
     Returns stats for the IngestionRun record: {requirements_extracted,
     requirements_requests_used, requirements_budget_reached, stopped_early}.
@@ -332,8 +475,11 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
     ))
 
     prepped = [
-        {"id": p["id"], "role_category": p["role_category"],
-         "description": _extract_description(p["source"], p["raw_response"])}
+        {
+            "id": p["id"], "role_category": p["role_category"],
+            "track": p.get("track"), "specialization": p.get("specialization"),
+            "description": _extract_description(p["source"], p["raw_response"]),
+        }
         for p in postings
     ]
     batches = _group_into_batches(prepped)
@@ -345,7 +491,7 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
     batches_attempted = 0
     num_batches = len(batches)
 
-    for batch_num, (role_category, batch) in enumerate(batches, start=1):
+    for batch_num, (valid_skills, batch) in enumerate(batches, start=1):
         if batches_attempted >= effective_batch_cap:
             budget_reached = True
             logger.info(
@@ -358,12 +504,12 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
         try:
             results = await extract_batch(
                 [{"id": p["id"], "description": p["description"]} for p in batch],
-                role_category, request_counter,
+                valid_skills, request_counter,
             )
         except Exception as exc:
             logger.error(
-                "extract_requirements batch %d/%d (%s) failed, stopping this run early: %s",
-                batch_num, num_batches, role_category, exc,
+                "extract_requirements batch %d/%d failed, stopping this run early: %s",
+                batch_num, num_batches, exc,
             )
             stopped_early = True
             break
@@ -371,8 +517,8 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
         extracted += len(results)
         batches_attempted += 1
         logger.info(
-            "extract_requirements: batch %d/%d (%s, %d postings) done",
-            batch_num, num_batches, role_category, len(batch),
+            "extract_requirements: batch %d/%d (%d postings) done",
+            batch_num, num_batches, len(batch),
         )
         if batch_num < num_batches and batches_attempted < effective_batch_cap:
             await asyncio.sleep(SECONDS_BETWEEN_BATCHES)

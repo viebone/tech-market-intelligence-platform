@@ -2,12 +2,14 @@
 LLM-driven posting classification.
 
 Classifies each new raw_posting against the closed taxonomy defined in
-design/market-health/job-classification.md (Role Category, Seniority, Track).
-Uses LLMProvider.complete() — the provider abstraction has no native
-schema-constrained output today (see backend/specs/market-health/api.md —
-Tech Decisions), so the JSON response is parsed and validated here rather
-than trusted as-is. A posting that doesn't validate is classified "other"
-rather than forced into the nearest match.
+design/market-health/job-classification.md (Role Category, Specialization,
+Level, Track, Classification Confidence). Uses LLMProvider.complete() — the
+provider abstraction has no native schema-constrained output today (see
+backend/specs/market-health/api.md — Tech Decisions), so the JSON response is
+parsed and validated here rather than trusted as-is. A posting that doesn't
+validate is classified "other" rather than forced into the nearest match.
+"unknown" (2026-08-11) is a distinct, valid outcome from "other" — see
+job-classification.md — Unknown vs. Other — not a validation failure.
 """
 
 from __future__ import annotations
@@ -24,18 +26,27 @@ from llm import providers
 
 logger = logging.getLogger(__name__)
 
-# Taxonomy version pinned to job-classification.md's `created` date — that
-# spec has no separate version field, so its creation date is the version
-# marker. Bump this if the taxonomy's closed sets are ever revised.
-TAXONOMY_VERSION = "2026-07-16"
+# Taxonomy version pinned to job-classification.md's `updated` date — that
+# spec has no separate version field, so its last-revision date is the version
+# marker. Bumped 2026-08-11 for the Level/Track/Unknown/Confidence redesign
+# (changes/2026-08-11-classification-taxonomy-redesign.md) — bump again if the
+# taxonomy's closed sets are ever revised further.
+TAXONOMY_VERSION = "2026-08-11"
 CLASSIFICATION_MODEL = "gemini-2.5-flash"
 
 ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer"}
-SENIORITY_LADDER = {
+# "unknown" (2026-08-11) is valid at every one of these four fields — distinct
+# from role_category="other" (see module docstring). Not included in the sets
+# below since it's handled as its own branch in _validate, same treatment at
+# every field rather than folded into each closed set.
+LEVEL_LADDER = {
     "entry", "junior", "mid", "senior", "lead",
-    "principal", "manager", "director", "vp", "exec",
-}
+    "principal", "director", "vp", "executive",
+}  # replaces the old SENIORITY_LADDER, which wrongly included "manager" as a
+   # level — see job-classification.md — Level, and the 160-posting
+   # seniority="manager" collapse that motivated this revision.
 TRACKS = {"ic", "management"}
+CLASSIFICATION_CONFIDENCE_VALUES = {"low", "medium", "high"}
 
 # Batched, not one call per posting, to control LLM cost — and sized against
 # real constraints found during ingestion: the Gemini free tier's binding
@@ -99,22 +110,34 @@ HEURISTIC_FILTER_MODEL = "heuristic-keyword-filter"
 
 SYSTEM_INSTRUCTION = """You classify UK tech job postings into a closed taxonomy. \
 For each posting, return exactly these fields:
-- role_category: one of "Designer", "Product Manager", "Engineer", or "other" if the \
-posting genuinely does not fit (e.g. a non-tech role that happens to share a title word).
-- sub_specialization: a short specific title (e.g. "UX Designer", "Backend Engineer"), \
-or null if role_category is "other".
-- seniority: one of "entry", "junior", "mid", "senior", "lead", "principal", "manager", \
-"director", "vp", "exec", or null if role_category is "other". UK "midweight" means "mid".
-- track: "ic" (individual contributor) or "management", or null if role_category is "other" \
-or genuinely unclear. "Lead" is ambiguous — infer from context whether it is a senior IC or \
-a first-line management role.
+- role_category: one of "Designer", "Product Manager", "Engineer", "other", or "unknown". \
+Use "other" when you're confident the posting genuinely is not one of the three tracked \
+occupations (e.g. a non-tech role that happens to share a title word). Use "unknown" when \
+the title alone doesn't give you enough evidence to tell, even though it might plausibly be \
+one of the three — these are different claims, do not use them interchangeably.
+- specialization: a short specific title (e.g. "UX Designer", "Backend Engineer"), \
+"unknown" if role_category is a real tracked category but the title doesn't disambiguate \
+which specialization within it, or null if role_category is "other" or "unknown".
+- level: one of "entry", "junior", "mid", "senior", "lead", "principal", "director", "vp", \
+"executive", "unknown" (title gives no real seniority signal), or null if role_category is \
+"other" or "unknown". UK "midweight" means "mid". Never use an organizational-function word \
+like "manager" here — that belongs in track, not level.
+- track: "ic" (individual contributor), "management", "unknown" (title genuinely doesn't \
+disclose which), or null if role_category is "other" or "unknown". "Lead" is ambiguous — \
+infer from context whether it is a senior IC or a first-line management role; if you truly \
+can't tell, use "unknown" rather than guessing.
+- classification_confidence: your own self-reported confidence in this classification — \
+"low", "medium", or "high". This is your honest assessment, not a claim of measured accuracy.
 
 Example: "Product Manager - Health Policy" is role_category "other" — nominally a Product \
 Manager title, but a health-policy role, not a tech-market role this taxonomy tracks. Titles \
-with a tech-unrelated qualifier like this should be "other" even if the base title matches.
+with a tech-unrelated qualifier like this should be "other" even if the base title matches. \
+Example: "Digital Lead" is role_category "unknown" — it might be Design, Product, or \
+Engineering, but the title alone doesn't say which, so guessing would be worse than admitting \
+the uncertainty.
 
 Return strictly a JSON array, one object per input posting, each with an "id" field copied \
-from the input plus the four fields above. No prose, no markdown fences."""
+from the input plus the five fields above. No prose, no markdown fences."""
 
 
 def _build_prompt(postings: list[dict]) -> str:
@@ -149,7 +172,8 @@ def _get_title_cache(titles: list[str]) -> dict[str, dict]:
         rows = conn.execute(
             """
             SELECT DISTINCT ON (rp.title)
-                rp.title, c.role_category, c.sub_specialization, c.seniority, c.track
+                rp.title, c.role_category, c.specialization, c.level, c.track,
+                c.classification_confidence
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
             WHERE rp.title = ANY(%s)
@@ -160,34 +184,58 @@ def _get_title_cache(titles: list[str]) -> dict[str, dict]:
     return {
         row[0]: {
             "role_category": row[1],
-            "sub_specialization": row[2],
-            "seniority": row[3],
+            "specialization": row[2],
+            "level": row[3],
             "track": row[4],
+            "classification_confidence": row[5],
         }
         for row in rows
     }
 
 
 def _validate(entry: dict) -> dict:
-    """Coerce an entry to the closed sets. Anything invalid becomes "other"."""
+    """
+    Coerce an entry to the closed sets. `role_category: "unknown"` is a valid,
+    distinct outcome from "other" (see module docstring) — only a genuinely
+    invalid/unparseable value falls back to "other". `classification_confidence`
+    defaults to "low" when missing or invalid, consistent with this codebase's
+    bias toward under-claiming rather than assuming the most generous reading
+    of an uncertain result.
+    """
     role_category = entry.get("role_category")
+    confidence = entry.get("classification_confidence")
+    confidence = confidence if confidence in CLASSIFICATION_CONFIDENCE_VALUES else "low"
+
+    if role_category == "unknown":
+        return {
+            "id": entry.get("id"),
+            "role_category": "unknown",
+            "specialization": None,
+            "level": None,
+            "track": None,
+            "classification_confidence": confidence,
+        }
+
     if role_category not in ROLE_CATEGORIES:
         return {
             "id": entry.get("id"),
             "role_category": "other",
-            "sub_specialization": None,
-            "seniority": None,
+            "specialization": None,
+            "level": None,
             "track": None,
+            "classification_confidence": confidence,
         }
 
-    seniority = entry.get("seniority")
+    specialization = entry.get("specialization")
+    level = entry.get("level")
     track = entry.get("track")
     return {
         "id": entry.get("id"),
         "role_category": role_category,
-        "sub_specialization": entry.get("sub_specialization"),
-        "seniority": seniority if seniority in SENIORITY_LADDER else None,
-        "track": track if track in TRACKS else None,
+        "specialization": specialization if specialization == "unknown" else (specialization or None),
+        "level": level if (level in LEVEL_LADDER or level == "unknown") else None,
+        "track": track if (track in TRACKS or track == "unknown") else None,
+        "classification_confidence": confidence,
     }
 
 
@@ -295,18 +343,19 @@ def insert_classifications(classifications: list[dict]) -> None:
             cur.executemany(
                 """
                 INSERT INTO classifications
-                    (posting_id, role_category, sub_specialization, seniority, track,
-                     taxonomy_version, model, classified_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (posting_id, role_category, specialization, level, track,
+                     classification_confidence, taxonomy_version, model, classified_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (posting_id) DO NOTHING
                 """,
                 [
                     (
                         c["id"],
                         c["role_category"],
-                        c["sub_specialization"],
-                        c["seniority"],
+                        c["specialization"],
+                        c["level"],
                         c["track"],
+                        c.get("classification_confidence", "low"),
                         TAXONOMY_VERSION,
                         c.get("model", CLASSIFICATION_MODEL),
                         classified_at,
@@ -408,8 +457,9 @@ async def classify_postings(postings: list[dict], already_used_today: int = 0) -
     other_count = _count_other(cached_rows)
 
     denylisted_result = {
-        "role_category": "other", "sub_specialization": None,
-        "seniority": None, "track": None, "model": HEURISTIC_FILTER_MODEL,
+        "role_category": "other", "specialization": None,
+        "level": None, "track": None, "classification_confidence": "high",
+        "model": HEURISTIC_FILTER_MODEL,
     }
     heuristic_rows = _rows_for(denylisted_titles, {t: denylisted_result for t in denylisted_titles})
     insert_classifications(heuristic_rows)
@@ -462,6 +512,209 @@ async def classify_postings(postings: list[dict], already_used_today: int = 0) -
         other_count += _count_other(fresh_rows)
         batches_attempted += 1
         logger.info("classified batch %d/%d (%d unique titles)", batch_num, num_batches, len(title_batch))
+        if batch_num < num_batches and batches_attempted < effective_batch_cap:
+            await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
+
+    return {
+        "cache_hits": cache_hits,
+        "heuristic_filtered": heuristic_filtered,
+        "llm_classified": llm_classified,
+        "other_count": other_count,
+        "total_classified": cache_hits + heuristic_filtered + llm_classified,
+        "stopped_early": stopped_early,
+        "budget_reached": budget_reached,
+        "llm_requests_used": request_counter["requests"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# One-time taxonomy reprocessing (2026-08-11) — see backend/specs/market-health/
+# api.md — Business Logic — Taxonomy reprocessing. Not part of the ongoing
+# daily pipeline; kept separate from classify_postings()/insert_classifications()
+# above rather than folded in, since reprocessing's overwrite-on-purpose
+# behavior is different in kind from normal operation's "classified at most
+# once" invariant and should stay visibly distinct in code.
+# ---------------------------------------------------------------------------
+
+def _get_title_cache_for_version(titles: list[str], taxonomy_version: str) -> dict[str, dict]:
+    """
+    Same idea as _get_title_cache, but only counts a title as cached if it was
+    already reprocessed onto `taxonomy_version` specifically — a title still
+    sitting on a stale version must not be treated as cached just because it
+    has *some* classification row, or reprocessing would never actually
+    re-derive it. Lets a multi-day reprocessing run converge efficiently:
+    titles already reprocessed by an earlier day's run of this same pass are
+    skipped on subsequent days, while everything still stale is not.
+    """
+    if not titles:
+        return {}
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (rp.title)
+                rp.title, c.role_category, c.specialization, c.level, c.track,
+                c.classification_confidence
+            FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE rp.title = ANY(%s) AND c.taxonomy_version = %s
+            ORDER BY rp.title, c.classified_at ASC
+            """,
+            (titles, taxonomy_version),
+        ).fetchall()
+    return {
+        row[0]: {
+            "role_category": row[1], "specialization": row[2], "level": row[3],
+            "track": row[4], "classification_confidence": row[5],
+        }
+        for row in rows
+    }
+
+
+def update_classifications(classifications: list[dict]) -> None:
+    """
+    UPDATE-in-place variant of insert_classifications(), for reprocessing
+    only. classifications.posting_id is UNIQUE (Data Models — Classification)
+    — the schema has no way to hold two taxonomy_versions for the same
+    posting simultaneously, so reprocessing a posting means overwriting its
+    existing row's taxonomy-bearing fields, not inserting a second one.
+    Deliberately not merged into insert_classifications()'s ON CONFLICT
+    clause: that function's DO NOTHING is a real safety net for the ongoing
+    daily pipeline (posting_id's UNIQUE constraint is the DB-level guarantee
+    a posting is classified "at most once" under normal operation), and this
+    function's very different, overwrite-on-purpose behavior should stay
+    visibly separate rather than silently share a function whose behavior
+    quietly changed.
+    """
+    if not classifications:
+        return
+    classified_at = datetime.now(timezone.utc)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                UPDATE classifications
+                SET role_category = %s, specialization = %s, level = %s, track = %s,
+                    classification_confidence = %s, taxonomy_version = %s, model = %s,
+                    classified_at = %s
+                WHERE posting_id = %s
+                """,
+                [
+                    (
+                        c["role_category"], c["specialization"], c["level"], c["track"],
+                        c.get("classification_confidence", "low"), TAXONOMY_VERSION,
+                        c.get("model", CLASSIFICATION_MODEL), classified_at, c["id"],
+                    )
+                    for c in classifications
+                ],
+            )
+
+
+async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> dict:
+    """
+    Reprocess an arbitrary-length list of {id, title} postings onto the
+    current TAXONOMY_VERSION, regardless of whether they already have a
+    classification. Mirrors classify_postings()'s structure closely
+    (in-run title dedup, denylist pre-filter, batching, cross-run daily
+    budget) with two deliberate differences: (1) the cross-run cache lookup
+    is scoped to this taxonomy_version only (_get_title_cache_for_version),
+    never reusing a stale-version result, and (2) writes go through
+    update_classifications() (UPDATE), never insert_classifications()
+    (INSERT ... ON CONFLICT DO NOTHING), since every posting already has a
+    row. `postings` is expected oldest-first
+    (raw_postings.get_all_for_reclassification()). Shares the same
+    DAILY_REQUEST_BUDGET/GEMINI_API_KEY_CLASSIFICATION as ongoing daily
+    classification — this is a larger-than-usual backlog on the same budget,
+    not a separately budgeted concern the way requirements extraction is.
+    Returns the same stats shape as classify_postings().
+    """
+    empty_stats = {
+        "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
+        "other_count": 0, "total_classified": 0,
+        "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+    }
+    if not postings:
+        return empty_stats
+
+    postings_by_title: dict[str, list[dict]] = {}
+    for p in postings:
+        postings_by_title.setdefault(p["title"], []).append(p)
+
+    unique_titles = list(postings_by_title.keys())
+    cache = _get_title_cache_for_version(unique_titles, TAXONOMY_VERSION)
+    novel_titles = [t for t in unique_titles if t not in cache]
+    denylisted_titles = [t for t in novel_titles if _is_denylisted(t)]
+    denylisted_set = set(denylisted_titles)
+    llm_titles = [t for t in novel_titles if t not in denylisted_set]
+
+    logger.info(
+        "reclassify_all: %d postings, %d unique titles (%d already on %s, %d heuristic-filtered, "
+        "%d need an LLM call)",
+        len(postings), len(unique_titles), len(unique_titles) - len(novel_titles),
+        TAXONOMY_VERSION, len(denylisted_titles), len(llm_titles),
+    )
+
+    def _rows_for(titles: list[str], result_by_title: dict[str, dict]) -> list[dict]:
+        return [
+            {"id": p["id"], **{k: v for k, v in result_by_title[title].items() if k != "id"}}
+            for title in titles
+            for p in postings_by_title[title]
+        ]
+
+    def _count_other(rows: list[dict]) -> int:
+        return sum(1 for r in rows if r["role_category"] == "other")
+
+    already_current_titles = [t for t in unique_titles if t in cache]
+    cache_hits = sum(len(postings_by_title[t]) for t in already_current_titles)
+
+    denylisted_result = {
+        "role_category": "other", "specialization": None,
+        "level": None, "track": None, "classification_confidence": "high",
+        "model": HEURISTIC_FILTER_MODEL,
+    }
+    heuristic_rows = _rows_for(denylisted_titles, {t: denylisted_result for t in denylisted_titles})
+    update_classifications(heuristic_rows)
+    heuristic_filtered = len(heuristic_rows)
+    other_count = _count_other(heuristic_rows)
+
+    llm_classified = 0
+    stopped_early = False
+    budget_reached = False
+    batches_attempted = 0
+    request_counter = {"requests": 0}
+
+    effective_batch_cap = max(0, min(
+        MAX_BATCHES_PER_RUN,
+        DAILY_REQUEST_BUDGET - RETRY_HEADROOM - already_used_today,
+    ))
+
+    num_batches = (len(llm_titles) + BATCH_SIZE - 1) // BATCH_SIZE
+    for batch_num, i in enumerate(range(0, len(llm_titles), BATCH_SIZE), start=1):
+        if batches_attempted >= effective_batch_cap:
+            budget_reached = True
+            logger.info(
+                "reclassify_all: reached today's effective batch cap (%d, already used "
+                "%d/%d of the daily budget), %d/%d batches left for a future run",
+                effective_batch_cap, already_used_today, DAILY_REQUEST_BUDGET,
+                num_batches - batches_attempted, num_batches,
+            )
+            break
+        title_batch = llm_titles[i : i + BATCH_SIZE]
+        try:
+            results = await classify_batch([{"id": t, "title": t} for t in title_batch], request_counter)
+        except Exception as exc:
+            logger.error(
+                "reclassify_all batch %d/%d failed, stopping this run early (already-reprocessed "
+                "titles remain safely persisted): %s", batch_num, num_batches, exc,
+            )
+            stopped_early = True
+            break
+        fresh = dict(zip(title_batch, results))
+        fresh_rows = _rows_for(title_batch, fresh)
+        update_classifications(fresh_rows)
+        llm_classified += len(fresh_rows)
+        other_count += _count_other(fresh_rows)
+        batches_attempted += 1
+        logger.info("reclassified batch %d/%d (%d unique titles)", batch_num, num_batches, len(title_batch))
         if batch_num < num_batches and batches_attempted < effective_batch_cap:
             await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
 
