@@ -187,3 +187,37 @@ Open question, not yet decided: whether `web` belongs on Railway at all, versus 
 static-first host (Vercel, Netlify) that's more purpose-built for a Vite/React
 frontend. Railway can do it, but that's a real trade-off worth making deliberately
 rather than defaulting into.
+
+---
+
+## Planned: deploying `admin`
+
+Not yet deployed — code is implemented and verified against the real database
+(`backend/src/admin_main.py`, see `backend/specs/pipeline-visibility/api.md`), but
+no Railway service exists for it yet. Same not-yet-deployed status as `api`/`web`
+above.
+
+```
+admin — rootDirectory: backend/ (same directory as job-sync and api — see
+        "The mental model" above), restart policy ALWAYS (long-running, not
+        cron), own generated domain, never linked from `web`'s public bundle
+        start command: uvicorn admin_main:app --host 0.0.0.0 --port $PORT
+        needs: DATABASE_URL (internal ref, same as job-sync/api),
+               ADMIN_PASSWORD_HASH, ADMIN_JWT_SECRET, ADMIN_COOKIE_SECURE
+               (omit/true in production — this service's own domain is HTTPS)
+```
+
+Server-renders its own HTML (Jinja2 templates in `backend/src/admin_templates/`)
+— no separate frontend build, unlike `web`. Auth is a single bcrypt-hashed
+operator password + JWT session cookie, no user table — see
+`backend/specs/pipeline-visibility/api.md` — Auth decision.
+
+**Open question, not yet resolved**: `job-sync` already uses `backend/railway.json`
+as its config-as-code file, and that file is discovered by root directory
+(`backend/`) — the same root directory `admin` (and the planned `api`) would also
+use. Railway's dashboard supports pointing a specific service at a different
+config-as-code file path, but which approach to use here (per-service override
+path vs. some other mechanism) hasn't been decided or tested yet — the same open
+question the `api`/`web` section above already flags for `api`, now shared by a
+third service at the same root directory. Resolve this before the first real
+deploy of `admin` or `api`, not by guessing at deploy time.

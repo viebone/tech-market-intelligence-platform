@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Overview — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+
+{% if totals.total_postings == 0 %}
+  <div class="card"><div class="empty-state">No data yet — run the ingestion pipeline to populate this view.</div></div>
+{% else %}
+
+<div class="card-grid">
+  <div class="card">
+    <div class="stat-value">{{ totals.total_postings }}</div>
+    <div class="stat-label">Total postings processed</div>
+  </div>
+  <div class="card">
+    <div class="stat-value">{{ requirements_coverage.extracted }}</div>
+    <div class="stat-label">Requirements extracted</div>
+  </div>
+  <div class="card">
+    <div class="stat-value">{{ requirements_coverage.pending }}</div>
+    <div class="stat-label">Requirements pending</div>
+  </div>
+  <div class="card">
+    <div class="stat-value">{{ requirements_coverage.failed }}</div>
+    <div class="stat-label">Requirements failed</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Requirements Extraction Coverage</h2>
+  <div class="bar-row">
+    <div class="bar-track"><div class="bar-fill success" style="width: {{ requirements_coverage.pct }}%;"></div></div>
+    <div class="bar-count">{{ requirements_coverage.pct }}%</div>
+  </div>
+  <div class="stat-label">{{ requirements_coverage.extracted }} of {{ requirements_coverage.eligible }} eligible postings</div>
+</div>
+
+<div class="card">
+  <h2>Taxonomy Version</h2>
+  {% for row in taxonomy_version_breakdown %}
+  <div class="bar-row">
+    <div class="bar-label">{{ row.version }}{% if row.is_current %} (current){% endif %}</div>
+    <div class="bar-track">
+      <div class="bar-fill {{ 'success' if row.is_current else 'flag' }}"
+           style="width: {{ (row.count / taxonomy_version_breakdown[0].count * 100) | round(1) }}%;"></div>
+    </div>
+    <div class="bar-count">{{ row.count }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% for dimension, label in [
+  ('role_category', 'Role Category'), ('level', 'Level'), ('track', 'Track'),
+  ('specialization', 'Specialization'), ('classification_confidence', 'Classification Confidence')
+] %}
+{% set rows = classification_distribution.get(dimension, []) %}
+<div class="card">
+  <h2>{{ label }}</h2>
+  {% if rows %}
+    {% for row in rows %}
+    <div class="bar-row">
+      <div class="bar-label">{{ row.value }}</div>
+      <div class="bar-track">
+        <div class="bar-fill {% if row.value == 'unknown' %}flag{% elif dimension == 'role_category' %}role-{{ row.value | lower | replace(' ', '-') }}{% else %}neutral{% endif %}"
+             style="width: {{ (row.count / rows[0].count * 100) | round(1) }}%;"></div>
+      </div>
+      <div class="bar-count">{{ row.count }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="stat-label">No data yet</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="card">
+  <h2>Skill Group Distribution</h2>
+  {% if skill_group_distribution %}
+    {% for row in skill_group_distribution %}
+    <div class="bar-row">
+      <div class="bar-label">{{ row.value }}</div>
+      <div class="bar-track">
+        <div class="bar-fill neutral" style="width: {{ (row.count / skill_group_distribution[0].count * 100) | round(1) }}%;"></div>
+      </div>
+      <div class="bar-count">{{ row.count }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="stat-label">No skills extracted yet</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Most Recent Ingestion Run</h2>
+  {% if latest_run %}
+    <div class="field-row"><div class="field-label">Started</div><div class="field-value">{{ latest_run.started_at }}</div></div>
+    <div class="field-row"><div class="field-label">Status</div><div class="field-value">
+      <span class="badge {{ 'success' if latest_run.status == 'success' else ('neutral' if latest_run.status == 'partial' else 'error') }}">{{ latest_run.status }}</span>
+    </div></div>
+    <div class="field-row"><div class="field-label">Fetched / Inserted</div><div class="field-value">{{ latest_run.total_fetched }} / {{ latest_run.total_inserted }}</div></div>
+    <div class="field-row"><div class="field-label">Classified</div><div class="field-value">{{ latest_run.total_classified }}</div></div>
+    <div class="field-row"><div class="field-label">Budget reached</div><div class="field-value">{{ 'Yes' if latest_run.budget_reached else 'No' }}</div></div>
+    <a class="btn-ghost" href="/admin/runs/{{ latest_run.id }}">View run detail →</a>
+  {% else %}
+    <div class="stat-label">No runs recorded yet</div>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}

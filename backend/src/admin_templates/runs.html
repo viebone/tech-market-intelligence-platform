@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Ingestion Runs — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Ingestion Runs</h1>
+
+{% if runs %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Started</th><th>Status</th><th>Fetched</th><th>Inserted</th>
+      <th>Classified</th><th>Requirements Extracted</th><th>Budget Reached</th><th>Other Rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in runs %}
+    <tr>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ r.started_at }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">
+        <span class="badge {{ 'success' if r.status == 'success' else ('neutral' if r.status == 'partial' else 'error') }}">{{ r.status }}</span>
+      </a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ r.total_fetched }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ r.total_inserted }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ r.total_classified }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ r.requirements_extracted }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ 'Yes' if r.budget_reached else 'No' }}</a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ (r.other_rate * 100) | round(1) }}%</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/runs?page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/runs?page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No ingestion runs recorded yet.</div></div>
+{% endif %}
+{% endblock %}

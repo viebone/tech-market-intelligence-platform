@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Postings — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Postings</h1>
+
+<form class="filter-form" method="get" action="/admin/postings">
+  <div>
+    <label for="role_category">Role Category</label>
+    <select id="role_category" name="role_category">
+      <option value="">All</option>
+      {% for v in filter_options.role_categories %}
+      <option value="{{ v }}" {{ 'selected' if filters.role_category == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="level">Level</label>
+    <select id="level" name="level">
+      <option value="">All</option>
+      {% for v in filter_options.levels %}
+      <option value="{{ v }}" {{ 'selected' if filters.level == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="track">Track</label>
+    <select id="track" name="track">
+      <option value="">All</option>
+      {% for v in filter_options.tracks %}
+      <option value="{{ v }}" {{ 'selected' if filters.track == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="specialization">Specialization</label>
+    <select id="specialization" name="specialization">
+      <option value="">All</option>
+      {% for v in filter_options.specializations %}
+      <option value="{{ v }}" {{ 'selected' if filters.specialization == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="classification_confidence">Confidence</label>
+    <select id="classification_confidence" name="classification_confidence">
+      <option value="">All</option>
+      {% for v in filter_options.confidences %}
+      <option value="{{ v }}" {{ 'selected' if filters.classification_confidence == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="taxonomy_version">Taxonomy Version</label>
+    <select id="taxonomy_version" name="taxonomy_version">
+      <option value="">All</option>
+      {% for v in filter_options.taxonomy_versions %}
+      <option value="{{ v }}" {{ 'selected' if filters.taxonomy_version == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="requirements_status">Requirements Status</label>
+    <select id="requirements_status" name="requirements_status">
+      <option value="">All</option>
+      {% for v in filter_options.requirements_statuses %}
+      <option value="{{ v }}" {{ 'selected' if filters.requirements_status == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="source">Source</label>
+    <select id="source" name="source">
+      <option value="">All</option>
+      {% for v in filter_options.sources %}
+      <option value="{{ v }}" {{ 'selected' if filters.source == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="search">Search</label>
+    <input type="text" id="search" name="search" value="{{ filters.search or '' }}" placeholder="Title or company">
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/postings">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching posting{{ '' if total == 1 else 's' }}</div>
+
+{% if postings %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th><a href="{{ sort_links.fetched_at }}">Fetched{% if sort == 'fetched_at' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.company }}">Company{% if sort == 'company' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Title</th>
+      <th><a href="{{ sort_links.role_category }}">Role Category{% if sort == 'role_category' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.level }}">Level{% if sort == 'level' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Track</th>
+      <th><a href="{{ sort_links.classification_confidence }}">Confidence{% if sort == 'classification_confidence' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.taxonomy_version }}">Taxonomy{% if sort == 'taxonomy_version' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Requirements</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in postings %}
+    <tr>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.fetched_at }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.company or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.title }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.role_category or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">
+        {% if p.level == 'unknown' %}<span class="badge neutral">unknown</span>{% else %}{{ p.level or '—' }}{% endif %}
+      </a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.track or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.classification_confidence or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">{{ p.taxonomy_version or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">
+        {% if p.requirements_status == 'extracted' %}<span class="badge success">Extracted</span>
+        {% elif p.requirements_status == 'failed' %}<span class="badge error">Failed</span>
+        {% elif p.requirements_status == 'not_eligible' %}<span class="badge neutral">Not eligible</span>
+        {% else %}<span class="badge neutral">Pending</span>{% endif %}
+      </a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/postings?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/postings?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No postings match these filters.</div></div>
+{% endif %}
+{% endblock %}

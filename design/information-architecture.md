@@ -1,12 +1,36 @@
 ---
 id: information-architecture
-version: 2.1
+version: 2.2
 status: active
 created: 2026-06-11
-updated: 2026-08-09
+updated: 2026-08-14
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
+
+## Scope
+
+This document defines navigation, layout, and terminology for the **consumer-facing
+product** — the experience job seekers use, described throughout this file. It does not
+govern internal/operational tooling built for the people running the platform.
+
+The admin pipeline-visibility dashboard (`design/pipeline-visibility/experience.md`, serving
+`outcomes/pipeline-processing-visibility.md`) is a deliberate example: it is a separate,
+operator-only surface — not reachable from, or linked within, this navigation model — served
+by its own backend-rooted deployment (see `changes/2026-08-13-admin-pipeline-dashboard.md`'s
+Decision Log). It defines its own local navigation (Sidebar Nav / Main Content) entirely
+within its own experience spec, using terms that are intentionally absent from the Content
+Taxonomy below — they are not part of this product's consumer-facing vocabulary and must not
+be confused with it.
+
+Any future internal-tooling surface follows the same pattern: it does not need an entry here
+unless it becomes reachable from, or shares navigation with, the consumer-facing product
+described below.
+
+This carve-out mirrors `design/foundations.md`'s own Scope section (v1.1), which exempts
+internal tooling from the product's Agentic Conversational UI paradigm for the same reason.
+
+---
 
 ## Layout Model
 

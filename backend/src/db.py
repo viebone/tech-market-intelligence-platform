@@ -253,6 +253,23 @@ CREATE INDEX IF NOT EXISTS idx_posting_skills_raw_skill ON posting_skills (raw_s
 -- original early CREATE INDEX statement above was removed for the reason
 -- explained there.
 CREATE INDEX IF NOT EXISTS idx_posting_skills_skill ON posting_skills (skill_group);
+
+-- Pipeline visibility admin dashboard migration (2026-08-16) — see
+-- backend/specs/pipeline-visibility/api.md — Data Models. Must come after
+-- ingestion_runs is created above, since ingestion_run_id references it.
+-- Purely additive: a new nullable FK column plus one new table, same
+-- idempotent pattern as every migration in this file. No backfill for
+-- ingestion_run_id against existing rows — see that spec's Data Models
+-- section for why an honest NULL beats a guessed value here.
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS ingestion_run_id INTEGER REFERENCES ingestion_runs(id);
+
+CREATE TABLE IF NOT EXISTS posting_requirements_failures (
+    posting_id        TEXT PRIMARY KEY REFERENCES raw_postings(id),
+    error             TEXT NOT NULL,
+    attempt_count     INTEGER NOT NULL DEFAULT 1,
+    last_attempted_at TIMESTAMPTZ NOT NULL,
+    model             TEXT NOT NULL
+);
 """
 
 

@@ -1,9 +1,10 @@
 ---
 id: design-foundations
-version: 1.0
+version: 1.1
 status: active
 generic: false
 created: 2026-06-11
+updated: 2026-08-14
 ---
 
 # Design Foundations — Tech Market Intelligence Platform
@@ -16,6 +17,28 @@ and experienced enough to read a chart without hand-holding. But they arrive emo
 loaded — layoffs, stagnation, or uncertainty have triggered the search — and they are
 making high-stakes decisions with no reliable data. They don't need more noise; they need
 a clear signal they can trust and act on, quickly.
+
+---
+
+## Scope
+
+These foundations — the Product Paradigm and all eight UX Principles below — govern the
+**consumer-facing product**: the experience described above, used by job seekers. They do
+not automatically extend to internal/operational tooling built for the people running the
+platform (e.g. an admin pipeline-visibility view serving
+`outcomes/pipeline-processing-visibility.md`).
+
+Internal tooling is scoped by its own outcome and experience spec, and is exempt from:
+- The **Agentic Conversational UI** paradigm — an internal admin surface is a plain
+  traditional dashboard (tables, charts, drill-downs), not a conversational interface. This
+  keeps operator tooling simple to build and use, and matches the deliberately narrow scope
+  (read-only, on-demand refresh, no editing, no alerting) already set in any outcome that
+  requests it.
+- **Principle 5 (Direct Manipulation of Outcomes)** — internal tooling may be read-only where
+  its outcome says so, with no obligation to support in-place editing of system outputs.
+
+Any future internal-tooling outcome that explicitly wants conversational interaction or
+direct manipulation is free to ask for it — this carve-out is a default exemption, not a ban.
 
 ---
 

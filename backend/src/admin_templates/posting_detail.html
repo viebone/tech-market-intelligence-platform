@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ data.posting.title }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/postings">← Back to Postings</a>
+<h1>{{ data.posting.title }}</h1>
+
+<div class="card">
+  <h2>Posting</h2>
+  <div class="field-row"><div class="field-label">Company</div><div class="field-value">{{ data.posting.company or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Source</div><div class="field-value">{{ data.posting.source }}</div></div>
+  <div class="field-row"><div class="field-label">Fetched</div><div class="field-value">{{ data.posting.fetched_at }}</div></div>
+  <div class="field-row"><div class="field-label">Ingested by run</div><div class="field-value">
+    {% if data.ingested_by_run %}<a href="/admin/runs/{{ data.ingested_by_run.id }}">Run #{{ data.ingested_by_run.id }} ({{ data.ingested_by_run.started_at }})</a>
+    {% else %}predates run tracking{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Location</div><div class="field-value">{{ data.posting.city or '—' }}{% if data.posting.city and data.posting.country %}, {% endif %}{{ data.posting.country or '' }}</div></div>
+  <div class="field-row"><div class="field-label">Compensation</div><div class="field-value">
+    {% if data.posting.salary_min %}{{ data.posting.salary_min }}–{{ data.posting.salary_max }} {{ data.posting.salary_currency }} ({{ data.posting.salary_confidence }})
+    {% else %}not disclosed{% endif %}
+  </div></div>
+</div>
+
+<div class="card">
+  <h2>Classification</h2>
+  {% if data.classification %}
+    <div class="field-row"><div class="field-label">Role Category</div><div class="field-value">{{ data.classification.role_category }}</div></div>
+    <div class="field-row"><div class="field-label">Specialization</div><div class="field-value">{{ data.classification.specialization or '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Level</div><div class="field-value">{{ data.classification.level or '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Track</div><div class="field-value">{{ data.classification.track or '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Confidence</div><div class="field-value">{{ data.classification.classification_confidence }}</div></div>
+    <div class="field-row"><div class="field-label">Taxonomy Version</div><div class="field-value">{{ data.classification.taxonomy_version }}</div></div>
+    <div class="field-row"><div class="field-label">Model</div><div class="field-value">{{ data.classification.model }}</div></div>
+    <div class="field-row"><div class="field-label">Classified at</div><div class="field-value">{{ data.classification.classified_at }}</div></div>
+  {% else %}
+    <div class="stat-label">Not yet classified.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Requirements</h2>
+  {% if data.requirements.status == 'extracted' %}
+    <span class="badge success">Extracted</span>
+    <div class="field-row"><div class="field-label">Education</div><div class="field-value">{{ data.requirements.education_level }} ({{ data.requirements.education_required }}{% if data.requirements.equivalent_experience_accepted %}, equivalent experience accepted{% endif %})</div></div>
+    <div class="field-row"><div class="field-label">Years experience min</div><div class="field-value">{{ data.requirements.years_experience_min if data.requirements.years_experience_min is not none else '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Work arrangement</div><div class="field-value">{{ data.requirements.work_arrangement }}</div></div>
+    <div class="field-row"><div class="field-label">Responsibilities</div><div class="field-value">{{ data.requirements.responsibilities_summary or '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Other requirements</div><div class="field-value">{{ data.requirements.other_requirements or '—' }}</div></div>
+    <div class="field-row"><div class="field-label">Extracted at</div><div class="field-value">{{ data.requirements.extracted_at }} ({{ data.requirements.model }})</div></div>
+  {% elif data.requirements.status == 'failed' %}
+    <span class="badge error">Failed</span>
+    <div class="field-row"><div class="field-label">Error</div><div class="field-value">{{ data.requirements.error }}</div></div>
+    <div class="field-row"><div class="field-label">Attempts</div><div class="field-value">{{ data.requirements.attempt_count }}</div></div>
+    <div class="field-row"><div class="field-label">Last attempted</div><div class="field-value">{{ data.requirements.last_attempted_at }}</div></div>
+  {% elif data.requirements.status == 'not_eligible' %}
+    <span class="badge neutral">Not eligible</span>
+    <div class="stat-label" style="margin-top: 8px;">Role category is "other" or "unknown" — excluded from requirements extraction.</div>
+  {% else %}
+    <span class="badge neutral">Pending</span>
+    <div class="stat-label" style="margin-top: 8px;">Not yet attempted.</div>
+  {% endif %}
+</div>
+
+{% if data.skills %}
+<div class="card">
+  <h2>Skills</h2>
+  <table class="data-table">
+    <thead><tr><th>Raw mention</th><th>Skill Group</th><th>Requirement</th></tr></thead>
+    <tbody>
+      {% for s in data.skills %}
+      <tr><td>{{ s.raw_skill }}</td><td>{{ s.skill_group }}</td><td>{{ s.requirement_level }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if data.languages %}
+<div class="card">
+  <h2>Languages</h2>
+  <table class="data-table">
+    <thead><tr><th>Language</th><th>Requirement</th></tr></thead>
+    <tbody>
+      {% for l in data.languages %}
+      <tr><td>{{ l.language }}</td><td>{{ l.requirement_level }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Raw Source Response</h2>
+  <pre class="raw-json">{{ data.posting.raw_response_json }}</pre>
+</div>
+{% endblock %}
