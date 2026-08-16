@@ -340,7 +340,18 @@ def insert_requirements(entries: list[dict]) -> None:
     tables enforce "extracted at most once per posting" at the database
     level, same discipline as classifications.posting_id. posting_skills'
     UNIQUE constraint moved to (posting_id, raw_skill) 2026-08-11 — see
-    backend/specs/market-health/api.md — Data Models — PostingSkill."""
+    backend/specs/market-health/api.md — Data Models — PostingSkill.
+
+    Also clears any posting_requirements_failures row for each posting in
+    this batch, in the *same* connection/transaction as the inserts above —
+    added 2026-08-16 for the pipeline-visibility admin dashboard
+    (backend/specs/pipeline-visibility/api.md). Deliberately folded in here
+    rather than left as a separate clear_extraction_failure() call from the
+    caller: Extracted and Failed must never simultaneously be true for the
+    same posting, and a separate call in its own connection would leave a
+    real (if narrow) window where a crash between the two could violate
+    that — same discipline as this table's own ON CONFLICT DO NOTHING
+    invariants."""
     if not entries:
         return
     extracted_at = datetime.now(timezone.utc)
@@ -391,6 +402,76 @@ def insert_requirements(entries: list[dict]) -> None:
                     """,
                     language_rows,
                 )
+            # Same connection/transaction as the inserts above — see
+            # docstring. Safe even for postings that never had a failure row.
+            cur.execute(
+                "DELETE FROM posting_requirements_failures WHERE posting_id = ANY(%s)",
+                ([e["id"] for e in entries],),
+            )
+
+
+def record_extraction_failure(posting_id: str, error: str, model: str) -> None:
+    """
+    UPSERT — one row per posting currently in a failed state. Added 2026-08-16
+    for the pipeline-visibility admin dashboard (backend/specs/
+    pipeline-visibility/api.md), called from extract_requirements()'s retry-
+    exhaustion path below. Overwrites `error`/`last_attempted_at` and
+    increments `attempt_count` on repeat failures — only the latest error
+    matters for debugging, not a full history."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO posting_requirements_failures (posting_id, error, attempt_count, last_attempted_at, model)
+            VALUES (%s, %s, 1, %s, %s)
+            ON CONFLICT (posting_id) DO UPDATE SET
+                error = EXCLUDED.error,
+                attempt_count = posting_requirements_failures.attempt_count + 1,
+                last_attempted_at = EXCLUDED.last_attempted_at,
+                model = EXCLUDED.model
+            """,
+            (posting_id, error, datetime.now(timezone.utc), model),
+        )
+
+
+def get_extraction_failure(posting_id: str) -> dict | None:
+    """Current failure state for one posting, if any — used by the admin
+    Posting Detail view (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT error, attempt_count, last_attempted_at FROM posting_requirements_failures WHERE posting_id = %s",
+            (posting_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"error": row[0], "attempt_count": row[1], "last_attempted_at": row[2]}
+
+
+def get_requirements_coverage() -> dict:
+    """
+    extracted / eligible, where eligible = classified postings with
+    role_category NOT IN ('other', 'unknown') — the exact same eligibility
+    rule get_all_needing_requirements() already uses (raw_postings.py), not a
+    redefinition. Used by the admin Overview page (backend/specs/
+    pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        eligible = conn.execute(
+            "SELECT COUNT(*) FROM classifications WHERE role_category NOT IN ('other', 'unknown')"
+        ).fetchone()[0]
+        extracted = conn.execute("SELECT COUNT(*) FROM posting_requirements").fetchone()[0]
+        failed = conn.execute("SELECT COUNT(*) FROM posting_requirements_failures").fetchone()[0]
+    pending = max(0, eligible - extracted - failed)
+    pct = (extracted / eligible * 100) if eligible else 0.0
+    return {"extracted": extracted, "eligible": eligible, "failed": failed, "pending": pending, "pct": round(pct, 1)}
+
+
+def get_skill_group_distribution() -> list[dict]:
+    """Value counts for skill_group across all extracted postings — admin
+    Overview page (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT skill_group, COUNT(*) FROM posting_skills GROUP BY skill_group ORDER BY COUNT(*) DESC"
+        ).fetchall()
+    return [{"value": r[0], "count": r[1]} for r in rows]
 
 
 def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
@@ -511,8 +592,19 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
                 "extract_requirements batch %d/%d failed, stopping this run early: %s",
                 batch_num, num_batches, exc,
             )
+            # Record the failure against every posting in this batch — added
+            # 2026-08-16 for the pipeline-visibility admin dashboard
+            # (backend/specs/pipeline-visibility/api.md). These postings stay
+            # in the normal retry backlog (get_all_needing_requirements() is
+            # unchanged) — this only makes the failure visible instead of
+            # silent; it does not stop future retries.
+            for p in batch:
+                record_extraction_failure(p["id"], str(exc), EXTRACTION_MODEL)
             stopped_early = True
             break
+        # insert_requirements() also clears any prior posting_requirements_failures
+        # row for these postings, in the same transaction as the insert — see
+        # its docstring.
         insert_requirements(results)
         extracted += len(results)
         batches_attempted += 1

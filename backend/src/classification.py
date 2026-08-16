@@ -728,3 +728,65 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
         "budget_reached": budget_reached,
         "llm_requests_used": request_counter["requests"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Pipeline visibility admin dashboard (2026-08-16) — read-only aggregates.
+# See backend/specs/pipeline-visibility/api.md — API Endpoints — GET /admin/.
+# ---------------------------------------------------------------------------
+
+DISTRIBUTION_DIMENSIONS = ("role_category", "level", "track", "specialization", "classification_confidence")
+
+
+def get_classification_distribution() -> dict[str, list[dict]]:
+    """
+    Value counts for every classification dimension the Overview page charts
+    — one GROUP BY per dimension, each as its own small query rather than one
+    big pivot, since the dimensions aren't mutually exclusive slices of the
+    same rows. NULL values (role_category not yet classified) are excluded —
+    that's a "not yet classified" state, not a classification value itself.
+    """
+    distribution: dict[str, list[dict]] = {}
+    with get_connection() as conn:
+        for dimension in DISTRIBUTION_DIMENSIONS:
+            rows = conn.execute(
+                f"""
+                SELECT {dimension}, COUNT(*) FROM classifications
+                WHERE {dimension} IS NOT NULL
+                GROUP BY {dimension}
+                ORDER BY COUNT(*) DESC
+                """
+            ).fetchall()
+            distribution[dimension] = [{"value": r[0], "count": r[1]} for r in rows]
+    return distribution
+
+
+def get_taxonomy_version_breakdown() -> list[dict]:
+    """
+    Count of classified postings per taxonomy_version, flagging which one is
+    TAXONOMY_VERSION (current) — makes an in-flight reprocessing backlog (like
+    changes/2026-08-11-classification-taxonomy-redesign.md's) visibly drain
+    instead of being a silent background fact. See backend/specs/
+    pipeline-visibility/api.md — API Endpoints — GET /admin/.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT taxonomy_version, COUNT(*) FROM classifications GROUP BY taxonomy_version ORDER BY COUNT(*) DESC"
+        ).fetchall()
+    return [
+        {"version": r[0], "count": r[1], "is_current": r[0] == TAXONOMY_VERSION}
+        for r in rows
+    ]
+
+
+def get_distinct_specializations() -> list[str]:
+    """Distinct non-null specialization values in use today — backs the
+    admin Postings filter dropdown (backend/specs/pipeline-visibility/api.md).
+    Not the full closed taxonomy list (job-classification.md defines that);
+    just what's actually present, so the dropdown never offers a value with
+    zero matching postings."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT specialization FROM classifications WHERE specialization IS NOT NULL ORDER BY specialization"
+        ).fetchall()
+    return [r[0] for r in rows]

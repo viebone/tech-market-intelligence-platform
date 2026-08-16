@@ -34,7 +34,12 @@ from ingestion_runs import (
     get_requirements_requests_used_today,
     record_run,
 )
-from raw_postings import get_all_needing_requirements, get_all_unclassified, insert_new_postings
+from raw_postings import (
+    attach_ingestion_run,
+    get_all_needing_requirements,
+    get_all_unclassified,
+    insert_new_postings,
+)
 from requirements import REQUIREMENTS_DAILY_REQUEST_BUDGET, extract_requirements
 from sources import ALL_SOURCE_ADAPTERS
 from sources.base import SourceFetchError
@@ -118,13 +123,18 @@ async def run() -> None:
         # wrong (e.g. the database itself is unreachable) — this run
         # produced nothing usable.
         logger.exception("Ingestion run failed: %s", exc)
-        record_run(
+        run_id = record_run(
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
             status="failed",
             terms_processed=terms_processed,
             error_message=str(exc),
         )
+        # Postings may have already been inserted (in ingest_company()) before
+        # whatever failed here — still attach them to this run rather than
+        # leaving them permanently unattributed. See raw_postings.
+        # attach_ingestion_run() and backend/specs/pipeline-visibility/api.md.
+        attach_ingestion_run(run_id, started_at)
         raise
 
     # budget_reached alone is a clean, intentional stop, not a degradation —
@@ -135,7 +145,7 @@ async def run() -> None:
     status = "partial" if (
         any_company_failed or stats["stopped_early"] or requirements_stats["stopped_early"]
     ) else "success"
-    record_run(
+    run_id = record_run(
         started_at=started_at,
         completed_at=datetime.now(timezone.utc),
         status=status,
@@ -153,6 +163,10 @@ async def run() -> None:
         requirements_requests_used=requirements_stats["requirements_requests_used"],
         requirements_budget_reached=requirements_stats["requirements_budget_reached"],
     )
+    # ingestion_runs' row for this run only exists from this point on — see
+    # ingestion_runs.record_run()'s docstring — so raw_postings.ingestion_run_id
+    # is backfilled here rather than set at insert time.
+    attach_ingestion_run(run_id, started_at)
     logger.info("ingestion run recorded: status=%s", status)
 
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Pipeline Visibility{% endblock %}</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="brand">Pipeline Visibility</div>
+      <nav>
+        <a href="/admin/" class="{{ 'active' if active_page == 'overview' else '' }}">Overview</a>
+        <a href="/admin/postings" class="{{ 'active' if active_page == 'postings' else '' }}">Postings</a>
+        <a href="/admin/runs" class="{{ 'active' if active_page == 'runs' else '' }}">Ingestion Runs</a>
+      </nav>
+      <form class="logout-form" method="post" action="/admin/logout">
+        <button type="submit" class="btn-ghost">Log out</button>
+      </form>
+    </aside>
+    <main class="main-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

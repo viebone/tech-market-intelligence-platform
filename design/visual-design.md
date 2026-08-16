@@ -1,8 +1,9 @@
 ---
 id: visual-design
-version: 1.0
+version: 1.1
 status: active
 created: 2026-06-21
+updated: 2026-08-15
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -114,6 +115,20 @@ never shrinks to accommodate the side panels.
 
 The left panel drives the context loaded into the working space and output panel.
 Selecting a task on the left changes what appears in both right zones simultaneously.
+
+### Sidebar + Main Content (operator surfaces)
+
+Used only by internal/operator-only surfaces exempt from the three-column model per
+`design/foundations.md` v1.1's Scope section and `design/information-architecture.md`
+v2.2's Scope section — e.g. the admin pipeline-visibility dashboard
+(`design/pipeline-visibility/experience.md`). Same colour, type, and spacing tokens as the
+rest of the product; a different, simpler two-zone shape, not a three-column layout with a
+zone removed.
+
+| Zone | Width | Behaviour |
+|---|---|---|
+| Sidebar Nav (left) | 220px fixed | Static page-navigation list. `bg-gray-800`, `border-r border-gray-700`. Unlike the consumer product's Task Panel, entries are fixed links (e.g. Overview, Postings, Ingestion Runs), not a dynamic, reorderable task list. |
+| Main Content | Fluid, `max-w-[1400px]`, centred, `px-6` | Fills the remaining width. No Output Panel counterpart — operator surfaces have no reference-index concept; content (summary numbers, tables, detail views) renders directly here. |
 
 ---
 
@@ -282,6 +297,60 @@ style:   solid
 ```
 
 Use dividers to separate zones within a surface. Never use dividers as decoration.
+
+### Data table (operator surfaces)
+
+New pattern — the consumer product has no tabular data view today. Used by the admin
+pipeline-visibility dashboard's Postings and Ingestion Runs tables.
+
+```
+header row:    bg-gray-800, border-b border-gray-700
+               label: text-xs font-medium text-gray-400, uppercase, tracking-wide
+               sortable column: cursor-pointer, hover text-gray-200
+               active sort: ↑/↓ arrow (text-gray-400) inline after the label
+body row:      border-b border-gray-800 (Border subtle)
+               text: text-sm text-gray-300
+               hover: bg-gray-700 (Surface raised)
+cell padding:  16px 16px (py-4 px-4) — matches md spacing token
+```
+
+### Filter chip (operator surfaces)
+
+New pattern — represents one active filter on a table; removable.
+
+```
+background:    gray-700 (Surface raised)
+text:          text-xs font-medium, gray-100
+border-radius: 9999px (rounded-full)
+padding:       4px 10px (py-1 px-2.5)
+remove icon:   × inline after label, gray-400, hover gray-200
+```
+
+### Status badge / pill (operator surfaces)
+
+New pattern — a small inline label for row/record status (e.g. Requirements Status:
+"Extracted" / "Pending" / "Failed"; a `taxonomy_version` freshness marker; an ingestion run's
+outcome). Reuses the existing Semantic colours table below — no new colours introduced.
+Always pairs colour with a text label, per "What this rules out."
+
+```
+background:    {semantic colour}/15  e.g. emerald-600/15, amber-600/15, red-600/15
+text:          {semantic colour} at full strength, e.g. emerald-400, amber-400, red-400
+border-radius: 4px (rounded)
+padding:       2px 8px (py-0.5 px-2)
+font:          text-xs font-medium
+```
+
+| Meaning | Semantic colour | Example labels |
+|---|---|---|
+| Complete / success / current | `emerald` (Rising / positive) | "Extracted", current `taxonomy_version` |
+| Not yet resolved, not an error | `amber` (Stable / neutral) | "Pending", stale `taxonomy_version`, `unknown` classification value |
+| Failed | `red` (Declining / negative) | "Failed", ingestion run error |
+
+`unknown` classification values and "Pending" status intentionally share the amber
+treatment — both mean "not yet resolved," not "broken." Only "Failed" states use red. This
+matches the amber/red distinction `design/pipeline-visibility/experience.md`'s Chart
+Specification and Edge Cases sections already rely on.
 
 ---
 

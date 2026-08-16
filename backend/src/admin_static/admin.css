@@ -1,0 +1,257 @@
+/*
+ * Pipeline Visibility admin dashboard styles.
+ *
+ * Hand-written, static CSS — deliberately not Tailwind's CDN/play build,
+ * since that requires client-side JS to generate styles at runtime and this
+ * spec decided "no client-side JS framework" (backend/specs/
+ * pipeline-visibility/api.md — Tech Decisions). Every value below is copied
+ * directly from design/visual-design.md (v1.1) and design/foundations.md's
+ * Scope carve-out — same token system as the consumer product, applied to a
+ * sidebar + main-content shape instead of the three-column layout.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #111827;          /* gray-900 — Page background */
+  color: #d1d5db;                /* gray-300 — Text secondary / Body */
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+a { color: inherit; }
+
+/* Layout — Sidebar + Main Content, design/visual-design.md v1.1 */
+
+.admin-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex: 0 0 220px;
+  background: #1f2937;           /* gray-800 — Surface */
+  border-right: 1px solid #374151; /* gray-700 — Border */
+  padding: 24px 0;
+}
+
+.sidebar .brand {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f3f4f6;                /* gray-100 — Text primary */
+  padding: 0 16px 16px;
+}
+
+.sidebar nav a {
+  display: block;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #d1d5db;
+  text-decoration: none;
+}
+
+.sidebar nav a:hover { color: #f3f4f6; background: #374151; }
+.sidebar nav a.active { color: #f3f4f6; background: #374151; font-weight: 500; }
+
+.sidebar form.logout-form { padding: 16px; }
+.sidebar form.logout-form button { width: 100%; }
+
+.main-content {
+  flex: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 { font-size: 24px; font-weight: 600; color: #f3f4f6; margin: 0 0 24px; }
+h2 { font-size: 14px; font-weight: 500; color: #f3f4f6; margin: 0 0 8px; }
+
+/* Surfaces — cards / panels, design/visual-design.md */
+
+.card {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.card + .card { margin-top: 16px; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-value { font-size: 24px; font-weight: 600; color: #f3f4f6; }
+.stat-label { font-size: 12px; color: #9ca3af; margin-top: 4px; } /* gray-400 — Text muted */
+
+/* Bars — classification distribution / taxonomy version / coverage */
+
+.bar-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
+.bar-row .bar-label { width: 160px; flex-shrink: 0; color: #d1d5db; }
+.bar-track { flex: 1; background: #374151; border-radius: 4px; height: 10px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; }
+.bar-row .bar-count { width: 56px; text-align: right; color: #9ca3af; flex-shrink: 0; }
+
+.bar-fill.neutral { background: #d1d5db; }
+.bar-fill.flag { background: #d97706; }      /* amber-600 — Stable / neutral */
+.bar-fill.success { background: #059669; }   /* emerald-600 — Rising / positive */
+.bar-fill.role-designer { background: #6366f1; }
+.bar-fill.role-product-manager { background: #a855f7; }
+.bar-fill.role-engineer { background: #10b981; }
+
+/* Data table, design/visual-design.md v1.1 */
+
+table.data-table { width: 100%; border-collapse: collapse; }
+
+table.data-table th {
+  background: #1f2937;
+  border-bottom: 1px solid #374151;
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+table.data-table th a { text-decoration: none; color: inherit; }
+table.data-table th a:hover { color: #e5e7eb; }
+
+table.data-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #1f2937; /* gray-800 — Border subtle */
+  font-size: 14px;
+  color: #d1d5db;
+}
+
+table.data-table tbody tr:hover { background: #374151; }
+table.data-table tbody tr td a.row-link { display: block; text-decoration: none; color: inherit; }
+
+/* Filter chip, design/visual-design.md v1.1 */
+
+.filter-chips { margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.filter-chip {
+  background: #374151;
+  color: #f3f4f6;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+.filter-chip .remove { color: #9ca3af; }
+.filter-chip:hover .remove { color: #e5e7eb; }
+
+/* Status badge / pill, design/visual-design.md v1.1 — colour always paired
+   with a text label, never colour alone. */
+
+.badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.badge.success { background: rgba(5, 150, 105, 0.15); color: #34d399; }
+.badge.neutral { background: rgba(217, 119, 6, 0.15); color: #fbbf24; }
+.badge.error   { background: rgba(220, 38, 38, 0.15); color: #f87171; }
+
+/* Forms / inputs, design/visual-design.md */
+
+form.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: flex-end;
+}
+
+label { display: block; font-size: 12px; font-weight: 500; color: #9ca3af; margin-bottom: 4px; }
+
+input[type="text"], input[type="password"], select {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  color: #f3f4f6;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+input:focus, select:focus { outline: none; border-color: #374151; box-shadow: 0 0 0 1px #6366f1; }
+
+button, .btn {
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+button:hover, .btn:hover { background: #4338ca; }
+
+.btn-ghost {
+  background: transparent;
+  color: #9ca3af;
+  border: none;
+  padding: 4px 8px;
+  text-decoration: none;
+}
+.btn-ghost:hover { color: #e5e7eb; }
+
+/* Dividers */
+hr { border: none; border-top: 1px solid #374151; margin: 16px 0; }
+
+/* Detail view — stacked labelled fields */
+
+.field-row { display: flex; padding: 8px 0; border-bottom: 1px solid #1f2937; }
+.field-row .field-label { width: 220px; flex-shrink: 0; color: #9ca3af; font-size: 12px; font-weight: 500; }
+.field-row .field-value { color: #d1d5db; font-size: 14px; word-break: break-word; }
+
+pre.raw-json {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: #d1d5db;
+}
+
+/* Pagination */
+.pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 12px; color: #9ca3af; }
+.pagination a { color: #d1d5db; text-decoration: none; }
+.pagination a:hover { color: #f3f4f6; }
+
+/* Empty state */
+.empty-state { color: #9ca3af; font-size: 14px; padding: 32px; text-align: center; }
+
+/* Skeleton pulse loading (used server-side only for genuinely-async partials, currently none — kept for parity with design/visual-design.md motion rules) */
+@keyframes admin-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.skeleton { background: #374151; border-radius: 4px; animation: admin-pulse 1.5s ease-in-out infinite; }
+
+/* Login page */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-card { width: 320px; }
+.login-card h1 { font-size: 20px; margin-bottom: 16px; }
+.login-card form { display: flex; flex-direction: column; gap: 12px; }
+.login-error { color: #f87171; font-size: 12px; margin-top: 8px; }

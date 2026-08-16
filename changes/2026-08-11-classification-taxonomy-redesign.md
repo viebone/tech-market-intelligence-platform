@@ -197,9 +197,30 @@ answers become more trustworthy.
       years customer-facing, 3+ years tax-specific). Noted, not treated as a code bug, not
       prompt-tuned yet — consistent with this pipeline's standing "tuned as real data comes in"
       discipline rather than reacting to a single sample.
-      **Not run**: the full reprocessing pass against the entire ~5,105-posting backlog — per
-      explicit instruction, held off pending the user's go-ahead given real LLM cost and
-      multi-day duration.
+      **Addendum — first real backlog run (2026-08-11, user approved)**: kicked off
+      `reprocess_taxonomy.py` for real. First attempt failed immediately with
+      `psycopg.errors.UndefinedColumn: column "skill" does not exist` — a real idempotency bug
+      in the db.py migration: `CREATE INDEX IF NOT EXISTS idx_posting_skills_skill ON
+      posting_skills (skill)` still validates its column list even when the index name already
+      exists, so it broke on the *second* startup after the rename (the first run created the
+      index fine, before `skill` was renamed to `skill_group`). Fixed by removing the
+      early/stale reference and adding a corrected one (same index name, `skill_group` column)
+      positioned after the rename migration — verified genuinely idempotent this time by
+      running `init_schema()` twice in a row before re-attempting. Re-ran successfully:
+      5,105 postings checked, 826 heuristic-filtered, 1,314 reclassified via 11 real LLM
+      requests across 11 batches, hit the daily budget cap cleanly (`budget_reached: true`,
+      `status: "success"`, 26/37 batches left for future runs) — 2,143 postings now on
+      `taxonomy_version: "2026-08-11"`. Verified the real level distribution: the old
+      160-posting `seniority: "manager"` collapse is gone, replaced by senior (251),
+      principal (70), mid (47), lead (11), director (10), entry/junior/executive (small
+      counts), and `unknown` (270, genuine cases). Spot-checked a real `role_category:
+      "unknown"` example — "Performance Solutions Lead" — exactly the kind of genuinely
+      ambiguous title the taxonomy redesign was built to catch. 121 postings' stale
+      requirements were deleted and are queued for re-extraction by the next `ingest.py` run.
+      Remaining backlog (2,962 postings' classifications, plus whatever requirements
+      reprocessing hasn't yet been triggered by classification catching up) will clear over
+      the following days as `reprocess_taxonomy.py` and/or the deployed daily cron continue
+      running — per the user's plan, deployment/rebuild is being handled separately.
 - [x] Step 6: `/implement-frontend` — Step 4's one real finding (`MarketHealthPage.tsx:111`'s
       stale `seniority` field name) was small enough to implement directly as part of Step 5's
       pass rather than needing a separate invocation — done, see Step 5 notes. No other

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/runs">← Back to Runs</a>
+<h1>Run #{{ run.id }}</h1>
+
+<div class="card">
+  <div class="field-row"><div class="field-label">Started</div><div class="field-value">{{ run.started_at }}</div></div>
+  <div class="field-row"><div class="field-label">Completed</div><div class="field-value">{{ run.completed_at or 'did not complete' }}</div></div>
+  <div class="field-row"><div class="field-label">Status</div><div class="field-value">
+    <span class="badge {{ 'success' if run.status == 'success' else ('neutral' if run.status == 'partial' else 'error') }}">{{ run.status }}</span>
+  </div></div>
+  <div class="field-row"><div class="field-label">Fetched / Inserted</div><div class="field-value">{{ run.total_fetched }} / {{ run.total_inserted }}</div></div>
+  <div class="field-row"><div class="field-label">Classified</div><div class="field-value">{{ run.total_classified }} (cache hits {{ run.cache_hits }}, heuristic-filtered {{ run.heuristic_filtered }}, LLM {{ run.llm_classified }})</div></div>
+  <div class="field-row"><div class="field-label">Other rate</div><div class="field-value">{{ (run.other_rate * 100) | round(1) }}% ({{ run.other_count }})</div></div>
+  <div class="field-row"><div class="field-label">Classification budget reached</div><div class="field-value">{{ 'Yes' if run.budget_reached else 'No' }} ({{ run.llm_requests_used }} requests used)</div></div>
+  <div class="field-row"><div class="field-label">Requirements extracted</div><div class="field-value">{{ run.requirements_extracted }}</div></div>
+  <div class="field-row"><div class="field-label">Requirements budget reached</div><div class="field-value">{{ 'Yes' if run.requirements_budget_reached else 'No' }} ({{ run.requirements_requests_used }} requests used)</div></div>
+  {% if run.error_message %}
+  <div class="field-row"><div class="field-label">Error</div><div class="field-value">{{ run.error_message }}</div></div>
+  {% endif %}
+</div>
+
+{% if run.anomalies %}
+<div class="card">
+  <h2>Anomalies</h2>
+  <ul>
+    {% for a in run.anomalies %}<li>{{ a }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Per-source / per-company breakdown</h2>
+  {% if run.is_legacy_format %}
+    <div class="stat-label" style="margin-bottom: 8px;">Legacy run format (pre-2026-08-03) — recorded by search term, not source/company.</div>
+  {% endif %}
+  <table class="data-table">
+    <thead>
+      {% if run.is_legacy_format %}
+      <tr><th>Term</th></tr>
+      {% else %}
+      <tr><th>Source</th><th>Company</th><th>Fetched</th><th>Inserted</th><th>Error</th></tr>
+      {% endif %}
+    </thead>
+    <tbody>
+      {% for t in run.terms_processed %}
+      {% if run.is_legacy_format %}
+      <tr><td>{{ t.term }}</td></tr>
+      {% else %}
+      <tr>
+        <td>{{ t.source }}</td>
+        <td>{{ t.company or '—' }}</td>
+        <td>{{ t.fetched }}</td>
+        <td>{{ t.inserted }}</td>
+        <td>{% if t.error %}<span class="badge error">{{ t.error }}</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

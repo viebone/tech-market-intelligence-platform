@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pipeline Visibility — Log in</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="card login-card">
+      <h1>Pipeline Visibility</h1>
+      <form method="post" action="/admin/login">
+        <div>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autofocus required>
+        </div>
+        <button type="submit">Log in</button>
+      </form>
+      {% if error %}
+        <div class="login-error">{{ error }}</div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
