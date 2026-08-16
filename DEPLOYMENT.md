@@ -25,16 +25,14 @@ Railway project: "feisty-grace"
 │                           named `admin` in code/specs, `romantic-presence` is just this
 │                           particular service's Railway-assigned name)
 │
-├── api   (planned)       — the FastAPI backend (backend/src/main.py)
+├── api                   — the consumer-facing FastAPI backend (see "Service: `api`" below)
 │
-└── web   (planned)       — the React frontend
+└── web                   — the React frontend (see "Service: `web`" below)
 ```
 
-**Postgres**, **job-sync**, and **`admin`** (Railway service name `romantic-presence`)
-exist today. `api` and `web` are not yet deployed — the consumer-facing app currently
-only runs locally (see this product's `CLAUDE.md` — "Running Locally"). The rest of
-this doc documents what exists, and sketches what deploying the remaining two would
-look like when that becomes the next step.
+All five pieces exist and are live today (deployed 2026-08-16). The consumer-facing
+product is fully reachable in production for the first time — `web`'s public domain is
+the real, share-able entry point to the whole product now, not just `localhost:5173`.
 
 ---
 
@@ -171,30 +169,78 @@ These cost real time to figure out and will bite again if forgotten:
 
 ---
 
-## Planned: deploying `api` and `web`
+## Service: `api` (deployed 2026-08-16)
 
-Not yet done — sketched here so the next step is a checklist, not a design exercise.
+The consumer-facing FastAPI backend (`backend/src/main.py`) — `/api/market-health/*`,
+`/api/chat`. Live at `https://api-production-df13.up.railway.app`.
 
-```
-api   — rootDirectory: backend/, no cron, restart policy ALWAYS
-        start command: uvicorn main:app --host 0.0.0.0 --port $PORT
-        needs: DATABASE_URL (internal ref), GEMINI_API_KEY, ANTHROPIC_API_KEY, etc.
-        needs CORS_ALLOWED_ORIGINS set to web's real domain once known (added 2026-08-16 —
-        see backend/specs/market-health/api.md — Tech Decisions; without it, api rejects
-        every request from web once web has a real, non-localhost origin)
-        needs a public domain (Railway `generate-domain`) so `web` can reach it
+| | |
+|---|---|
+| Source | `viebone/tech-market-intelligence-platform`, branch `main` |
+| Root directory | `/backend` — same directory `job-sync` and `admin` also use |
+| Config file | `backend/railway.api.json` — its own file, separate from `job-sync`'s and `admin`'s |
+| Start command | `cd src && uvicorn main:app --host 0.0.0.0 --port $PORT` (from `railway.api.json`) |
+| Restart policy | `ALWAYS` — long-running web service |
+| Auto-deploy | On — a push to `main` deploys `api` (and `admin`, and rebuilds `job-sync`'s image, though `job-sync` itself only *runs* on its cron schedule) |
+| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY` (a different key from `job-sync`'s `GEMINI_API_KEY_CLASSIFICATION` — see `AI_INTERACTION_SETTINGS.md`), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need) |
+| Domain | Railway-generated (`generate-domain`) |
 
-web   — rootDirectory: frontend/
-        build: npm run build
-        needs api's public URL baked in at build time (e.g. a VITE_API_URL env var)
-        needs its own way to serve the built static files in production —
-        Vite's dev server (`npm run dev`) is not meant for production use
-```
+Deployed cleanly on the **first attempt** — every gotcha below had already been learned
+deploying `admin` a few hours earlier in the same session.
 
-Open question, not yet decided: whether `web` belongs on Railway at all, versus a
-static-first host (Vercel, Netlify) that's more purpose-built for a Vite/React
-frontend. Railway can do it, but that's a real trade-off worth making deliberately
-rather than defaulting into.
+## Service: `web` (deployed 2026-08-16)
+
+The React/Vite consumer frontend. Live at
+`https://web-production-03c43.up.railway.app` — **this is the product's real public
+entry point.**
+
+| | |
+|---|---|
+| Source | `viebone/tech-market-intelligence-platform`, branch `main` |
+| Root directory | `/frontend` |
+| Config file | `frontend/railway.json` |
+| Build command | `npm run build` (`tsc && vite build`) |
+| Start command | `npm run preview -- --port $PORT` (from `frontend/railway.json`) — **not** a purpose-built production static server; `vite preview` is pragmatic here (zero new dependencies, already verified working) but is explicitly not designed by Vite for heavy production traffic. Revisit if `web` ever needs more than light/personal traffic. |
+| Restart policy | `ALWAYS` |
+| Env vars | `API_PROXY_TARGET` (`https://api-production-df13.up.railway.app`) — server-side only, deliberately **not** `VITE_`-prefixed, so it's never bundled into client JS |
+| Domain | Railway-generated (`generate-domain`) |
+
+### How `web` actually reaches `api` — no frontend code change, no CORS dependency
+
+The frontend's React components only ever call **relative** paths
+(`/api/market-health/openings`, `/api/chat`) — true in dev and unchanged in production.
+`vite.config.ts` gained a `preview.proxy` block (mirroring the pre-existing
+`server.proxy` used for local dev) that forwards `/api/*` to `API_PROXY_TARGET` —
+**server-side**, inside the `web` container, using Vite's own built-in proxy feature.
+No new dependency, no frontend component change.
+
+**This means the browser only ever talks to `web`'s own origin** — same-origin from
+the browser's point of view, since the page and the (proxied) API calls both appear to
+come from `web-production-03c43.up.railway.app`. Confirmed by testing the real deployed
+URLs directly: `curl https://web-production-03c43.up.railway.app/api/market-health/openings`
+returns real production data, end to end, through the proxy. Browser-enforced CORS
+simply never triggers for this path — `api`'s `CORS_ALLOWED_ORIGINS` is set anyway
+(matches the backend spec's documented mechanism, and covers any future caller that
+hits `api` directly, bypassing the proxy) but isn't actually load-bearing for `web`
+itself to work.
+
+### Gotchas learned the hard way (2026-08-16, `api`+`web` deploy)
+
+Continuing the numbering from `admin`'s deploy above:
+
+10. **Vite 5.4+'s `allowedHosts` check applies to `preview` too, not just `server`.**
+    Railway's domain isn't known until after the first deploy, so `preview.allowedHosts`
+    is set to `true` (disable the check) rather than trying to pre-guess the domain.
+    Low-risk for a public static site regardless.
+11. **The service-settings-not-persisting issue from `admin`'s deploy (gotcha #5)
+    recurred for `web`** — Root Directory and Config File path were entered correctly
+    in the dashboard but the first deploy still failed with the config file "not found."
+    Re-entering/re-confirming the same values fixed it — genuinely a UI/persistence
+    flake on Railway's side, not a path-resolution rule (a same-structure
+    `/frontend/railway.json` + root directory `/frontend` combination that failed once
+    then worked immediately after re-confirming, no other change). **If a config file
+    "not found" error appears despite the path being visibly correct in Settings, try
+    re-entering the same value before assuming the path syntax itself is wrong.**
 
 ---
 

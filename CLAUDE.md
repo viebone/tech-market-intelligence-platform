@@ -109,6 +109,11 @@ npm run dev
 - Backend: http://127.0.0.1:8000 — API docs at http://127.0.0.1:8000/docs
 - Frontend: http://localhost:5173
 
+**Live in production** (deployed 2026-08-16 — see `DEPLOYMENT.md`, "Service: `api`" /
+"Service: `web`"): the product's real public entry point is
+`https://web-production-03c43.up.railway.app`, backed by
+`https://api-production-df13.up.railway.app`.
+
 **Admin dashboard** (operator-only pipeline visibility — see
 `backend/specs/pipeline-visibility/api.md`) — a separate FastAPI app, run the
 same way as the main backend (`backend/src/`, same venv), just a different
@@ -161,14 +166,14 @@ duplicating work in progress.
   intentionally bounded (sliding windows, message-length caps), not just handed through in
   full. The actual enforced numbers live in `backend/src/ai_interaction_settings.py`, not in
   that doc, so they can't drift apart.
-- **Before touching Railway deployment config, the ingestion cron, or adding new
-  services (`api`, `web`)**, read `DEPLOYMENT.md` — it explains the full deployment
-  architecture (Postgres, `job-sync`, the deployed `admin` dashboard service,
-  planned `api`/`web` services), the ingestion pipeline's data flow, and nine
-  operational gotchas found the hard way across two real deploys — not just
-  `railway.json` overriding dashboard config and auto-deploy being off, but also
-  (from deploying `admin`) that API-set service config doesn't reliably persist,
-  GitHub source needs the dashboard's real "Connect Repo" flow, config-as-code
-  file paths aren't auto-discovered from root directory, and a plain "redeploy"
-  won't pick up a source/branch change. Read the full gotcha list before assuming
-  any of this works the way it "should."
+- **Before touching Railway deployment config or adding new services**, read
+  `DEPLOYMENT.md` — the full product is live now (`Postgres`, `job-sync`, `admin`,
+  `api`, `web` — all five services deployed as of 2026-08-16, `web`'s public domain
+  is the product's real entry point), and the doc has eleven operational gotchas found
+  the hard way across three real deploys — not just `railway.json` overriding
+  dashboard config and auto-deploy being off, but also that API-set service config
+  doesn't reliably persist, GitHub source needs the dashboard's real "Connect Repo"
+  flow, config-as-code file paths aren't auto-discovered from root directory, a plain
+  "redeploy" won't pick up a source/branch change, and Vite 5.4+'s host-checking
+  needs disabling for `web`'s preview server. Read the full gotcha list before
+  assuming any of this works the way it "should."
