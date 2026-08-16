@@ -199,11 +199,15 @@ operator alone.
   confirmed skippable given the server-rendered architecture decided in Step 5 — no
   component/state/API-contract work exists for a spec to describe.
 - 2026-08-16 (post-completion): deployed to Railway — service `romantic-presence` in the
-  `feisty-grace` project, branch `admin-pipeline-dashboard`, live at
-  `https://romantic-presence-production.up.railway.app`. This happened after this change
-  request was already marked `complete` (deployment was explicitly left open as future
-  operational work, not spec/implementation work); recorded here only as a pointer, not
-  reopening the checklist. Full deployment record — service config, the two real deploy
-  bugs found and fixed, and four new gotchas added to the project's deployment
-  troubleshooting knowledge — lives in `DEPLOYMENT.md` under "Service: `admin`", the same
-  place `job-sync`'s own deployment story already lives.
+  `feisty-grace` project, live at `https://romantic-presence-production.up.railway.app`.
+  This happened after this change request was already marked `complete` (deployment was
+  explicitly left open as future operational work, not spec/implementation work); recorded
+  here only as a pointer, not reopening the checklist. Initially deployed from a temporary
+  branch (`admin-pipeline-dashboard`) while being debugged; once working, merged into `main`
+  and the service repointed there, and the now-fully-merged branch deleted (both locally and
+  on GitHub) — `main` is the only branch this work lives on now, matching `job-sync`'s
+  existing convention and avoiding two long-lived branches silently diverging on the
+  `backend/src/` modules the two services share. Full deployment record — service config
+  and nine gotchas found across both this and `job-sync`'s original deploy — lives in
+  `DEPLOYMENT.md` under "Service: `admin`", the same place `job-sync`'s own deployment story
+  already lives.

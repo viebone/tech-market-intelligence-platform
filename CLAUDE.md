@@ -37,7 +37,6 @@ Nothing moves to specs or implementation without one.
 A market intelligence platform for UX and other tech professionals that automatically tracks hiring demand, skills, salaries, and layoffs — helping people understand how healthy the job market is and make better career decisions.
 
 ## Tech Stack
-<!-- To be defined before first implementation. -->
 
 ### Frontend
 - Framework: React
@@ -46,9 +45,14 @@ A market intelligence platform for UX and other tech professionals that automati
 - HTTP: TanStack Query
 
 ### Backend
-- Language/Framework: Python / Flask
+- Language/Framework: Python / **FastAPI** (corrected 2026-08-16 — this said
+  Flask from the original scaffold, but every backend module actually built
+  (`main.py`, `admin_main.py`, and everything under `backend/src/`) is FastAPI;
+  Flask was never used)
 - Database: PostgreSQL
-- Auth: JWT
+- Auth: JWT — used by the pipeline-visibility admin dashboard
+  (`backend/src/admin_auth.py`); the consumer-facing `/api/*` routes have no
+  auth yet (`backend/specs/market-health/api.md` — Tech Decisions)
 
 ## Running Locally
 
@@ -83,7 +87,9 @@ Set `DATABASE_URL` in `backend/.env` before starting the server; the schema is
 created automatically on startup if missing. An externally hosted Postgres
 (e.g. Railway) is the simplest option — it avoids WSL↔Windows localhost
 networking friction entirely. To populate real data, run the ingestion
-pipeline (fetches live Adzuna postings, classifies them via Gemini):
+pipeline (fetches live postings from Greenhouse/Lever/Ashby — Adzuna was
+retired 2026-08-03, see `changes/2026-07-28-multi-source-job-data-ingestion.md`
+— then classifies them via Gemini):
 ```bash
 cd products/tech-market-intelligence-platform/backend/src
 source venv_linux/bin/activate
@@ -103,6 +109,23 @@ npm run dev
 - Backend: http://127.0.0.1:8000 — API docs at http://127.0.0.1:8000/docs
 - Frontend: http://localhost:5173
 
+**Admin dashboard** (operator-only pipeline visibility — see
+`backend/specs/pipeline-visibility/api.md`) — a separate FastAPI app, run the
+same way as the main backend (`backend/src/`, same venv), just a different
+entry point and port so it can run alongside `main.py` if you want both:
+```bash
+cd products/tech-market-intelligence-platform/backend/src
+source venv_linux/bin/activate   # or the Windows venv, same as above
+uvicorn admin_main:app --reload --port 8001
+```
+Needs `ADMIN_PASSWORD_HASH` and `ADMIN_JWT_SECRET` in `backend/.env` first —
+generate a hash with `python -c "from admin_auth import hash_password; print(hash_password('your-password'))"`
+(run from `backend/src/`). Set `ADMIN_COOKIE_SECURE=false` in `.env` for local
+`http://` testing — the session cookie is `Secure` (HTTPS-only) by default,
+which is correct in production but silently blocks login over plain local
+HTTP. Then open http://127.0.0.1:8001/admin/login. Deployed in production as
+its own Railway service — see `DEPLOYMENT.md`, "Service: `admin`".
+
 ---
 
 ## Automation Level
@@ -113,18 +136,18 @@ See `.outcome/config.yaml` for current role automation settings.
 See `outcomes/` — current active outcomes are marked `status: active`.
 
 ## Spec Chain Status
-Current state of the spec chain for this product:
+Current state of the spec chain for this product (corrected 2026-08-16 — this
+table said "Not started" for every layer despite all of it being built; kept
+in sync with reality now, update it whenever a spec's status changes):
 
 | Layer | Status |
 |---|---|
-| Design Foundations | ⚠️ Not started — run `/new-design-foundations` |
-| Information Architecture | ⚠️ Not started — run `/new-information-architecture` |
-| Visual Design | ⚠️ Not started — run `/new-visual-design` |
-| Experience Specs | ⚠️ Not started — blocked on design layer |
-| Frontend Specs | ⚠️ Not started — blocked on experience specs |
-| Backend Specs | ⚠️ Not started — blocked on experience specs |
-
-Update this table as each layer is completed.
+| Design Foundations | ✅ Active (`design/foundations.md`, v1.1) |
+| Information Architecture | ✅ Active (`design/information-architecture.md`, v2.2) |
+| Visual Design | ✅ Active (`design/visual-design.md`, v1.1) |
+| Experience Specs | ✅ `market-health` (ready), `ai-reasoning-panel` (ready), `pipeline-visibility` (ready) |
+| Backend Specs | ✅ `pipeline-visibility` (ready, implemented). ⚠️ `market-health`, `ai-reasoning-panel` (`status: draft` in the spec files themselves — implemented and live regardless; the `draft` marker there is stale and worth correcting the same way this table just was, next time either is touched) |
+| Frontend Specs | ✅ `market-health`, `ai-reasoning-panel` (both implemented). `pipeline-visibility` has none by design — folded into its backend spec, server-rendered, no separate frontend build (see `changes/2026-08-13-admin-pipeline-dashboard.md`) |
 
 ## Change Log
 See `changes/` — every change request is saved here with its signal, outcome reference,
@@ -140,7 +163,12 @@ duplicating work in progress.
   that doc, so they can't drift apart.
 - **Before touching Railway deployment config, the ingestion cron, or adding new
   services (`api`, `web`)**, read `DEPLOYMENT.md` — it explains the full deployment
-  architecture (Postgres, `job-sync`, planned `api`/`web` services), the ingestion
-  pipeline's data flow, and operational gotchas found the hard way (`railway.json`
-  always overrides dashboard config, auto-deploy is off for this repo, cron services
-  don't run immediately on deploy).
+  architecture (Postgres, `job-sync`, the deployed `admin` dashboard service,
+  planned `api`/`web` services), the ingestion pipeline's data flow, and nine
+  operational gotchas found the hard way across two real deploys — not just
+  `railway.json` overriding dashboard config and auto-deploy being off, but also
+  (from deploying `admin`) that API-set service config doesn't reliably persist,
+  GitHub source needs the dashboard's real "Connect Repo" flow, config-as-code
+  file paths aren't auto-discovered from root directory, and a plain "redeploy"
+  won't pick up a source/branch change. Read the full gotcha list before assuming
+  any of this works the way it "should."

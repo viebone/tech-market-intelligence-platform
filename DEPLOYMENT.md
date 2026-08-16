@@ -17,19 +17,24 @@ when several services share one repo.
 ```
 Railway project: "feisty-grace"
 │
-├── Postgres          — managed database (Railway template image)
+├── Postgres              — managed database (Railway template image)
 │
-├── job-sync           — the daily ingestion + classification pipeline (see below)
+├── job-sync              — the daily ingestion + classification pipeline (see below)
 │
-├── api   (planned)    — the FastAPI backend (backend/src/main.py)
+├── romantic-presence     — the pipeline-visibility admin dashboard (see "Service: `admin`" below —
+│                           named `admin` in code/specs, `romantic-presence` is just this
+│                           particular service's Railway-assigned name)
 │
-└── web   (planned)    — the React frontend
+├── api   (planned)       — the FastAPI backend (backend/src/main.py)
+│
+└── web   (planned)       — the React frontend
 ```
 
-Only **Postgres** and **job-sync** exist today. `api` and `web` are not yet deployed —
-the app currently only runs locally (see this product's `CLAUDE.md` — "Running
-Locally"). The rest of this doc documents what exists, and sketches what deploying the
-remaining two would look like when that becomes the next step.
+**Postgres**, **job-sync**, and **`admin`** (Railway service name `romantic-presence`)
+exist today. `api` and `web` are not yet deployed — the consumer-facing app currently
+only runs locally (see this product's `CLAUDE.md` — "Running Locally"). The rest of
+this doc documents what exists, and sketches what deploying the remaining two would
+look like when that becomes the next step.
 
 ---
 
@@ -248,7 +253,7 @@ Added to the existing job-sync gotcha list above, not a separate story:
    `cd src && uvicorn admin_main:app ...` — matches how `backend/src/` is
    `cd`'ed into for local dev too (`CLAUDE.md` — "Running Locally").
 9. **Changing a service's source branch doesn't take effect via a plain
-   "redeploy"** — same underlying gotcha as #3 above (a `job-sync` redeploy
+   "redeploy"** — same underlying gotcha as #2 above (a `job-sync` redeploy
    re-running the last-*deployed* commit, not the branch's latest), but hit
    again here for a *branch change* specifically: after repointing `admin`
    from `admin-pipeline-dashboard` to `main`, triggering `redeploy` rebuilt
