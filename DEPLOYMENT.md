@@ -200,12 +200,12 @@ is never referenced in code) rather than `admin`, unlike the tidy
 
 | | |
 |---|---|
-| Source | `viebone/tech-market-intelligence-platform`, branch `admin-pipeline-dashboard` (not `main` — deployed from a feature branch deliberately, see `changes/2026-08-13-admin-pipeline-dashboard.md`'s git-strategy decision) |
+| Source | `viebone/tech-market-intelligence-platform`, branch `main` — originally deployed from a feature branch (`admin-pipeline-dashboard`) while this was being built, repointed to `main` 2026-08-16 once merged, specifically because this service shares `backend/src/` modules with `job-sync` and two long-lived branches for shared code risked silent drift (see `changes/2026-08-13-admin-pipeline-dashboard.md`'s Decision Log) |
 | Root directory | `/backend` — same directory `job-sync` and the planned `api` also use |
 | Config file | `backend/railway.admin.json` — its own file, separate from `job-sync`'s `backend/railway.json` (see Gotchas below) |
 | Start command | `cd src && uvicorn admin_main:app --host 0.0.0.0 --port $PORT` (from `railway.admin.json`) |
 | Restart policy | `ALWAYS` — long-running web service, not a one-shot job like `job-sync` |
-| Auto-deploy | On for this service/branch (unlike `job-sync`'s `main`, which has it off) — a push to `admin-pipeline-dashboard` deploys automatically |
+| Auto-deploy | **On** for this service (unlike `job-sync`'s `main`, which has it off) — any push to `main` now deploys `admin` automatically. Since `job-sync` and `admin` both build from `main`, a push that only touches, say, `ingest.py` still triggers a rebuild of `admin` too (harmless — same image either way, just an extra build cycle). |
 | Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`. `ADMIN_COOKIE_SECURE` intentionally omitted (defaults `true` — correct in production) |
 | Domain | Railway-generated (`generate-domain`), no custom domain attached |
 
@@ -247,3 +247,13 @@ Added to the existing job-sync gotcha list above, not a separate story:
    resolves against the working directory itself. Fixed with
    `cd src && uvicorn admin_main:app ...` — matches how `backend/src/` is
    `cd`'ed into for local dev too (`CLAUDE.md` — "Running Locally").
+9. **Changing a service's source branch doesn't take effect via a plain
+   "redeploy"** — same underlying gotcha as #3 above (a `job-sync` redeploy
+   re-running the last-*deployed* commit, not the branch's latest), but hit
+   again here for a *branch change* specifically: after repointing `admin`
+   from `admin-pipeline-dashboard` to `main`, triggering `redeploy` rebuilt
+   the old branch's last commit again — the branch change stayed "staged,"
+   never applied. What actually applied it: committing the environment's
+   staged changes (Railway's "Deploy" action for pending config changes, not
+   its "Redeploy" action for re-running history) — after that, the next
+   deployment correctly showed `branch: "main"` at the new merge commit.
