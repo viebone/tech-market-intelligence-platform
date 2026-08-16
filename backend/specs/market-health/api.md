@@ -2,9 +2,9 @@
 id: market-health
 experience: market-health
 directive: low
-status: draft
+status: ready
 created: 2026-06-13
-updated: 2026-08-11
+updated: 2026-08-16
 ---
 
 # Market Health — Backend Architecture Spec
@@ -1034,6 +1034,24 @@ ingestion agent for why these are kept separate.
 - `MarketHealthSignal` and `SearchImplication` remain in a single `backend/src/mock_data.py` module, unchanged by this update.
 - Use Python dataclasses (not Pydantic for v1 simplicity, but Pydantic is fine if preferred). FastAPI will serialize them automatically.
 - No auth middleware in v1. Add it as a separate layer when needed.
+- **CORS allowed origins are environment-driven, not hardcoded (added 2026-08-16 —
+  `changes/2026-08-16-production-cors-config.md`, `outcomes/production-deploy-readiness.md`).**
+  `main.py`'s `CORSMiddleware` originally hardcoded `allow_origins` to a fixed
+  localhost/127.0.0.1 dev-port list — harmless while nothing was deployed, but a hard block
+  once `web` gets a real domain (every request from it would be rejected). Fixed by reading a
+  new `CORS_ALLOWED_ORIGINS` env var (comma-separated, e.g.
+  `https://app.example.com,https://staging-app.example.com`), split and appended to the
+  existing hardcoded local-dev list — never replacing it, so local dev keeps working
+  identically whether or not the env var is set. Empty/unset `CORS_ALLOWED_ORIGINS` (e.g. in
+  local `.env`) is valid and simply adds nothing beyond the dev list — not an error. Chosen
+  over a wildcard (`allow_origins=["*"]`) because `allow_credentials=True` is already set and
+  the CORS spec disallows combining a wildcard origin with credentials; chosen over a
+  single-string env var because more than one real origin is plausible over time (e.g. a
+  custom domain alongside a host-generated preview domain) and a comma-separated list needs
+  no further schema. Same "configuration over hardcoding" precedent as `ADMIN_COOKIE_SECURE`
+  (`backend/specs/pipeline-visibility/api.md`) and `DATABASE_URL` itself — environment-specific
+  behavior lives in environment variables, not in code that has to be edited and redeployed
+  to change it.
 - **Ingestion + classification run as a daily cron-scheduled service on Railway**, in the same
   Railway project as the Postgres database. `python ingest.py` is the service's start command;
   Railway's native cron scheduling runs it to completion once a day, not as a long-running

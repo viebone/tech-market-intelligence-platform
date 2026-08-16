@@ -201,6 +201,18 @@ held a fifth time. Two real findings:
    costs nothing and prevents a future reader from assuming this field is wired to something
    real when it isn't.
 
+**Reviewed 2026-08-16** (change: production-ready CORS configuration,
+`changes/2026-08-16-production-cors-config.md`) — confirmed no-change, and confirmed by
+actually reading this section rather than assuming a sixth consecutive no-op. The backend
+change adds a `CORS_ALLOWED_ORIGINS` env var so `api` accepts requests from the real deployed
+`web` origin once known — purely server-side middleware config. No endpoint path, request/
+response shape, or SSE event sequence in the table above changes; this frontend's calls are
+already relative paths (`/api/market-health/openings`, `/api/chat`), routed through Vite's
+dev-only proxy locally and (per this file's Out of scope and the still-open `web` hosting
+decision) presumably a host-level rewrite in production — neither depends on knowing the
+backend's allowed-origins list, which is enforced entirely server-side. No API Contract
+assumption here relied on, or conflicted with, the old hardcoded-localhost-only behavior.
+
 ---
 
 ## Tech Decisions

@@ -146,7 +146,7 @@ in sync with reality now, update it whenever a spec's status changes):
 | Information Architecture | ✅ Active (`design/information-architecture.md`, v2.2) |
 | Visual Design | ✅ Active (`design/visual-design.md`, v1.1) |
 | Experience Specs | ✅ `market-health` (ready), `ai-reasoning-panel` (ready), `pipeline-visibility` (ready) |
-| Backend Specs | ✅ `pipeline-visibility` (ready, implemented). ⚠️ `market-health`, `ai-reasoning-panel` (`status: draft` in the spec files themselves — implemented and live regardless; the `draft` marker there is stale and worth correcting the same way this table just was, next time either is touched) |
+| Backend Specs | ✅ `pipeline-visibility`, `market-health` (both `ready`, implemented — `market-health`'s corrected 2026-08-16, see `changes/2026-08-16-production-cors-config.md`). ⚠️ `ai-reasoning-panel` (`status: draft` in the spec file itself — implemented and live regardless; stale, worth correcting next time it's touched) |
 | Frontend Specs | ✅ `market-health`, `ai-reasoning-panel` (both implemented). `pipeline-visibility` has none by design — folded into its backend spec, server-rendered, no separate frontend build (see `changes/2026-08-13-admin-pipeline-dashboard.md`) |
 
 ## Change Log

@@ -8,6 +8,7 @@ Starts with:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,18 +36,32 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# CORS — allow local dev origins
+# CORS — local dev origins, always allowed, plus real deployed origin(s) from
+# CORS_ALLOWED_ORIGINS (comma-separated) once `web` is deployed. Added
+# 2026-08-16 — see backend/specs/market-health/api.md — Tech Decisions and
+# changes/2026-08-16-production-cors-config.md. The env var is appended to,
+# never replaces, the local-dev list, so local dev is unaffected whether or
+# not it's set. A wildcard origin isn't used: it can't be combined with
+# allow_credentials=True per the CORS spec, and this service already sets
+# allow_credentials=True.
 # ---------------------------------------------------------------------------
+
+_LOCAL_DEV_ORIGINS = [
+    "http://localhost:3000",   # typical React/Next.js dev server
+    "http://localhost:5173",   # Vite dev server
+    "http://localhost:4173",   # Vite preview
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+_production_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",   # typical React/Next.js dev server
-        "http://localhost:5173",   # Vite dev server
-        "http://localhost:4173",   # Vite preview
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=_LOCAL_DEV_ORIGINS + _production_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

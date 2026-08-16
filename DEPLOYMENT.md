@@ -179,6 +179,9 @@ Not yet done — sketched here so the next step is a checklist, not a design exe
 api   — rootDirectory: backend/, no cron, restart policy ALWAYS
         start command: uvicorn main:app --host 0.0.0.0 --port $PORT
         needs: DATABASE_URL (internal ref), GEMINI_API_KEY, ANTHROPIC_API_KEY, etc.
+        needs CORS_ALLOWED_ORIGINS set to web's real domain once known (added 2026-08-16 —
+        see backend/specs/market-health/api.md — Tech Decisions; without it, api rejects
+        every request from web once web has a real, non-localhost origin)
         needs a public domain (Railway `generate-domain`) so `web` can reach it
 
 web   — rootDirectory: frontend/
