@@ -190,34 +190,60 @@ rather than defaulting into.
 
 ---
 
-## Planned: deploying `admin`
+## Service: `admin` (deployed 2026-08-16, real Railway service name `romantic-presence`)
 
-Not yet deployed — code is implemented and verified against the real database
-(`backend/src/admin_main.py`, see `backend/specs/pipeline-visibility/api.md`), but
-no Railway service exists for it yet. Same not-yet-deployed status as `api`/`web`
-above.
+Live at `https://romantic-presence-production.up.railway.app` (public Railway
+domain — not a custom domain). Deliberately named `romantic-presence` (Railway's
+default random service name, kept as-is — the name itself carries no meaning and
+is never referenced in code) rather than `admin`, unlike the tidy
+`job-sync`/`api`/`web` naming above.
 
-```
-admin — rootDirectory: backend/ (same directory as job-sync and api — see
-        "The mental model" above), restart policy ALWAYS (long-running, not
-        cron), own generated domain, never linked from `web`'s public bundle
-        start command: uvicorn admin_main:app --host 0.0.0.0 --port $PORT
-        needs: DATABASE_URL (internal ref, same as job-sync/api),
-               ADMIN_PASSWORD_HASH, ADMIN_JWT_SECRET, ADMIN_COOKIE_SECURE
-               (omit/true in production — this service's own domain is HTTPS)
-```
+| | |
+|---|---|
+| Source | `viebone/tech-market-intelligence-platform`, branch `admin-pipeline-dashboard` (not `main` — deployed from a feature branch deliberately, see `changes/2026-08-13-admin-pipeline-dashboard.md`'s git-strategy decision) |
+| Root directory | `/backend` — same directory `job-sync` and the planned `api` also use |
+| Config file | `backend/railway.admin.json` — its own file, separate from `job-sync`'s `backend/railway.json` (see Gotchas below) |
+| Start command | `cd src && uvicorn admin_main:app --host 0.0.0.0 --port $PORT` (from `railway.admin.json`) |
+| Restart policy | `ALWAYS` — long-running web service, not a one-shot job like `job-sync` |
+| Auto-deploy | On for this service/branch (unlike `job-sync`'s `main`, which has it off) — a push to `admin-pipeline-dashboard` deploys automatically |
+| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`. `ADMIN_COOKIE_SECURE` intentionally omitted (defaults `true` — correct in production) |
+| Domain | Railway-generated (`generate-domain`), no custom domain attached |
 
 Server-renders its own HTML (Jinja2 templates in `backend/src/admin_templates/`)
 — no separate frontend build, unlike `web`. Auth is a single bcrypt-hashed
 operator password + JWT session cookie, no user table — see
 `backend/specs/pipeline-visibility/api.md` — Auth decision.
 
-**Open question, not yet resolved**: `job-sync` already uses `backend/railway.json`
-as its config-as-code file, and that file is discovered by root directory
-(`backend/`) — the same root directory `admin` (and the planned `api`) would also
-use. Railway's dashboard supports pointing a specific service at a different
-config-as-code file path, but which approach to use here (per-service override
-path vs. some other mechanism) hasn't been decided or tested yet — the same open
-question the `api`/`web` section above already flags for `api`, now shared by a
-third service at the same root directory. Resolve this before the first real
-deploy of `admin` or `api`, not by guessing at deploy time.
+### Gotchas learned the hard way (2026-08-16 deploy)
+
+Added to the existing job-sync gotcha list above, not a separate story:
+
+5. **Build/deploy settings (root directory, start command, restart policy,
+   config file path) set through the Railway API/MCP did not reliably persist**
+   for a freshly-created empty service — the dashboard kept showing those
+   fields empty even after the API reported success, and a build ran against
+   the whole repo root instead of `backend/` as a result. **Fix: set root
+   directory and the config-as-code file path directly in the dashboard UI**,
+   not via API calls.
+6. **Attaching a GitHub source via the API doesn't create a working
+   connection** — it records the repo name, but not the GitHub App
+   installation link the dashboard's real "Connect Repo" flow creates.
+   Deploys failed with "git repo not found" until the repo was disconnected
+   and manually reconnected through **Settings → Source → Connect Repo**.
+7. **The config-as-code file is not auto-discovered from root directory** —
+   correcting what this doc previously assumed from watching `job-sync` work.
+   Each service needs its config file path set explicitly under **Settings →
+   Config-as-code → Railway Config File** (e.g. `/backend/railway.admin.json`).
+   Two services can share a root directory and use two different config files
+   — `job-sync` and `admin` now do — but only because each is told explicitly
+   which file to read; leaving this blank (or pointed at the wrong file)
+   silently pulled in `job-sync`'s file/settings during setup.
+8. **`rootDirectory` scopes the build context, not the app's internal
+   layout** — `uvicorn admin_main:app` failed with `Could not import module
+   "admin_main"` even with root directory correctly set to `/backend`, because
+   the module actually lives at `backend/src/admin_main.py`. Unlike `python
+   src/ingest.py` (Python adds the *script's own* directory to `sys.path`
+   regardless of working directory), `uvicorn`'s `module:app` string only
+   resolves against the working directory itself. Fixed with
+   `cd src && uvicorn admin_main:app ...` — matches how `backend/src/` is
+   `cd`'ed into for local dev too (`CLAUDE.md` — "Running Locally").
