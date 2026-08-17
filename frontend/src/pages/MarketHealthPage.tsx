@@ -146,13 +146,13 @@ export function MarketHealthPage() {
       <TopBar />
 
       {/* Three-column body */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left — Task Panel */}
         <TaskPanel activeTaskId={activeTaskId} onSelect={setActiveTaskId} />
 
         {/* Centre — Working Space */}
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
           <ConversationThread
             messages={messages as Message[]}
             isLoading={isLoading}

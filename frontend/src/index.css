@@ -1,3 +1,17 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Defense in depth for changes/2026-08-17-chat-scroll-white-gap.md — html/body/#root
+   carry the app's own dark page-background token (design/visual-design.md's gray-900)
+   explicitly, so if flex containment ever breaks again, the app's own background
+   shows through rather than the browser's default white. The real fix is min-h-0 on
+   the flex chain in MarketHealthPage.tsx; this is a backstop, not the fix itself. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background-color: #111827; /* gray-900 */
+  }
+}

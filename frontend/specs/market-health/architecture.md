@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-08-09
+updated: 2026-08-17
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -219,7 +219,23 @@ assumption here relied on, or conflicted with, the old hardcoded-localhost-only 
 
 - **Vercel AI SDK `useChat`** for follow-up conversation only. The opening briefing and summary regeneration use direct streaming fetches, not `useChat`.
 - **TanStack Query** for trend chart data. Query key: `['market-health', 'trends', range]`.
-- **CSS layout** for the three-zone structure: `TopBar` and `ChatInput` use `position: fixed`; `ConversationThread` uses `padding-top` and `padding-bottom` to clear both fixed zones.
+- **CSS layout** for the three-zone structure (corrected 2026-08-17 —
+  `changes/2026-08-17-chat-scroll-white-gap.md` — this bullet previously described
+  `position: fixed` for `TopBar`/`ChatInput` with padding-based clearing, which was
+  never actually what got built; same "spec describes a stale implementation detail"
+  pattern already flagged for component names in the 2026-08-09 review below):
+  `MarketHealthPage.tsx` uses a flexbox column (`h-screen` root → `flex flex-1
+  overflow-hidden` row → `flex flex-col flex-1 overflow-hidden` centre column),
+  with `TopBar` and `ChatInput` as fixed-height flex children (`shrink-0`) and
+  `ConversationThread` as the single scrolling middle (`flex-1 overflow-y-auto`).
+  **`min-h-0` must be set on every flex container between the `h-screen` root and
+  the scrollable `ConversationThread`** (the centre column and the row) — flex
+  items default to `min-height: auto`, which lets a child with `overflow-y-auto`
+  grow to fit its content instead of scrolling internally, exactly the bug this
+  change fixed. `<body>`/`html` also carry an explicit dark background
+  (`design/visual-design.md`'s `gray-900` page-background token) as defense in
+  depth — if containment ever breaks again, the app's own background shows through
+  rather than the browser's default white.
 - **Tailwind CSS** only — no additional component libraries.
 - While the written summary regenerates on range change, keep the previous text visible with a bouncing-dots overlay. Do not blank `WrittenSummary`.
 - `UserMessage` receives an `isFirst` boolean: first message renders at `text-2xl font-semibold`; subsequent messages at `text-base font-medium`.
