@@ -4,7 +4,7 @@ date: 2026-08-17
 trigger-type: user-feedback
 change-type: bug-fix
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Fix Growing White Gap Below Chat
@@ -65,7 +65,7 @@ white shows through below the app once real page height exceeds the viewport.
       Verified the production build compiles cleanly and the compiled CSS actually
       contains both `min-h-0{min-height:0px}` and the `#111827` background rule —
       not just that the source edit looks right.
-- [ ] Step 4 (2026-08-22, reopened): Fix the real second cause — add
+- [x] Step 4 (2026-08-22, reopened): Fix the real second cause — add
       `overflow: hidden` to `html`/`body` in `index.css` (the app must never be
       document-scrollable at all; every scroll happens inside `ConversationThread`)
       and add `block: "nearest"` to `ConversationThread.tsx`'s `scrollIntoView` call
@@ -74,6 +74,8 @@ white shows through below the app once real page height exceeds the viewport.
       `frontend/specs/market-health/architecture.md`'s CSS Tech Decision to document
       both. Verify against the live deployed site with fresh screenshots before
       marking this complete again — not just against compiled CSS output.
+      **Confirmed fixed by the stakeholder** (2026-08-22, after testing the live
+      redeployed build directly — not just a code/compiled-output check this time).
 
 ## Decision Log
 - 2026-08-17: Tracked against `understand-market-health-before-searching` — no new
