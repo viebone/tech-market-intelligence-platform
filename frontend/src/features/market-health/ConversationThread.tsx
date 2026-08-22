@@ -42,7 +42,14 @@ export function ConversationThread({
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    // block: "nearest" — the default ("start") asks every scrollable ancestor,
+    // including the document itself if it's even marginally scrollable, to
+    // align endRef with the top of *its* viewport. That's what was scrolling
+    // the whole page (not just this container) — see
+    // changes/2026-08-17-chat-scroll-white-gap.md. "nearest" only scrolls the
+    // minimum needed to bring the target into view, within whichever
+    // container actually needs it.
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages.length, isLoading, activeDemoSim?.phase]);
 
   const pairs: Array<{ user: Message; assistant: Message | null }> = [];

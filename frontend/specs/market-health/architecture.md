@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-08-17
+updated: 2026-08-22
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -236,6 +236,24 @@ assumption here relied on, or conflicted with, the old hardcoded-localhost-only 
   (`design/visual-design.md`'s `gray-900` page-background token) as defense in
   depth — if containment ever breaks again, the app's own background shows through
   rather than the browser's default white.
+- **`html`/`body` always carry `overflow: hidden` (added 2026-08-22 —
+  `changes/2026-08-17-chat-scroll-white-gap.md` — the `min-h-0` fix above was real
+  but not sufficient alone: the document itself must never be scrollable at all,
+  independent of the flex containment fix).** `ConversationThread.tsx`'s
+  `scrollIntoView` call (see below) walks up through every scrollable ancestor,
+  and if the document is even marginally scrollable it will scroll the *whole
+  page* — not just the intended container — to satisfy alignment. `overflow:
+  hidden` on `html`/`body` removes the document as a candidate ancestor entirely,
+  so all scroll adjustment is forced into `ConversationThread`'s own
+  `overflow-y-auto`.
+- **`ConversationThread`'s auto-scroll uses `scrollIntoView({ behavior: "smooth",
+  block: "nearest" })`, not the default `block: "start"`** (added 2026-08-22, same
+  change as above). `block: "start"` asks every scrollable ancestor to align the
+  target with the *top* of its own viewport — including the document, before the
+  `overflow: hidden` fix above, which is what was scrolling the whole page and
+  leaving the loading indicator stranded near the top of the browser viewport
+  with empty space below it. `block: "nearest"` only scrolls the minimum needed
+  to bring the target into view, never forces a start-alignment.
 - **Tailwind CSS** only — no additional component libraries.
 - While the written summary regenerates on range change, keep the previous text visible with a bouncing-dots overlay. Do not blank `WrittenSummary`.
 - `UserMessage` receives an `isFirst` boolean: first message renders at `text-2xl font-semibold`; subsequent messages at `text-base font-medium`.

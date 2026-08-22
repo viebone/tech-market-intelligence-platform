@@ -4,7 +4,7 @@ date: 2026-08-17
 trigger-type: user-feedback
 change-type: bug-fix
 outcome: understand-market-health-before-searching
-status: complete
+status: in-progress
 ---
 
 # Change Request: Fix Growing White Gap Below Chat
@@ -65,6 +65,15 @@ white shows through below the app once real page height exceeds the viewport.
       Verified the production build compiles cleanly and the compiled CSS actually
       contains both `min-h-0{min-height:0px}` and the `#111827` background rule —
       not just that the source edit looks right.
+- [ ] Step 4 (2026-08-22, reopened): Fix the real second cause — add
+      `overflow: hidden` to `html`/`body` in `index.css` (the app must never be
+      document-scrollable at all; every scroll happens inside `ConversationThread`)
+      and add `block: "nearest"` to `ConversationThread.tsx`'s `scrollIntoView` call
+      (stop requesting alignment-to-start against every scrollable ancestor,
+      including the document itself — only scroll the minimum needed). Update
+      `frontend/specs/market-health/architecture.md`'s CSS Tech Decision to document
+      both. Verify against the live deployed site with fresh screenshots before
+      marking this complete again — not just against compiled CSS output.
 
 ## Decision Log
 - 2026-08-17: Tracked against `understand-market-health-before-searching` — no new
@@ -72,3 +81,19 @@ white shows through below the app once real page height exceeds the viewport.
 - 2026-08-17: Root cause diagnosed *before* triage (missing `min-h-0` in the flex
   chain + no `<body>` background) rather than triaging the raw symptom — the
   execution plan is scoped to the actual cause, not speculative layout changes.
+- 2026-08-22: **Reopened — marked `complete` prematurely.** The `min-h-0` fix was
+  verified deployed (confirmed against the actual live compiled CSS, not assumed),
+  but the stakeholder confirmed via screenshots that the underlying problem
+  persists: the loading indicator sits near the *top* of the viewport with a large
+  empty region below it, and the chat input is nowhere near the browser's actual
+  bottom edge — the *page itself* is being scrolled to a position that doesn't
+  match its content, not (only) a container-growing-past-viewport issue. Real
+  second cause found: `ConversationThread.tsx`'s `scrollIntoView({ behavior:
+  "smooth" })` call has no `block` option (defaults to `"start"`), and `index.css`
+  sets no `overflow` rule on `html`/`body` — so if the document is even marginally
+  scrollable, `scrollIntoView` walks up and scrolls the *whole page* to align the
+  target with the top of the browser viewport, not just within the intended
+  internal scroll container. The `min-h-0` fix was real and still correct (kept),
+  but wasn't sufficient alone. Lesson: verifying a fix reached production isn't the
+  same as verifying it actually resolved the reported symptom — should have asked
+  for visual confirmation before marking this complete the first time.
