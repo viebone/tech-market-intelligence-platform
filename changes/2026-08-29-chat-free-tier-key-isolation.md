@@ -107,18 +107,35 @@ project/tier mapping), product `CLAUDE.md` (key/project notes).
   multiple keys — a Google-side capacity blip on the alias, not a key/project
   problem (pinned `gemini-3.6-flash`, which the alias resolves to, was fine). If
   chat sees persistent 503s in Step 6, pinning `_CHAT_MODEL` to `gemini-3.6-flash`
-  is a trivial follow-up. **Still TODO (user):** Railway `api` service
-  `GEMINI_API_KEY` and Railway `job-sync` service `GEMINI_API_KEY_REQUIREMENTS`
-  (see the handoff message for exact values), then redeploy.
-- [ ] **Step 6 — Verify chat (user + Claude).** 2–3 real `/api/chat`
-  conversations on `gemini-3.6-flash`: SSE stream intact, `query_market_data`
-  tool call works, search-grounding fallback works, reasoning panel renders, the
-  two-part "data availability + external judgment" answer format still holds
-  (`design/market-health/experience.md` sourcing rule). Confirm the chat key is
-  on the free project (a billable overage would fail, not charge).
-- [ ] **Step 7 — Verify jobs pipeline (user + Claude).** Trigger a `job-sync`
-  run: requirements extraction succeeds against the new
-  `GEMINI_API_KEY_REQUIREMENTS` value; classification unaffected.
+  is a trivial follow-up. Railway `api` `GEMINI_API_KEY` and `job-sync`
+  `GEMINI_API_KEY_REQUIREMENTS` updated by the user 2026-08-29; `api` redeploy
+  (`6de5c68a`, commit `220de7e`) went `SUCCESS`.
+- [x] **Step 6 — Verify chat.** ✅ 2026-08-29. Hit production
+  `https://api-production-df13.up.railway.app/api/chat` directly, 3 conversations
+  on `gemini-3.6-flash`:
+  1. *"how many senior product designer roles… trending up or down?"* — SSE
+     framing intact; `query_market_data` called twice with correct structured
+     params (25 senior PD, 3,234 total); full reasoning trace (2 tool calls, 4
+     steps, `is_complete`); grounding fallback ran, found 0 sources, **did not
+     fabricate a trend**; two-part `**Platform Data:** / **Trend Analysis:**`
+     format held. ~31s.
+  2. *"what do backend engineer roles pay?"* — `query_compensation_data` path
+     exercised (5 tool calls); correct structured-vs-parsed handling; honest that
+     only 1 posting disclosed structured pay. ~42s.
+  3. *"what about designers?"* as a bare follow-up after a PM-count exchange —
+     first attempt errored (`[The AI service returned an error…]`, ~0.3s) due to
+     **free-tier rate limiting** from the rapid back-to-back scripted calls;
+     retried ~75s later and it correctly resolved the follow-up from bounded
+     history to a Designer query (128 roles). History path is fine; the free
+     tier's RPM/RPD limits are real. Documented in `DEPLOYMENT.md` — "Gemini
+     projects & LLM billing".
+  Conclusion: chat fully functional on the free-tier project. Response times are
+  a little slower and `gemini-3.6-flash` is eager to make several tool calls, but
+  no behavioural regression against `design/market-health/experience.md`.
+- [ ] **Step 7 — Verify jobs pipeline.** Confirm at/after the next `job-sync`
+  cron run (06:00 UTC) that requirements extraction succeeds against the new
+  `GEMINI_API_KEY_REQUIREMENTS` value and classification is unaffected — check
+  `ingestion_runs` and the admin dashboard.
 - [ ] **Step 8 — Rotate the chat key.** It was pasted in a working-session
   transcript. Regenerate it in the console; update `backend/.env` + Railway
   `job-sync` (it is now the requirements key). Recommended, not blocking.

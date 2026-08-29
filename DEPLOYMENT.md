@@ -76,6 +76,17 @@ Until that follow-on change lands, the code's existing per-workload request-coun
 budgets (`DAILY_REQUEST_BUDGET`, `REQUIREMENTS_DAILY_REQUEST_BUDGET`) are the
 operative spend cap — conservative (pennies/day) and **must not be raised** yet.
 
+**Free-tier rate limits apply to chat.** Because `/api/chat` now runs on the
+free-tier project, it is subject to Gemini's free-tier RPM/RPD limits for
+`gemini-3.6-flash`. Each chat turn makes 2–6 Gemini calls (tool stage, optional
+grounding, synthesis), so a burst of rapid questions can trip a `429`, which
+surfaces to the user as `"[The AI service returned an error. Please try again.]"`.
+Normal single-user interactive pacing does not hit this; confirmed 2026-08-29
+(three back-to-back scripted requests tripped it, a retry ~75s later succeeded).
+If it becomes a real user-facing problem, the options are a short client-side
+retry/backoff or moving chat to the prepaid project (reverses this change's
+intent — would need its own change request).
+
 ---
 
 ## Service: `job-sync`
