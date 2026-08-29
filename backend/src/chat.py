@@ -53,7 +53,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Provider and model are declared here — explicit at the call site per outcome ai-provider-flexibility.
-_CHAT_MODEL = "gemini-2.5-flash"
+# Changed from gemini-2.5-flash 2026-08-29: GEMINI_API_KEY was repointed to a free-tier Gemini
+# project so /api/chat cannot incur spend (outcome llm-spend-is-bounded-and-isolated,
+# changes/2026-08-29-chat-free-tier-key-isolation.md). That project no longer offers gemini-2.5-flash.
+# Pinned to gemini-3.6-flash rather than the gemini-flash-latest alias: on this free-tier project the
+# alias endpoint consistently times out (throttled/queued), while the pinned model it resolves to
+# responds fine. Revisit the alias (matching requirements.py) if that throttling clears.
+_CHAT_MODEL = "gemini-3.6-flash"
 
 
 # ---------------------------------------------------------------------------

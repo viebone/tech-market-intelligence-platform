@@ -170,9 +170,16 @@ could generate the answer while a second evaluates it — and each call names it
 independently:
 
 ```python
-answer = await providers.gemini("gemini-2.5-flash").stream(messages, system)
+answer = await providers.gemini("gemini-3.6-flash").stream(messages, system)
 eval   = await providers.anthropic("claude-haiku-4-5").complete(eval_prompt)
 ```
+
+> **Note (2026-08-29, `changes/2026-08-29-chat-free-tier-key-isolation.md`):**
+> `/api/chat` and the reasoning trace moved from `gemini-2.5-flash` to
+> `gemini-3.6-flash` when `GEMINI_API_KEY` was repointed to a free-tier Gemini
+> project that no longer offers `gemini-2.5-flash`. Pinned rather than using the
+> `gemini-flash-latest` alias because that alias is currently throttled on the
+> free project. The model is still named explicitly at the call site.
 
 Each provider adapter in `backend/src/llm/{provider}.py` is responsible for its own
 message format, streaming contract, and error mapping. The reasoning trace handler imports

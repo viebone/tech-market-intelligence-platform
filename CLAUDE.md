@@ -114,6 +114,21 @@ npm run dev
 `https://web-production-03c43.up.railway.app`, backed by
 `https://api-production-df13.up.railway.app`.
 
+**LLM / Gemini billing** (set up 2026-08-29 — see
+`outcomes/llm-spend-is-bounded-and-isolated.md`,
+`changes/2026-08-29-chat-free-tier-key-isolation.md`, and `DEPLOYMENT.md` —
+"Gemini projects & LLM billing"). Google Cloud billing is **per project**. Three
+Gemini keys, two projects:
+- `GEMINI_API_KEY` — `/api/chat` + reasoning trace — **free-tier** project
+  (`gen-lang-client-0003173949`), model `gemini-3.6-flash` (pinned — the
+  `gemini-flash-latest` alias is throttled on this project). Chat cannot incur
+  spend.
+- `GEMINI_API_KEY_CLASSIFICATION` (`gemini-2.5-flash`) and
+  `GEMINI_API_KEY_REQUIREMENTS` (`gemini-flash-latest`) — the `job-sync`
+  pipeline — **prepaid** project (`gen-lang-client-0963554051`), one shared
+  balance. Keep auto-recharge OFF; don't raise the code's request budgets until
+  the follow-on spend-ledger change lands.
+
 **Admin dashboard** (operator-only pipeline visibility — see
 `backend/specs/pipeline-visibility/api.md`) — a separate FastAPI app, run the
 same way as the main backend (`backend/src/`, same venv), just a different
@@ -130,6 +145,10 @@ generate a hash with `python -c "from admin_auth import hash_password; print(has
 which is correct in production but silently blocks login over plain local
 HTTP. Then open http://127.0.0.1:8001/admin/login. Deployed in production as
 its own Railway service — see `DEPLOYMENT.md`, "Service: `admin`".
+
+**Production URL:** `https://romantic-presence-production.up.railway.app/admin/login`.
+The app has no route at `/` — the bare domain returns `{"detail":"Not Found"}`.
+Every page is under `/admin/` (login, then redirect to `/admin/`).
 
 ---
 

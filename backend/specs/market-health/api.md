@@ -1022,9 +1022,23 @@ PostgreSQL (already in the project's tech stack) backs `raw_postings`, `classifi
 now `ingestion_runs`. `MarketHealthSignal` / `SearchImplication` remain mocked in-memory; no
 queues are introduced.
 
-Two distinct Gemini API keys are now in use: `GEMINI_API_KEY` (`/api/chat`, reasoning trace)
-and `GEMINI_API_KEY_CLASSIFICATION` (ingestion agent only) — see Business Logic — Scheduled
-ingestion agent for why these are kept separate.
+Three distinct Gemini API keys are in use, and — since 2026-08-29 — deliberately
+split across **two Google Cloud projects by billing tier** (see
+`outcomes/llm-spend-is-bounded-and-isolated.md`,
+`changes/2026-08-29-chat-free-tier-key-isolation.md`):
+
+| Key | Used by | Project | Billing tier | Model |
+|---|---|---|---|---|
+| `GEMINI_API_KEY` | `/api/chat`, reasoning trace | `gen-lang-client-0003173949` | **Free** — chat cannot incur spend | `gemini-3.6-flash` (pinned; `gemini-flash-latest` alias is throttled on this project) |
+| `GEMINI_API_KEY_CLASSIFICATION` | ingestion agent (classification) | `gen-lang-client-0963554051` | Tier 1 · Prepay | `gemini-2.5-flash` |
+| `GEMINI_API_KEY_REQUIREMENTS` | ingestion agent (requirements extraction) | `gen-lang-client-0963554051` | Tier 1 · Prepay | `gemini-flash-latest` |
+
+Both paid workloads share one prepaid project so total jobs-pipeline spend is
+governed by a single balance. Until the follow-on spend-ledger change lands, each
+workload's existing request-count budget (`DAILY_REQUEST_BUDGET`,
+`REQUIREMENTS_DAILY_REQUEST_BUDGET`) remains the operative spend cap and must not
+be raised. See Business Logic — Scheduled ingestion agent for why the keys are
+kept separate.
 
 ---
 
@@ -1055,7 +1069,9 @@ ingestion agent for why these are kept separate.
 - **Ingestion + classification run as a daily cron-scheduled service on Railway**, in the same
   Railway project as the Postgres database. `python ingest.py` is the service's start command;
   Railway's native cron scheduling runs it to completion once a day, not as a long-running
-  process. Environment variables on that service: `GEMINI_API_KEY_CLASSIFICATION` and
+  process. Environment variables on that service: `GEMINI_API_KEY_CLASSIFICATION`,
+  `GEMINI_API_KEY_REQUIREMENTS` (both keys of the prepaid project
+  `gen-lang-client-0963554051` as of 2026-08-29 — see the API-keys table above), and
   `DATABASE_URL` — using Railway's **internal/private** network URL for Postgres, not the public
   proxy URL used for local dev, since the service is co-located with the database. **No
   `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` needed going forward** — a real operational simplification,
@@ -1066,6 +1082,17 @@ ingestion agent for why these are kept separate.
   every adapter's every company first, then runs classification once across everything newly
   ingested — not once per company — to maximize duplicate-title detection before spending any
   LLM call (see Business Logic — Classification).
+> **Superseded in part (2026-08-29, `changes/2026-08-29-chat-free-tier-key-isolation.md`).**
+> Classification and requirements extraction now run on a **prepaid** Gemini
+> project, not the free tier — so the "20 requests/day free-tier ceiling" below is
+> no longer an external hard limit. `DAILY_REQUEST_BUDGET`/`RETRY_HEADROOM` and
+> `REQUIREMENTS_DAILY_REQUEST_BUDGET` are, for now, **self-imposed** caps that
+> keep spend at pennies/day; they remain in force and must not be raised until the
+> follow-on spend-ledger change reframes budgeting in dollars
+> (`outcomes/llm-spend-is-bounded-and-isolated.md`). Chat is unaffected — it moved
+> the other way, onto the free tier. The mechanisms below (denylist filter,
+> per-run batch budget, oldest-first ordering) all still apply.
+
 - **The classification LLM call is the actual bottleneck, not fetching — confirmed 2026-08-04,
   superseding the free-tier assumption below.** The provider's free tier caps
   `gemini-2.5-flash` at exactly 20 requests/day/project/model (Google's own error payload:
@@ -1195,11 +1222,23 @@ The `/api/chat` handler does not import any provider SDK directly — it calls t
 through the protocol and names the provider and model explicitly at the call site:
 
 ```python
-response = await providers.gemini("gemini-2.5-flash").stream(messages, system)
+response = await providers.gemini("gemini-3.6-flash").stream(messages, system)
 ```
 
-Posting classification reuses the same abstraction and the same model via `complete()`
-(the non-streaming call already defined on `LLMProvider`), not `stream()`:
+> **Model note (2026-08-29, `changes/2026-08-29-chat-free-tier-key-isolation.md`):**
+> `/api/chat` and the reasoning trace use `gemini-3.6-flash`, not
+> `gemini-2.5-flash`. `GEMINI_API_KEY` was repointed to a free-tier Gemini
+> project (`gen-lang-client-0003173949`) that no longer offers `gemini-2.5-flash`,
+> specifically so chat runs where it cannot incur spend — see
+> `outcomes/llm-spend-is-bounded-and-isolated.md`. Pinned, not the
+> `gemini-flash-latest` alias, because that alias is currently throttled on the
+> free-tier project. Classification and requirements extraction run on a
+> **separate prepaid** project and keep their own models (see below).
+
+Posting classification reuses the same abstraction via `complete()` (the
+non-streaming call already defined on `LLMProvider`), not `stream()`. It stays on
+`gemini-2.5-flash` — its project (`gen-lang-client-0963554051`, prepaid) is
+grandfathered for that model:
 
 ```python
 response_text = await providers.gemini("gemini-2.5-flash").complete(

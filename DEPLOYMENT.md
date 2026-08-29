@@ -36,6 +36,48 @@ the real, share-able entry point to the whole product now, not just `localhost:5
 
 ---
 
+## Gemini projects & LLM billing
+
+Set up 2026-08-29 — see `outcomes/llm-spend-is-bounded-and-isolated.md` and
+`changes/2026-08-29-chat-free-tier-key-isolation.md`. **Google Cloud billing is
+per project, not per API key.** The three Gemini keys are split across two
+projects, deliberately, by billing tier:
+
+| Env var | Google Cloud project | Billing tier | Used by (Railway service) | Model |
+|---|---|---|---|---|
+| `GEMINI_API_KEY` | `gen-lang-client-0003173949` | **Free** — structurally cannot spend | `api` (`/api/chat`, reasoning trace) | `gemini-3.6-flash` |
+| `GEMINI_API_KEY_CLASSIFICATION` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (classification) | `gemini-2.5-flash` |
+| `GEMINI_API_KEY_REQUIREMENTS` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (requirements extraction) | `gemini-flash-latest` |
+
+Rationale:
+
+- **Chat runs on the free project so it cannot incur spend** while the pipeline
+  is on a prepaid plan. Cost: the free project no longer offers `gemini-2.5-flash`
+  (`404` "no longer available to new users", live-confirmed 2026-08-29), so chat
+  runs `gemini-3.6-flash` — pinned rather than the `gemini-flash-latest` alias,
+  which was consistently timing out on this free project when tested 2026-08-29
+  (free-tier throttling on a popular alias; the pinned model it resolves to
+  responds fine). Per the owner, chat's exact model doesn't matter as long as
+  it's free.
+- **Both paid jobs workloads share one prepaid project** so total pipeline spend
+  draws down a single balance.
+- `gen-lang-client-0963554051` is grandfathered for `gemini-2.5-flash`;
+  `gen-lang-client-0003173949` (created 2026-08-10) is not.
+
+**Operator responsibilities on `gen-lang-client-0963554051`:**
+
+- **Auto-recharge must stay OFF** — this is what makes the prepaid balance a hard
+  ceiling. If it's on, the "can't overspend" guarantee is void.
+- Keep only a small balance loaded (target: ~$5/month of headroom) until the
+  follow-on spend-ledger change adds an in-app monthly cap.
+- Optional: cloud-console budget alerts at $2 / $3 / $4.
+
+Until that follow-on change lands, the code's existing per-workload request-count
+budgets (`DAILY_REQUEST_BUDGET`, `REQUIREMENTS_DAILY_REQUEST_BUDGET`) are the
+operative spend cap — conservative (pennies/day) and **must not be raised** yet.
+
+---
+
 ## Service: `job-sync`
 
 The one piece of this product currently running unattended in production.
@@ -49,7 +91,7 @@ The one piece of this product currently running unattended in production.
 | Start command | `python src/ingest.py` |
 | Schedule | Cron `0 6 * * *` (06:00 UTC, daily) |
 | Restart policy | `NEVER` — it's a one-shot job, not a long-running service |
-| Env vars | `GEMINI_API_KEY_CLASSIFICATION`, `DATABASE_URL` — `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` were removed 2026-08-03 (Adzuna retired, no license to keep using it); the three replacement sources (Greenhouse, Lever, Ashby) are public and need no credentials. **Action needed**: remove these two variables from the `job-sync` service in the Railway dashboard — they're stale now, not read by any code, but should be cleaned up rather than left dangling. |
+| Env vars | `GEMINI_API_KEY_CLASSIFICATION`, `GEMINI_API_KEY_REQUIREMENTS` (both keys of the **prepaid** Gemini project — see "Gemini projects & LLM billing" above), `DATABASE_URL` — `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` were removed 2026-08-03 (Adzuna retired, no license to keep using it); the three replacement sources (Greenhouse, Lever, Ashby) are public and need no credentials. **Action needed**: remove these two variables from the `job-sync` service in the Railway dashboard — they're stale now, not read by any code, but should be cleaned up rather than left dangling. |
 
 `DATABASE_URL` is set to the Railway variable reference `${{Postgres.DATABASE_URL}}` —
 Postgres's *internal* private-network address, not its public proxy URL. Services in
@@ -61,8 +103,9 @@ service's own env vars; use the internal reference instead.)
 
 `GEMINI_API_KEY_CLASSIFICATION` is deliberately a separate key from `/api/chat`'s
 `GEMINI_API_KEY` — classification and live chat traffic must never compete for the
-same request quota. See `AI_INTERACTION_SETTINGS.md` for the chat side of that
-boundary.
+same request quota. Since 2026-08-29 they are also in **different Google Cloud
+projects on different billing tiers** (see "Gemini projects & LLM billing"
+above). See `AI_INTERACTION_SETTINGS.md` for the chat side of that boundary.
 
 ### What it does, end to end
 
@@ -182,7 +225,7 @@ The consumer-facing FastAPI backend (`backend/src/main.py`) — `/api/market-hea
 | Start command | `cd src && uvicorn main:app --host 0.0.0.0 --port $PORT` (from `railway.api.json`) |
 | Restart policy | `ALWAYS` — long-running web service |
 | Auto-deploy | On — a push to `main` deploys `api` (and `admin`, and rebuilds `job-sync`'s image, though `job-sync` itself only *runs* on its cron schedule) |
-| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY` (a different key from `job-sync`'s `GEMINI_API_KEY_CLASSIFICATION` — see `AI_INTERACTION_SETTINGS.md`), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need) |
+| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY` (the **free-tier** Gemini project `gen-lang-client-0003173949` — a different key *and different project* from `job-sync`'s prepaid keys; see "Gemini projects & LLM billing" above and `AI_INTERACTION_SETTINGS.md`), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need) |
 | Domain | Railway-generated (`generate-domain`) |
 
 Deployed cleanly on the **first attempt** — every gotcha below had already been learned
@@ -247,7 +290,12 @@ Continuing the numbering from `admin`'s deploy above:
 ## Service: `admin` (deployed 2026-08-16, real Railway service name `romantic-presence`)
 
 Live at `https://romantic-presence-production.up.railway.app` (public Railway
-domain — not a custom domain). Deliberately named `romantic-presence` (Railway's
+domain — not a custom domain). **Entry point:
+`https://romantic-presence-production.up.railway.app/admin/login`** — the app
+defines no route at `/`, so the bare domain returns `{"detail":"Not Found"}`.
+Every page lives under `/admin/` (see `backend/specs/pipeline-visibility/api.md`
+— "API Endpoints"); a successful login redirects to `/admin/`. Deliberately
+named `romantic-presence` (Railway's
 default random service name, kept as-is — the name itself carries no meaning and
 is never referenced in code) rather than `admin`, unlike the tidy
 `job-sync`/`api`/`web` naming above.
