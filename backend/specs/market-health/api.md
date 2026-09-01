@@ -1031,7 +1031,7 @@ split across **two Google Cloud projects by billing tier** (see
 |---|---|---|---|---|
 | `GEMINI_API_KEY` | `/api/chat`, reasoning trace | `gen-lang-client-0003173949` | **Free** — chat cannot incur spend | `gemini-3.6-flash` (pinned; `gemini-flash-latest` alias is throttled on this project) |
 | `GEMINI_API_KEY_CLASSIFICATION` | ingestion agent (classification) | `gen-lang-client-0963554051` | Tier 1 · Prepay | `gemini-2.5-flash` |
-| `GEMINI_API_KEY_REQUIREMENTS` | ingestion agent (requirements extraction) | `gen-lang-client-0963554051` | Tier 1 · Prepay | `gemini-flash-latest` |
+| `GEMINI_API_KEY_REQUIREMENTS` | ingestion agent (requirements extraction) | `gen-lang-client-0963554051` | Tier 1 · Prepay | `gemini-3.6-flash` (pinned 2026-08-30 — same `gemini-flash-latest` alias throttling) |
 
 Both paid workloads share one prepaid project so total jobs-pipeline spend is
 governed by a single balance. Until the follow-on spend-ledger change lands, each

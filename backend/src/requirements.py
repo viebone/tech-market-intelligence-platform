@@ -39,7 +39,12 @@ from llm import providers
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_MODEL = "gemini-flash-latest"
+# Pinned to gemini-3.6-flash 2026-08-30 (changes/2026-08-29-chat-free-tier-key-isolation.md).
+# Was "gemini-flash-latest" (set 2026-08-10 when this key's old project blocked gemini-2.5-flash);
+# now on the prepaid project that key isolation moved requirements onto. The gemini-flash-latest
+# *alias* has been returning persistent 503 "high demand" across both projects — pinning to the
+# concrete model it resolves to sidesteps the alias routing. Revisit if the alias stabilises.
+EXTRACTION_MODEL = "gemini-3.6-flash"
 
 # IC/hands-on lists, closed per Role Category — job-classification.md —
 # Skills. Starts narrow, widens once real extraction data justifies it, same

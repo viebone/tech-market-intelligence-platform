@@ -45,8 +45,14 @@ Execution Plan step 6), but the intent is unchanged behaviour.
   alias. Revisit the alias if that clears.
 - `classification.py` — **no change.** Stays `gemini-2.5-flash`; its project
   (`…0963554051`) is grandfathered and now sole-purpose paid.
-- `requirements.py` — **no change.** Stays `gemini-flash-latest`; now runs on the
-  prepaid project instead of the free one.
+- `requirements.py` — `EXTRACTION_MODEL` `"gemini-flash-latest"` →
+  `"gemini-3.6-flash"` (added 2026-08-30). Same pin as chat, same reason: the
+  `gemini-flash-latest` alias returned persistent `503`/`504` across **both**
+  projects (verified against runs 48–49 and a local test), blocking requirements
+  extraction. Requirements only moved *to* the alias on 2026-08-10 for the old
+  project's `gemini-2.5-flash` block — moot now on the prepaid project. Verified
+  working after the pin (local one-batch run: 3 extracted, model
+  `gemini-3.6-flash`, stale failure rows cleared).
 
 ## Spend safety during the gap before the follow-on CR
 
@@ -71,6 +77,7 @@ independent backstop.
 | Backend Spec | `backend/specs/market-health/api.md` | update — chat code examples' model name; factual note on the project reassignment + that request budgets remain the operative cap pending the spend-ledger CR |
 | Backend Spec | `backend/specs/ai-reasoning-panel/api.md` | update — one code example's model name (`gemini-2.5-flash` → `gemini-3.6-flash`) |
 | Backend Implementation | `backend/src/chat.py` | update — `_CHAT_MODEL` one line |
+| Backend Implementation | `backend/src/requirements.py` | update — `EXTRACTION_MODEL` one line (alias → pinned, added 2026-08-30) |
 | Frontend Implementation | `frontend/src/` | no-change |
 
 Non-spec operational docs also updated: `DEPLOYMENT.md` (per-service env-var →
@@ -132,13 +139,36 @@ project/tier mapping), product `CLAUDE.md` (key/project notes).
   Conclusion: chat fully functional on the free-tier project. Response times are
   a little slower and `gemini-3.6-flash` is eager to make several tool calls, but
   no behavioural regression against `design/market-health/experience.md`.
-- [ ] **Step 7 — Verify jobs pipeline.** Confirm at/after the next `job-sync`
-  cron run (06:00 UTC) that requirements extraction succeeds against the new
-  `GEMINI_API_KEY_REQUIREMENTS` value and classification is unaffected — check
-  `ingestion_runs` and the admin dashboard.
-- [ ] **Step 8 — Rotate the chat key.** It was pasted in a working-session
-  transcript. Regenerate it in the console; update `backend/.env` + Railway
-  `job-sync` (it is now the requirements key). Recommended, not blocking.
+- [~] **Step 7 — Verify jobs pipeline.** DB review of runs 46–49 (2026-09-01):
+  - **Classification:** unaffected by the swap. Runs 46/49 normal (1 batch req →
+    48 / 65 classified). Runs 47/48 had only 3–4 new postings (genuine low-volume
+    weekend days; fetch stable ~4,650/day). Run 48's `llm_requests_used: 4` for
+    4 classifications = retries against a transiently-erroring `gemini-2.5-flash`,
+    not a defect.
+  - **Requirements extraction:** run 47 (8/30) = 0, `KeyError:
+    'GEMINI_API_KEY_REQUIREMENTS'` — var was missing then. Run 48 (8/31) = **66
+    extracted** — var was present and working. Run 49 (9/1) = 0 from 5 requests —
+    all `503/504` on the `gemini-flash-latest` alias. **Fixed by the
+    `EXTRACTION_MODEL` pin above** — local one-batch run 2026-09-01 with
+    `gemini-3.6-flash`: 3 extracted, 1 request, stale failure rows cleared, real
+    `work_arrangement` parsed. Auth on the swapped `…dC4T4Q` key confirmed.
+  - **Still TODO (user):** confirm `GEMINI_API_KEY_REQUIREMENTS` is present on the
+    **`job-sync`** service (DB shows it was as of run 49; user reports it missing
+    now — re-check `job-sync`, not `api`). Then one clean cron run with the pinned
+    model closes this step.
+  - **Observability gap found (defer to follow-on CR):** a run where requirements
+    extraction crashes still records `status: partial`,
+    `requirements_extracted: 0`, `error_message: None` — indistinguishable from
+    "nothing to do" without checking `posting_requirements_failures`.
+- [x] **Step 8 — Rotate the exposed keys.** ✅ 2026-08-29 — **decided: deferred.**
+  Both `…1uPQZA` and `…dC4T4Q` appeared in the working-session transcript. Not
+  rotated now: `…1uPQZA` is on the free project (cannot bill); `…dC4T4Q` is on the
+  prepaid project but exposure is capped at the $5 balance (auto-recharge off).
+  No new key/project was created — the throwaway project spun up mid-session was
+  deleted; the final setup is the three original keys with values swapped between
+  `GEMINI_API_KEY` and `GEMINI_API_KEY_REQUIREMENTS`. Revisit rotation of
+  `…dC4T4Q` in the follow-on spend-ledger change **if** the monthly budget is
+  raised meaningfully.
 - [ ] **Step 9 — Close + hand off.** Mark this CR `complete`. Open the follow-on
   CR: app-level spend ledger + single monthly ceiling + admin-dashboard spend
   panel + safe raising of throughput budgets (rest of
