@@ -184,7 +184,7 @@ a later addition, not a redesign.
   dashboard is server-rendered Jinja in `backend/src/admin_templates/` — it has
   no `frontend/specs/` entry by design (`changes/2026-08-13-admin-pipeline-dashboard.md`).
   Template changes are covered by the pipeline-visibility backend spec + Step 4.
-- [~] **Step 4 — `/implement-backend`.** 2026-09-02, in progress:
+- [x] **Step 4 — `/implement-backend`.** ✅ 2026-09-02 (commit `01f9a23`):
   - `llm/base.py`: `BatchProvider` Protocol + `BatchRequest`/`BatchResult`/
     `BatchState` neutral types. `llm/gemini.py`: `GeminiBatchAdapter` (inlined
     requests, `JobState`→neutral-state map, `submit`/`poll`/`fetch`).
@@ -225,14 +225,31 @@ a later addition, not a redesign.
   additions are in `overview.html` / `runs.html` / `run_detail.html`, covered by
   Step 4. Template render smoke-tested (overview backlog line + batch badge,
   runs list, run detail all render 200).
-- [ ] **Step 6 — Verify against production.** One real Batch job against the live
-  backlog: submit (≤500, under `MAX_BATCH_USD`), `batch_jobs` row written before
-  submit, in-flight guard blocks a second submit, next run collects + validates +
-  inserts, rows match the interactive shape, `posting_requirements_failures`
-  behaves, admin dashboard shows the state. Confirm the cost-estimate/abort path
-  with a deliberately low `MAX_BATCH_USD`.
-- [ ] **Step 7 — Close.** Mark `complete` once the backlog is visibly draining
-  across cron cycles and all spec/impl match.
+- [x] **Step 6 — Verify against production.** ✅ 2026-09-02, manual e2e (a real
+  batch job driven by hand, mirroring `run_requirements_phase()` step 1):
+  - submit 30 postings → `batch_jobs` row written **before** the provider call,
+    `provider_job_ref` persisted after ✓
+  - in-flight guard: a second `_maybe_submit_batch()` returned `None` while the
+    job was active ✓
+  - poll `submitted`→`running`→`succeeded` (~5 min); `fetch` → 13 inline
+    responses, 0 errors ✓
+  - `collect_batch_results` → **30/30 inserted**, rows identical shape to the
+    interactive lane (`work_arrangement`/`education_level`/… populated),
+    `model = gemini-3.6-flash`, `posting_requirements_failures` untouched (0 rows
+    for the job's postings) ✓
+  - cost-estimate abort: `MAX_BATCH_USD = $0.0001` → `_maybe_submit_batch()`
+    logged the refusal and created no job ✓
+  - admin dashboard (`/admin/`, `/admin/runs`, `/admin/runs/{id}`) render the
+    backlog line + batch state ✓
+  - **Not yet observed:** the fully autonomous cron cycle (run submits a batch →
+    next day's run collects it). Deployed to `job-sync` (`01f9a23`); first
+    real check is cron run 51 (2026-09-03 06:00 UTC) submitting a 500-job batch,
+    run 52 collecting it.
+- [ ] **Step 7 — Close.** Mark `complete` after cron runs 51–52 show the
+  autonomous submit→collect cycle and the backlog visibly dropping (~1,597 → ~0
+  over ~3–4 cycles), and the `chat-free-tier-key-isolation` Step 0 carry-over
+  (a `job-sync` run stamping `gemini-3.6-flash`) is confirmed — run 50 was on
+  the old alias code; run 51 is the first on `ddb68b3`+.
 
 ## Documentation & code-quality bar (explicit acceptance criteria)
 
