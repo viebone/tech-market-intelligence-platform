@@ -33,6 +33,32 @@
     <div class="bar-count">{{ requirements_coverage.pct }}%</div>
   </div>
   <div class="stat-label">{{ requirements_coverage.extracted }} of {{ requirements_coverage.eligible }} eligible postings</div>
+
+  {% set bl = requirements_backlog %}
+  <div class="field-row" style="margin-top: 12px;">
+    <div class="field-label">Backlog</div>
+    <div class="field-value">{{ bl.count }} awaiting extraction</div>
+  </div>
+  <div class="field-row">
+    <div class="field-label">Batch</div>
+    <div class="field-value">
+      {% if bl.no_batch_needed %}
+        <span class="badge neutral">No batch needed</span>
+      {% elif bl.batch and bl.batch.state in ('submitted', 'running') %}
+        <span class="badge neutral">Batch running</span>
+        — {{ bl.batch.item_count }} postings, submitted {{ bl.batch.submitted_at }}
+        {% if bl.batch.expected_by %}, results expected by {{ bl.batch.expected_by }}{% endif %}
+      {% elif bl.batch and bl.batch.state == 'collected' %}
+        <span class="badge success">Last batch complete</span>
+        — {{ bl.batch.item_count }} postings, {{ bl.batch.completed_at }}
+      {% elif bl.batch and bl.batch.state == 'failed' %}
+        <span class="badge error">Batch failed</span>
+        — {{ bl.batch.completed_at }}{% if bl.batch.error %} ({{ bl.batch.error }}){% endif %}
+      {% else %}
+        <span class="badge neutral">No batch yet</span>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
 <div class="card">
@@ -100,6 +126,14 @@
     <div class="field-row"><div class="field-label">Fetched / Inserted</div><div class="field-value">{{ latest_run.total_fetched }} / {{ latest_run.total_inserted }}</div></div>
     <div class="field-row"><div class="field-label">Classified</div><div class="field-value">{{ latest_run.total_classified }}</div></div>
     <div class="field-row"><div class="field-label">Budget reached</div><div class="field-value">{{ 'Yes' if latest_run.budget_reached else 'No' }}</div></div>
+    <div class="field-row"><div class="field-label">Requirements phase</div><div class="field-value">
+      {% if latest_run.requirements_phase == 'interactive_failed' %}<span class="badge error">interactive failed</span>
+      {% elif latest_run.requirements_phase in ('batch_submit_failed', 'batch_collect_failed') %}<span class="badge error">{{ latest_run.requirements_phase | replace('_', ' ') }}</span>
+      {% elif latest_run.requirements_phase == 'nothing_to_do' %}<span class="badge neutral">nothing to do</span>
+      {% else %}<span class="badge success">ok</span>{% endif %}
+      {% if latest_run.batch_collected %} · collected {{ latest_run.batch_collected }}{% endif %}
+      {% if latest_run.batch_submitted_id %} · submitted batch #{{ latest_run.batch_submitted_id }}{% endif %}
+    </div></div>
     <a class="btn-ghost" href="/admin/runs/{{ latest_run.id }}">View run detail →</a>
   {% else %}
     <div class="stat-label">No runs recorded yet</div>

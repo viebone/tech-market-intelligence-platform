@@ -140,6 +140,9 @@ def record_run(
     requirements_extracted: int = 0,
     requirements_requests_used: int = 0,
     requirements_budget_reached: bool = False,
+    requirements_phase: str = "ok",
+    batch_collected: int = 0,
+    batch_submitted_id: int | None = None,
     error_message: str | None = None,
 ) -> int:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -163,8 +166,9 @@ def record_run(
                  total_inserted, total_classified, cache_hits, heuristic_filtered,
                  llm_classified, other_count, other_rate, budget_reached,
                  llm_requests_used, requirements_extracted, requirements_requests_used,
-                 requirements_budget_reached, anomalies, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 requirements_budget_reached, requirements_phase, batch_collected,
+                 batch_submitted_id, anomalies, error_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -172,7 +176,8 @@ def record_run(
                 total_inserted, total_classified, cache_hits, heuristic_filtered,
                 llm_classified, other_count, other_rate, budget_reached,
                 llm_requests_used, requirements_extracted, requirements_requests_used,
-                requirements_budget_reached, json.dumps(anomalies), error_message,
+                requirements_budget_reached, requirements_phase, batch_collected,
+                batch_submitted_id, json.dumps(anomalies), error_message,
             ),
         ).fetchone()
     return row[0]
@@ -188,7 +193,8 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
         rows = conn.execute(
             """
             SELECT id, started_at, completed_at, status, total_fetched, total_inserted,
-                   total_classified, requirements_extracted, budget_reached, other_rate
+                   total_classified, requirements_extracted, budget_reached, other_rate,
+                   requirements_phase, batch_collected, batch_submitted_id
             FROM ingestion_runs
             ORDER BY started_at DESC
             LIMIT %s OFFSET %s
@@ -200,6 +206,7 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
             "id": r[0], "started_at": r[1], "completed_at": r[2], "status": r[3],
             "total_fetched": r[4], "total_inserted": r[5], "total_classified": r[6],
             "requirements_extracted": r[7], "budget_reached": r[8], "other_rate": r[9],
+            "requirements_phase": r[10], "batch_collected": r[11], "batch_submitted_id": r[12],
         }
         for r in rows
     ]
@@ -216,7 +223,8 @@ def get_run(run_id: int) -> dict | None:
                    total_inserted, total_classified, cache_hits, heuristic_filtered,
                    llm_classified, other_count, other_rate, budget_reached,
                    llm_requests_used, requirements_extracted, requirements_requests_used,
-                   requirements_budget_reached, anomalies, error_message
+                   requirements_budget_reached, anomalies, error_message,
+                   requirements_phase, batch_collected, batch_submitted_id
             FROM ingestion_runs WHERE id = %s
             """,
             (run_id,),
@@ -231,4 +239,5 @@ def get_run(run_id: int) -> dict | None:
         "budget_reached": row[13], "llm_requests_used": row[14],
         "requirements_extracted": row[15], "requirements_requests_used": row[16],
         "requirements_budget_reached": row[17], "anomalies": row[18], "error_message": row[19],
+        "requirements_phase": row[20], "batch_collected": row[21], "batch_submitted_id": row[22],
     }

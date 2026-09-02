@@ -6,7 +6,15 @@ from typing import Callable
 from google import genai
 from google.genai import types
 
-from llm.base import GroundedResponse, GroundingSource, ToolCall, ToolCallResponse
+from llm.base import (
+    BatchRequest,
+    BatchResult,
+    BatchState,
+    GroundedResponse,
+    GroundingSource,
+    ToolCall,
+    ToolCallResponse,
+)
 
 # Models confirmed (at runtime, in this process) to reject thinking_budget=0
 # outright — see complete()'s fallback. Remembered process-wide, keyed by
@@ -173,3 +181,89 @@ class GeminiAdapter:
                         sources.append(GroundingSource(title=web.title or web.uri, url=web.uri))
 
         return GroundedResponse(text=response.text or "", search_queries=search_queries, sources=sources)
+
+
+# Gemini's JobState names -> the four provider-neutral BatchState values.
+# Anything not listed (UNSPECIFIED, UPDATING, PAUSED) is treated as "running"
+# — transient, keep waiting — except the terminal-but-bad ones mapped to failed.
+_GEMINI_STATE_MAP = {
+    "JOB_STATE_PENDING": "submitted",
+    "JOB_STATE_QUEUED": "submitted",
+    "JOB_STATE_RUNNING": "running",
+    "JOB_STATE_SUCCEEDED": "succeeded",
+    "JOB_STATE_PARTIALLY_SUCCEEDED": "succeeded",  # fetch() surfaces the per-unit errors
+    "JOB_STATE_FAILED": "failed",
+    "JOB_STATE_CANCELLED": "failed",
+    "JOB_STATE_CANCELLING": "failed",
+    "JOB_STATE_EXPIRED": "failed",
+}
+
+
+class GeminiBatchAdapter:
+    """Adapter for the Gemini batch API (google-genai `client.batches`).
+
+    Implements llm.base.BatchProvider. Uses **inlined** requests (no GCS/file
+    upload) — MAX_BATCH_POSTINGS worth of extraction prompts is comfortably
+    under the inline size limit, and it keeps the whole round trip inside the
+    SDK with no bucket to manage. All Gemini-specific batch mechanics live in
+    this class; nothing above the `llm/` package imports `google.genai`.
+    """
+
+    def __init__(self, model: str, api_key: str | None = None) -> None:
+        self._model = model if model.startswith("models/") else f"models/{model}"
+        self._client = genai.Client(
+            api_key=api_key or os.environ.get("GEMINI_API_KEY"),
+            http_options=types.HttpOptions(timeout=120_000),  # ms
+        )
+
+    async def submit(self, requests: list[BatchRequest]) -> str:
+        inlined = [
+            types.InlinedRequest(
+                model=self._model,
+                contents=[types.Content(role="user", parts=[types.Part(text=r.prompt)])],
+                config=types.GenerateContentConfig(
+                    system_instruction=r.system or None,
+                    max_output_tokens=8192,
+                    # Same reasoning as GeminiAdapter.complete(): structured
+                    # extraction, not open-ended reasoning. gemini-3.6-flash
+                    # rejects budget=0, so 1 is the minimum it accepts.
+                    thinking_config=types.ThinkingConfig(thinking_budget=1),
+                ),
+                metadata={"custom_id": r.custom_id},
+            )
+            for r in requests
+        ]
+        job = await self._client.aio.batches.create(
+            model=self._model,
+            src=inlined,
+            config=types.CreateBatchJobConfig(display_name="requirements-extraction"),
+        )
+        return job.name
+
+    async def poll(self, job_ref: str) -> BatchState:
+        job = await self._client.aio.batches.get(name=job_ref)
+        state_name = getattr(job.state, "name", str(job.state))
+        return _GEMINI_STATE_MAP.get(state_name, "running")
+
+    async def fetch(self, job_ref: str) -> list[BatchResult]:
+        job = await self._client.aio.batches.get(name=job_ref)
+        dest = job.dest
+        responses = list(getattr(dest, "inlined_responses", None) or []) if dest else []
+        out: list[BatchResult] = []
+        for i, item in enumerate(responses):
+            custom_id = ""
+            meta = getattr(item, "metadata", None) or {}
+            if isinstance(meta, dict):
+                custom_id = meta.get("custom_id", "") or ""
+            custom_id = custom_id or f"index-{i}"
+            err = getattr(item, "error", None)
+            if err is not None:
+                out.append(BatchResult(custom_id=custom_id, error=str(err)))
+                continue
+            resp = getattr(item, "response", None)
+            text = getattr(resp, "text", None) if resp is not None else None
+            if text:
+                out.append(BatchResult(custom_id=custom_id, text=text))
+            else:
+                out.append(BatchResult(custom_id=custom_id, error="empty batch response"))
+        return out

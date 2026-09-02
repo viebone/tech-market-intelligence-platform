@@ -270,6 +270,41 @@ CREATE TABLE IF NOT EXISTS posting_requirements_failures (
     last_attempted_at TIMESTAMPTZ NOT NULL,
     model             TEXT NOT NULL
 );
+
+-- Requirements-backlog Batch catch-up lane (2026-09-01) — see
+-- backend/specs/market-health/api.md — Data Models — BatchJob and Business
+-- Logic — Requirements extraction — Batch catch-up lane;
+-- changes/2026-09-01-requirements-backlog-batch-catchup.md. Brand new table,
+-- plain CREATE IF NOT EXISTS. At most one row is ever in an active
+-- ('submitted'/'running') state at a time — enforced in application code
+-- (batch_jobs.py), not a DB constraint, since "active" is a value predicate
+-- not a uniqueness one.
+CREATE TABLE IF NOT EXISTS batch_jobs (
+    id                 SERIAL PRIMARY KEY,
+    provider           TEXT NOT NULL,
+    model              TEXT NOT NULL,
+    provider_job_ref   TEXT,
+    purpose            TEXT NOT NULL DEFAULT 'requirements',
+    state              TEXT NOT NULL DEFAULT 'submitted',
+    item_count         INTEGER NOT NULL DEFAULT 0,
+    posting_ids        JSONB NOT NULL DEFAULT '[]',
+    est_cost_usd       REAL NOT NULL DEFAULT 0.0,
+    actual_cost_usd    REAL,
+    submitted_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at       TIMESTAMPTZ,
+    error              TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_batch_jobs_state ON batch_jobs (state);
+CREATE INDEX IF NOT EXISTS idx_batch_jobs_submitted_at ON batch_jobs (submitted_at);
+
+-- ingestion_runs: batch-lane visibility + the crash-vs-idle observability
+-- fix found in changes/2026-08-29-chat-free-tier-key-isolation.md. Same
+-- idempotent ALTER pattern as every other ingestion_runs migration.
+-- requirements_phase defaults 'ok' for legacy rows: they predate the
+-- distinction and were not crashes.
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_phase TEXT NOT NULL DEFAULT 'ok';
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS batch_collected INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS batch_submitted_id INTEGER REFERENCES batch_jobs(id);
 """
 
 

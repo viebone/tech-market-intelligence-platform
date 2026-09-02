@@ -184,15 +184,47 @@ a later addition, not a redesign.
   dashboard is server-rendered Jinja in `backend/src/admin_templates/` — it has
   no `frontend/specs/` entry by design (`changes/2026-08-13-admin-pipeline-dashboard.md`).
   Template changes are covered by the pipeline-visibility backend spec + Step 4.
-- [ ] **Step 4 — `/implement-backend`.** In order: (a) `BatchProvider` protocol +
-  `GeminiBatchAdapter` + `providers.batch()` factory; (b) extract the shared
-  extraction path out of `requirements.py` (pure refactor, existing interactive
-  tests/behaviour unchanged — verify first); (c) `batch_jobs` migration +
-  module; (d) the 3-step `ingest.py` phase; (e) admin template. Nothing invented
-  beyond the spec. **Clean-code bar:** the pipeline touches only `BatchProvider`
-  and `batch_jobs` — grep the diff for `google`, `genai`, or a Batch-API type
-  outside `llm/gemini.py` and there should be zero hits.
-- [ ] **Step 5 — `/implement-frontend`.** N/A — confirm and record.
+- [~] **Step 4 — `/implement-backend`.** 2026-09-02, in progress:
+  - `llm/base.py`: `BatchProvider` Protocol + `BatchRequest`/`BatchResult`/
+    `BatchState` neutral types. `llm/gemini.py`: `GeminiBatchAdapter` (inlined
+    requests, `JobState`→neutral-state map, `submit`/`poll`/`fetch`).
+    `llm/providers.py`: `providers.batch(provider, model, api_key=)` +
+    `_BATCH_ADAPTERS` registry.
+  - `requirements.py`: shared `parse_and_validate()` path (each entry validated
+    against its own posting's skill-groups) used by both `extract_batch()` and
+    the batch collector; `insert_requirements(entries, model=…)`;
+    `_prep_postings()`; batch constants + `estimate_batch_cost_usd()` +
+    `build_batch_requests()` + `collect_batch_results()`.
+  - `raw_postings.py`: `count_needing_requirements()`,
+    `get_all_needing_requirements(limit=…)`, `get_postings_by_ids()`.
+  - `batch_jobs.py`: new module — `create_job` (row-before-submit),
+    `set_provider_ref`, `mark_running/collected/failed`, `get_active_job`,
+    `get_latest_job`, `reconcile()` (failed-submit + stuck-running).
+  - `db.py`: `batch_jobs` table + `ingestion_runs.requirements_phase` /
+    `batch_collected` / `batch_submitted_id` (idempotent). Migrated on prod.
+  - `ingest.py`: `run_requirements_phase()` — 3 steps (collect → interactive →
+    maybe-submit), `_severest_phase()`, `_maybe_submit_batch()` (floor + in-flight
+    guard + estimate + `MAX_BATCH_USD` abort + record-then-submit). `record_run`
+    + `list_runs`/`get_run` carry the new fields.
+  - Admin: `_requirements_backlog_status()` in `admin_main.py`; overview.html +
+    runs.html + run_detail.html show backlog count, batch status, per-run batch
+    activity, `requirements_phase` failure markers.
+  - `backend/BATCH_PROCESSING.md` written.
+  - **Clean-code check passed:** `grep` for `google`/`genai`/batch-API types
+    outside `llm/gemini.py` → zero hits. All modules compile.
+  - **e2e verified 2026-09-02 against production DB + real Gemini:** interactive
+    lane unchanged after the shared-path refactor; a real 30-posting batch job
+    submitted (row-before-submit, ref persisted), polled to `succeeded` in ~5
+    min, fetched + parsed + validated + inserted **30/30, 0 failures**, all
+    stamped `gemini-3.6-flash`, `batch_jobs` row → `collected`. In-flight guard,
+    cost estimate ($0.23 for 500), `MAX_BATCH_USD` abort path, and the
+    `google`/`genai`-outside-`llm/gemini.py` grep (zero hits) all checked.
+    Admin templates render.
+- [x] **Step 5 — `/implement-frontend`.** ✅ N/A. No consumer frontend. The
+  admin dashboard is server-rendered Jinja (`admin_templates/`); its batch
+  additions are in `overview.html` / `runs.html` / `run_detail.html`, covered by
+  Step 4. Template render smoke-tested (overview backlog line + batch badge,
+  runs list, run detail all render 200).
 - [ ] **Step 6 — Verify against production.** One real Batch job against the live
   backlog: submit (≤500, under `MAX_BATCH_USD`), `batch_jobs` row written before
   submit, in-flight guard blocks a second submit, next run collects + validates +

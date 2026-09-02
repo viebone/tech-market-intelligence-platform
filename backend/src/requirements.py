@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 
 from db import get_connection
 from llm import providers
+from llm.base import BatchRequest
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,46 @@ MAX_BATCHES_PER_RUN = 12
 # one can't silently starve the other.
 REQUIREMENTS_DAILY_REQUEST_BUDGET = 20
 REQUIREMENTS_RETRY_HEADROOM = 8
+
+# ---------------------------------------------------------------------------
+# Batch catch-up lane (2026-09-01) — see backend/specs/market-health/api.md —
+# Business Logic — Requirements extraction — Batch catch-up lane, and
+# backend/BATCH_PROCESSING.md. The interactive lane above is primary; this
+# drains an accumulated backlog through the provider's cheaper batch API.
+# ---------------------------------------------------------------------------
+
+# Don't fire a batch for a backlog the interactive lane would clear on its own
+# in a day or two — a batch has ~24h latency and fixed overhead. ~100 ≈ several
+# interactive runs' worth.
+REQUIREMENTS_BATCH_MIN_BACKLOG = 100
+
+# Cap per batch job so a large backlog spreads over several days (each job stays
+# small enough to eyeball) and one bad job can't torch the whole backlog. 500 ≈
+# ~34 extraction prompts, well inside the inline-request size limit.
+MAX_BATCH_POSTINGS = 500
+
+# Hard pre-submit dollar gate. At ~$1 a 500-posting job is ~4-5x the real
+# expected cost (generous headroom for a bad estimate) and still an order of
+# magnitude under the $5 prepaid balance. If a real job's estimate exceeds
+# this, a human decides whether to raise it — the run does not.
+MAX_BATCH_USD = 1.00
+
+# gemini-3.6-flash list pricing, USD per 1M tokens. Dated 2026-09-02 — VERIFY
+# against https://ai.google.dev/gemini-api/docs/pricing before trusting the
+# estimate; these WILL drift. Batch mode is billed at half the interactive rate.
+GEMINI_3_6_FLASH_INPUT_USD_PER_MTOK = 0.30
+GEMINI_3_6_FLASH_OUTPUT_USD_PER_MTOK = 2.50
+BATCH_PRICE_MULTIPLIER = 0.5
+
+# Rough token accounting for the estimate only (not billing): ~4 chars/token,
+# and each posting's structured JSON output runs ~200-250 tokens in practice.
+CHARS_PER_TOKEN = 4
+PER_POSTING_OUTPUT_TOKEN_ESTIMATE = 240
+
+# A batch job still "running" this long past submission is treated as stuck and
+# failed (postings retried, surfaced on the dashboard) rather than left forever.
+# Gemini's stated batch turnaround is 24h; 72h is a wide margin over that.
+BATCH_STUCK_AFTER_HOURS = 72
 
 RETRYABLE_STATUS_CODES = {"429", "500", "502", "503", "504"}
 
@@ -319,6 +360,46 @@ async def _complete_with_retry(prompt: str, system: str, request_counter: dict) 
     raise RuntimeError("unreachable")
 
 
+_DEFAULT_ENTRY = {
+    "education_level": "not_mentioned", "education_required": "not_mentioned",
+    "equivalent_experience_accepted": False, "years_experience_min": None,
+    "work_arrangement": "not_mentioned", "skills": [], "languages": [],
+    "responsibilities_summary": None, "other_requirements": None,
+}
+
+
+def parse_and_validate(response_text: str, valid_skills_by_id: dict[str, list[str]]) -> list[dict]:
+    """The shared extraction path: raw model output -> validated entries.
+
+    Used by BOTH the interactive lane (extract_batch, below) and the batch
+    catch-up collector (collect_batch_results, below) so the two produce
+    identical posting_requirements rows — see backend/specs/market-health/
+    api.md — Tech Decisions — Shared extraction path.
+
+    Each entry is validated against ITS OWN posting's applicable skill_group
+    union (not one shared list), so this works whether the response covers one
+    _group_into_batches() group or a whole batch job spanning many.
+    """
+    out: list[dict] = []
+    for entry in _parse_response(response_text):
+        pid = entry.get("id")
+        if pid is None:
+            continue
+        validated = _validate(entry, valid_skills_by_id.get(pid, []))
+        validated["id"] = pid
+        out.append(validated)
+    return out
+
+
+def _valid_skills_by_id(postings: list[dict]) -> dict[str, list[str]]:
+    """{posting_id: applicable_skill_groups(...)} for a list of postings that
+    each carry role_category/track/specialization."""
+    return {
+        p["id"]: applicable_skill_groups(p["role_category"], p.get("track"), p.get("specialization"))
+        for p in postings
+    }
+
+
 async def extract_batch(postings: list[dict], valid_skills: list[str], request_counter: dict) -> list[dict]:
     """postings: [{id, description}]. Returns one validated entry per input,
     in the same order — postings the model omits get an empty/default entry.
@@ -329,19 +410,18 @@ async def extract_batch(postings: list[dict], valid_skills: list[str], request_c
     response_text = await _complete_with_retry(
         _build_prompt(postings), _system_instruction(valid_skills), request_counter
     )
-    parsed = {entry.get("id"): _validate(entry, valid_skills) for entry in _parse_response(response_text)}
-    default = {
-        "education_level": "not_mentioned", "education_required": "not_mentioned",
-        "equivalent_experience_accepted": False, "years_experience_min": None,
-        "work_arrangement": "not_mentioned", "skills": [], "languages": [],
-        "responsibilities_summary": None, "other_requirements": None,
+    parsed = {
+        e["id"]: e
+        for e in parse_and_validate(response_text, {p["id"]: valid_skills for p in postings})
     }
-    return [parsed.get(p["id"], {**default, "id": p["id"]}) for p in postings]
+    return [parsed.get(p["id"], {**_DEFAULT_ENTRY, "id": p["id"]}) for p in postings]
 
 
-def insert_requirements(entries: list[dict]) -> None:
+def insert_requirements(entries: list[dict], model: str = EXTRACTION_MODEL) -> None:
     """Writes posting_requirements + posting_skills + posting_languages for a
-    batch of validated entries. PRIMARY KEY / UNIQUE constraints on all three
+    batch of validated entries. `model` records provenance — defaults to the
+    interactive `EXTRACTION_MODEL`; the batch collector passes the batch job's
+    own model so a batched row's `model` is honest even if it differs. PRIMARY KEY / UNIQUE constraints on all three
     tables enforce "extracted at most once per posting" at the database
     level, same discipline as classifications.posting_id. posting_skills'
     UNIQUE constraint moved to (posting_id, raw_skill) 2026-08-11 — see
@@ -376,7 +456,7 @@ def insert_requirements(entries: list[dict]) -> None:
                         e["id"], e["education_level"], e["education_required"],
                         e["equivalent_experience_accepted"], e["years_experience_min"],
                         e["work_arrangement"], e["responsibilities_summary"],
-                        e["other_requirements"], EXTRACTION_MODEL, extracted_at,
+                        e["other_requirements"], model, extracted_at,
                     )
                     for e in entries
                 ],
@@ -503,6 +583,20 @@ def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
             cur.execute("DELETE FROM posting_requirements WHERE posting_id = ANY(%s)", (posting_ids,))
 
 
+def prep_postings(postings: list[dict]) -> list[dict]:
+    """raw_postings.get_all_needing_requirements() rows -> the shape
+    _group_into_batches() / prompt-building need: id + classification fields +
+    the cleaned, truncated description."""
+    return [
+        {
+            "id": p["id"], "role_category": p["role_category"],
+            "track": p.get("track"), "specialization": p.get("specialization"),
+            "description": _extract_description(p["source"], p["raw_response"]),
+        }
+        for p in postings
+    ]
+
+
 def _group_into_batches(postings: list[dict]) -> list[tuple[list[str], list[dict]]]:
     """
     Chunk the oldest-first list into (valid_skills, batch) groups of up to
@@ -560,14 +654,7 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
         REQUIREMENTS_DAILY_REQUEST_BUDGET - REQUIREMENTS_RETRY_HEADROOM - already_used_today,
     ))
 
-    prepped = [
-        {
-            "id": p["id"], "role_category": p["role_category"],
-            "track": p.get("track"), "specialization": p.get("specialization"),
-            "description": _extract_description(p["source"], p["raw_response"]),
-        }
-        for p in postings
-    ]
+    prepped = prep_postings(postings)
     batches = _group_into_batches(prepped)
 
     request_counter = {"requests": 0}
@@ -626,3 +713,81 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
         "requirements_budget_reached": budget_reached,
         "stopped_early": stopped_early,
     }
+
+
+# ---------------------------------------------------------------------------
+# Batch catch-up lane. See backend/specs/market-health/api.md — Business Logic
+# — Requirements extraction — Batch catch-up lane, and backend/BATCH_PROCESSING.md.
+# Orchestration (when to submit/collect) lives in ingest.py; the LLM-facing
+# and DB-facing mechanics live here so both lanes share one extraction path.
+# ---------------------------------------------------------------------------
+
+def _batch_api_key() -> str:
+    return os.environ["GEMINI_API_KEY_REQUIREMENTS"]
+
+
+def estimate_batch_cost_usd(prepped: list[dict]) -> float:
+    """Coarse pre-submit dollar estimate for a batch over `prepped` postings
+    (as returned by prep_postings). A guard-rail, not an invoice — see the
+    price constants' 'VERIFY' note. Batch mode is billed at
+    BATCH_PRICE_MULTIPLIER of the interactive rate.
+    """
+    batches = _group_into_batches(prepped)
+    input_tokens = 0
+    for valid_skills, batch in batches:
+        input_tokens += len(_system_instruction(valid_skills)) / CHARS_PER_TOKEN
+        input_tokens += sum(len(p["description"]) for p in batch) / CHARS_PER_TOKEN
+    output_tokens = len(prepped) * PER_POSTING_OUTPUT_TOKEN_ESTIMATE
+    usd = (
+        input_tokens / 1_000_000 * GEMINI_3_6_FLASH_INPUT_USD_PER_MTOK
+        + output_tokens / 1_000_000 * GEMINI_3_6_FLASH_OUTPUT_USD_PER_MTOK
+    ) * BATCH_PRICE_MULTIPLIER
+    return round(usd, 4)
+
+
+def build_batch_requests(prepped: list[dict]) -> list[BatchRequest]:
+    """One BatchRequest per _group_into_batches() group — same prompts the
+    interactive lane would send, just packaged for the batch API. custom_id is
+    synthetic; the posting ids are inside each prompt and echoed back by the
+    model, so parse_and_validate() maps results back the same way it does for
+    interactive responses."""
+    requests: list[BatchRequest] = []
+    for i, (valid_skills, batch) in enumerate(_group_into_batches(prepped)):
+        requests.append(
+            BatchRequest(
+                custom_id=f"grp-{i}",
+                prompt=_build_prompt([{"id": p["id"], "description": p["description"]} for p in batch]),
+                system=_system_instruction(valid_skills),
+            )
+        )
+    return requests
+
+
+def collect_batch_results(results, postings: list[dict], model: str) -> int:
+    """Turn finished-batch BatchResults into posting_requirements rows.
+
+    `postings` — the full get_all_needing_requirements()-shaped list the job
+    covered (used to rebuild each posting's applicable skill_group set and to
+    detect which ids the model dropped). Returns the count inserted.
+
+    Per-response errors and dropped postings get a posting_requirements_failures
+    row (so they stay visible and are retried via the normal backlog) — never
+    silently lost, same discipline as an interactive validation failure.
+    """
+    prepped = prep_postings(postings)
+    vs_by_id = _valid_skills_by_id(prepped)
+    entries: list[dict] = []
+    for r in results:
+        if r.error:
+            logger.warning("batch collect: response %s errored: %s", r.custom_id, r.error)
+            continue
+        entries.extend(parse_and_validate(r.text or "", vs_by_id))
+
+    covered = {e["id"] for e in entries}
+    for pid in vs_by_id:
+        if pid not in covered:
+            record_extraction_failure(pid, "no valid result in batch output", model)
+
+    if entries:
+        insert_requirements(entries, model=model)
+    return len(entries)

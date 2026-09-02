@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import os
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -31,10 +32,12 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import batch_jobs
 import classification
 import ingestion_runs
 import raw_postings
 import requirements
+from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
 from admin_auth import (
     SESSION_COOKIE_NAME,
     SESSION_EXPIRY_HOURS,
@@ -111,6 +114,30 @@ def logout():
 # Overview
 # ---------------------------------------------------------------------------
 
+def _requirements_backlog_status() -> dict:
+    """Overview's backlog & batch-status line — backend/specs/pipeline-visibility/
+    api.md — Business Logic — Requirements backlog & batch status. Reuses the
+    pipeline's own backlog count so the dashboard and the pipeline never
+    disagree; reads batch_jobs, never writes it."""
+    count = raw_postings.count_needing_requirements()
+    job = batch_jobs.get_latest_job()
+    batch: dict | None = None
+    if job is not None:
+        batch = {
+            "state": job["state"],
+            "item_count": job["item_count"],
+            "est_cost_usd": job["est_cost_usd"],
+            "actual_cost_usd": job["actual_cost_usd"],
+            "submitted_at": job["submitted_at"],
+            "completed_at": job["completed_at"],
+            "error": job["error"],
+        }
+        if job["state"] in batch_jobs.ACTIVE_STATES and job["submitted_at"] is not None:
+            batch["expected_by"] = job["submitted_at"] + timedelta(hours=BATCH_STUCK_AFTER_HOURS)
+    no_batch_needed = job is None and count < REQUIREMENTS_BATCH_MIN_BACKLOG
+    return {"count": count, "batch": batch, "no_batch_needed": no_batch_needed}
+
+
 @app.get("/admin/", dependencies=[Depends(require_admin_session)])
 def overview(request: Request):
     coverage = requirements.get_requirements_coverage()
@@ -121,6 +148,7 @@ def overview(request: Request):
             "active_page": "overview",
             "totals": {"total_postings": raw_postings.count_postings()},
             "requirements_coverage": coverage,
+            "requirements_backlog": _requirements_backlog_status(),
             "classification_distribution": classification.get_classification_distribution(),
             "taxonomy_version_breakdown": classification.get_taxonomy_version_breakdown(),
             "skill_group_distribution": requirements.get_skill_group_distribution(),
@@ -253,7 +281,15 @@ def run_detail(request: Request, run_id: int):
         raise HTTPException(status_code=404, detail="No run with that id")
     terms = run["terms_processed"] or []
     run["is_legacy_format"] = bool(terms) and "source" not in terms[0]
-    return templates.TemplateResponse(request, "run_detail.html", {"active_page": "runs", "run": run})
+    # Batch job this run submitted (if any), for the batch-activity section —
+    # backend/specs/pipeline-visibility/api.md — Batch activity.
+    submitted_batch = (
+        batch_jobs.get_job(run["batch_submitted_id"]) if run["batch_submitted_id"] else None
+    )
+    return templates.TemplateResponse(
+        request, "run_detail.html",
+        {"active_page": "runs", "run": run, "submitted_batch": submitted_batch},
+    )
 
 
 # ---------------------------------------------------------------------------

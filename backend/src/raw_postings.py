@@ -98,7 +98,12 @@ def get_all_unclassified() -> list[dict]:
     return [{"id": row[0], "title": row[1]} for row in rows]
 
 
-def get_all_needing_requirements() -> list[dict]:
+_NEEDING_REQUIREMENTS_WHERE = (
+    "c.role_category NOT IN ('other', 'unknown') AND pr.posting_id IS NULL"
+)
+
+
+def get_all_needing_requirements(limit: int | None = None) -> list[dict]:
     """
     Real (role_category not in "other"/"unknown") classified postings with no
     posting_requirements row yet, oldest-first by fetched_at — same fairness
@@ -109,17 +114,64 @@ def get_all_needing_requirements() -> list[dict]:
     Skills) isn't even known yet. "unknown" excluded 2026-08-11 for the same
     reason "other" always was. See backend/specs/market-health/api.md —
     Business Logic — Requirements extraction.
+
+    `limit` — cap the result (still oldest-first). Used by the Batch catch-up
+    lane to take at most MAX_BATCH_POSTINGS per job.
     """
+    sql = f"""
+        SELECT rp.id, rp.source, rp.raw_response, c.role_category, c.track, c.specialization
+        FROM raw_postings rp
+        JOIN classifications c ON c.posting_id = rp.id
+        LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+        WHERE {_NEEDING_REQUIREMENTS_WHERE}
+        ORDER BY rp.fetched_at ASC
+    """
+    params: tuple = ()
+    if limit is not None:
+        sql += " LIMIT %s"
+        params = (limit,)
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [
+        {
+            "id": row[0], "source": row[1], "raw_response": row[2],
+            "role_category": row[3], "track": row[4], "specialization": row[5],
+        }
+        for row in rows
+    ]
+
+
+def count_needing_requirements() -> int:
+    """The requirements-extraction backlog size — the number the pipeline acts
+    on and the admin Overview shows. Same eligibility rule as
+    get_all_needing_requirements(), so the two can never disagree."""
+    with get_connection() as conn:
+        return conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+            WHERE {_NEEDING_REQUIREMENTS_WHERE}
+            """
+        ).fetchone()[0]
+
+
+def get_postings_by_ids(posting_ids: list[str]) -> list[dict]:
+    """get_all_needing_requirements()-shaped rows for a specific id list —
+    used by the Batch catch-up collector to rebuild skill_group context for a
+    finished job's postings. Order is not guaranteed."""
+    if not posting_ids:
+        return []
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT rp.id, rp.source, rp.raw_response, c.role_category, c.track, c.specialization
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
-            LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
-            WHERE c.role_category NOT IN ('other', 'unknown') AND pr.posting_id IS NULL
-            ORDER BY rp.fetched_at ASC
-            """
+            WHERE rp.id = ANY(%s)
+            """,
+            (posting_ids,),
         ).fetchall()
     return [
         {

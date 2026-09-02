@@ -14,12 +14,38 @@
   <div class="field-row"><div class="field-label">Classified</div><div class="field-value">{{ run.total_classified }} (cache hits {{ run.cache_hits }}, heuristic-filtered {{ run.heuristic_filtered }}, LLM {{ run.llm_classified }})</div></div>
   <div class="field-row"><div class="field-label">Other rate</div><div class="field-value">{{ (run.other_rate * 100) | round(1) }}% ({{ run.other_count }})</div></div>
   <div class="field-row"><div class="field-label">Classification budget reached</div><div class="field-value">{{ 'Yes' if run.budget_reached else 'No' }} ({{ run.llm_requests_used }} requests used)</div></div>
-  <div class="field-row"><div class="field-label">Requirements extracted</div><div class="field-value">{{ run.requirements_extracted }}</div></div>
+  <div class="field-row"><div class="field-label">Requirements extracted</div><div class="field-value">{{ run.requirements_extracted }} (interactive){% if run.batch_collected %} + {{ run.batch_collected }} (batch){% endif %}</div></div>
   <div class="field-row"><div class="field-label">Requirements budget reached</div><div class="field-value">{{ 'Yes' if run.requirements_budget_reached else 'No' }} ({{ run.requirements_requests_used }} requests used)</div></div>
+  <div class="field-row"><div class="field-label">Requirements phase</div><div class="field-value">
+    {% if run.requirements_phase == 'interactive_failed' %}<span class="badge error">interactive failed</span> — the interactive extraction lane crashed or exhausted retries this run
+    {% elif run.requirements_phase == 'batch_submit_failed' %}<span class="badge error">batch submit failed</span> — could not submit a batch job this run (retried next run)
+    {% elif run.requirements_phase == 'batch_collect_failed' %}<span class="badge error">batch collect failed</span> — could not collect a finished batch this run (retried next run)
+    {% elif run.requirements_phase == 'nothing_to_do' %}<span class="badge neutral">nothing to do</span> — no backlog and no batch in flight
+    {% else %}<span class="badge success">ok</span>{% endif %}
+  </div></div>
   {% if run.error_message %}
   <div class="field-row"><div class="field-label">Error</div><div class="field-value">{{ run.error_message }}</div></div>
   {% endif %}
 </div>
+
+{% if submitted_batch or run.batch_collected %}
+<div class="card">
+  <h2>Batch activity</h2>
+  {% if run.batch_collected %}
+  <div class="field-row"><div class="field-label">Collected</div><div class="field-value">{{ run.batch_collected }} postings from a finished batch job</div></div>
+  {% endif %}
+  {% if submitted_batch %}
+  <div class="field-row"><div class="field-label">Submitted</div><div class="field-value">
+    Batch #{{ submitted_batch.id }} — {{ submitted_batch.item_count }} postings,
+    <span class="badge {{ 'success' if submitted_batch.state == 'collected' else ('error' if submitted_batch.state == 'failed' else 'neutral') }}">{{ submitted_batch.state }}</span>
+  </div></div>
+  <div class="field-row"><div class="field-label">Estimated cost</div><div class="field-value">${{ '%.4f' | format(submitted_batch.est_cost_usd) }}{% if submitted_batch.actual_cost_usd is not none %} (actual ${{ '%.4f' | format(submitted_batch.actual_cost_usd) }}){% endif %}</div></div>
+  <div class="field-row"><div class="field-label">Submitted at</div><div class="field-value">{{ submitted_batch.submitted_at }}</div></div>
+  {% if submitted_batch.completed_at %}<div class="field-row"><div class="field-label">Completed at</div><div class="field-value">{{ submitted_batch.completed_at }}</div></div>{% endif %}
+  {% if submitted_batch.error %}<div class="field-row"><div class="field-label">Batch error</div><div class="field-value">{{ submitted_batch.error }}</div></div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
 
 {% if run.anomalies %}
 <div class="card">

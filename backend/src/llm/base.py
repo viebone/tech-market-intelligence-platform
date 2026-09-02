@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Protocol
+from typing import Any, AsyncIterator, Callable, Literal, Protocol
 
 
 @dataclass
@@ -92,4 +92,73 @@ class LLMProvider(Protocol):
         what was actually searched and found; never fabricated. Never combined
         with custom function tools in the same call.
         """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Batch processing — a distinct capability from interactive LLMProvider calls.
+# An asynchronous job lifecycle (submit -> poll -> fetch), not request/response,
+# so it is its own Protocol. Not every provider implements it. See
+# backend/specs/market-health/api.md — Tech Decisions — BatchProvider, and
+# changes/2026-09-01-requirements-backlog-batch-catchup.md.
+# ---------------------------------------------------------------------------
+
+# Provider-neutral job state. Every adapter maps its provider's own state names
+# onto exactly these four — the pipeline never sees a provider's raw enum.
+BatchState = Literal["submitted", "running", "succeeded", "failed"]
+
+
+@dataclass
+class BatchRequest:
+    """One unit of work in a batch job. The same three things
+    LLMProvider.complete() takes, plus a caller-chosen id to map the result
+    back (here: a synthetic per-prompt id; the posting ids are inside `prompt`
+    and echoed back by the model, same as the interactive path)."""
+    custom_id: str
+    prompt: str
+    system: str = ""
+
+
+@dataclass
+class BatchResult:
+    """One response from a finished batch job. Exactly one of `text` / `error`
+    is set. `text` is the raw model output — the caller parses/validates it
+    with the same code path it uses for interactive responses."""
+    custom_id: str
+    text: str | None = None
+    error: str | None = None
+
+
+class BatchProvider(Protocol):
+    """
+    Protocol for a provider's batch API. Adapters live in the same
+    llm/{provider}.py file as that provider's LLMProvider adapter.
+
+    Provider and model are named explicitly at the call site, same as
+    LLMProvider:
+
+        batch = providers.batch("gemini", "gemini-3.6-flash",
+                                api_key=os.environ["GEMINI_API_KEY_REQUIREMENTS"])
+        job_ref = await batch.submit(requests)
+        ...
+        if await batch.poll(job_ref) == "succeeded":
+            results = await batch.fetch(job_ref)
+
+    No provider SDK type ever crosses this boundary — `BatchRequest`,
+    `BatchResult`, and `BatchState` are all defined here.
+    """
+
+    async def submit(self, requests: list[BatchRequest]) -> str:
+        """Create the batch job. Returns the provider's own job identifier —
+        persist it immediately (the batch API is not idempotent)."""
+        ...
+
+    async def poll(self, job_ref: str) -> BatchState:
+        """Current state of the job. `succeeded` / `failed` are terminal."""
+        ...
+
+    async def fetch(self, job_ref: str) -> list[BatchResult]:
+        """Results, one per submitted request. Only valid once poll() returned
+        `succeeded`. A provider that partially succeeded returns `error`-bearing
+        `BatchResult`s for the failed units rather than omitting them."""
         ...
