@@ -4,7 +4,7 @@ date: 2026-08-29
 trigger-type: internal
 change-type: technical-refactor
 outcome: llm-spend-is-bounded-and-isolated
-status: in-progress
+status: complete
 ---
 
 # Change Request: Isolate `/api/chat` onto a free-tier Gemini project
@@ -152,14 +152,23 @@ project/tier mapping), product `CLAUDE.md` (key/project notes).
     `EXTRACTION_MODEL` pin above** — local one-batch run 2026-09-01 with
     `gemini-3.6-flash`: 3 extracted, 1 request, stale failure rows cleared, real
     `work_arrangement` parsed. Auth on the swapped `…dC4T4Q` key confirmed.
-  - **Still TODO (user):** confirm `GEMINI_API_KEY_REQUIREMENTS` is present on the
-    **`job-sync`** service (DB shows it was as of run 49; user reports it missing
-    now — re-check `job-sync`, not `api`). Then one clean cron run with the pinned
-    model closes this step.
-  - **Observability gap found (defer to follow-on CR):** a run where requirements
+  - **Resolved 2026-09-02:** `GEMINI_API_KEY_REQUIREMENTS` **is** on `job-sync`
+    (verified via `get-service-config`; added 2026-08-30). Production cron **run
+    50 (2026-09-02): 56 requirements extracted, 0 failures**, backlog 1,651 →
+    1,629, all on the prepaid key. Requirements extraction working end-to-end in
+    production.
+  - **Pin deployment:** `job-sync` had automatic deployments **off**, so commit
+    `ddb68b3` (the `EXTRACTION_MODEL` pin) never reached it — run 50's rows are
+    stamped `gemini-flash-latest`. User enabled auto-deploy for `job-sync` →
+    `main` on 2026-09-02 (DEPLOYMENT.md Gotchas #2 updated). This CR's close-out
+    push carries `ddb68b3` to `job-sync`; the first cron run after it will stamp
+    `gemini-3.6-flash`. `gemini-flash-latest` in the interim is acceptable (it
+    succeeded runs 48 & 50, failed run 49 — ~2 days in 3).
+  - **Observability gap found (defer to follow-on):** a run where requirements
     extraction crashes still records `status: partial`,
     `requirements_extracted: 0`, `error_message: None` — indistinguishable from
-    "nothing to do" without checking `posting_requirements_failures`.
+    "nothing to do" without checking `posting_requirements_failures`. Recorded in
+    `changes/2026-09-01-requirements-backlog-batch-catchup.md` scope.
 - [x] **Step 8 — Rotate the exposed keys.** ✅ 2026-08-29 — **decided: deferred.**
   Both `…1uPQZA` and `…dC4T4Q` appeared in the working-session transcript. Not
   rotated now: `…1uPQZA` is on the free project (cannot bill); `…dC4T4Q` is on the
@@ -169,10 +178,20 @@ project/tier mapping), product `CLAUDE.md` (key/project notes).
   `GEMINI_API_KEY` and `GEMINI_API_KEY_REQUIREMENTS`. Revisit rotation of
   `…dC4T4Q` in the follow-on spend-ledger change **if** the monthly budget is
   raised meaningfully.
-- [ ] **Step 9 — Close + hand off.** Mark this CR `complete`. Open the follow-on
-  CR: app-level spend ledger + single monthly ceiling + admin-dashboard spend
-  panel + safe raising of throughput budgets (rest of
-  `llm-spend-is-bounded-and-isolated`).
+- [x] **Step 7 (cont.) — verification complete 2026-09-02.** Chat: verified on
+  `gemini-3.6-flash` (Step 6). Jobs pipeline: run 50 extracted 56 requirements +
+  61 classifications on the prepaid keys, 0 failures. The `ddb68b3` pin deploys
+  to `job-sync` with this CR's close-out push (auto-deploy now on); a follow-up
+  cron confirms the `gemini-3.6-flash` stamp — tracked as a one-line check in
+  `changes/2026-09-01-requirements-backlog-batch-catchup.md`.
+- [x] **Step 8 — Rotate the exposed keys.** ✅ deferred (see above).
+- [x] **Step 9 — Close + hand off.** ✅ 2026-09-02. CR `complete`. Follow-on work:
+  - `changes/2026-09-01-requirements-backlog-batch-catchup.md` (triaged) — Batch
+    API catch-up for the requirements backlog. Also carries the observability-gap
+    fix and the `gemini-3.6-flash`-on-job-sync confirmation.
+  - Still open against `llm-spend-is-bounded-and-isolated`: the app-level spend
+    ledger + single monthly $ ceiling + admin-dashboard spend panel + safe
+    raising of throughput budgets. Not yet a CR — open one when picked up.
 
 ## Decision Log
 - 2026-08-29: Triaged against a **new** outcome

@@ -47,7 +47,7 @@ projects, deliberately, by billing tier:
 |---|---|---|---|---|
 | `GEMINI_API_KEY` | `gen-lang-client-0003173949` | **Free** — structurally cannot spend | `api` (`/api/chat`, reasoning trace) | `gemini-3.6-flash` |
 | `GEMINI_API_KEY_CLASSIFICATION` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (classification) | `gemini-2.5-flash` |
-| `GEMINI_API_KEY_REQUIREMENTS` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (requirements extraction) | `gemini-flash-latest` |
+| `GEMINI_API_KEY_REQUIREMENTS` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (requirements extraction) | `gemini-3.6-flash` (pinned 2026-08-30, commit `ddb68b3`) |
 
 Rationale:
 
@@ -201,12 +201,17 @@ These cost real time to figure out and will bite again if forgotten:
    the next deploy. **To change deploy config permanently, edit the file and push —
    don't change it in the dashboard and expect it to stick.**
 
-2. **Auto-deploy is off for this repo** (`viebone/tech-market-intelligence-platform`
-   has no Railway GitHub App installation). Pushing to `main` does **not**
-   automatically redeploy `job-sync`. A plain "redeploy" action in Railway re-runs the
-   *last deployed commit*, not the latest one on the branch — a new deploy must be
-   explicitly triggered against the specific commit SHA you want. Confirm the deployed
-   `commitHash` matches what you expect after any deploy.
+2. **Auto-deploy history (resolved 2026-09-02).** `job-sync` originally had no
+   automatic deployments — the Railway GitHub App was connected for `api`/`admin`
+   during the 2026-08-16 deploy but `job-sync` was left on manual. This bit
+   `changes/2026-08-29-chat-free-tier-key-isolation.md`: a `requirements.py` pin
+   (commit `ddb68b3`) deployed to `api` automatically but `job-sync` kept running
+   the older commit for days. **Fixed 2026-09-02 — `job-sync` → Settings → Source
+   now has automatic deployments on for `main`**, matching `api` and `admin`.
+   Note that enabling the toggle does *not* retroactively deploy the current HEAD
+   — it triggers on the *next* push. A plain "redeploy" in Railway re-runs the
+   *last deployed commit*, not the latest branch commit; always confirm the
+   deployed `commitHash` after a deploy.
 
 3. **A cron-scheduled service does not run on deploy.** Once `cronSchedule` is set,
    the container builds and sits idle until the next scheduled tick — it does not
@@ -318,7 +323,7 @@ is never referenced in code) rather than `admin`, unlike the tidy
 | Config file | `backend/railway.admin.json` — its own file, separate from `job-sync`'s `backend/railway.json` (see Gotchas below) |
 | Start command | `cd src && uvicorn admin_main:app --host 0.0.0.0 --port $PORT` (from `railway.admin.json`) |
 | Restart policy | `ALWAYS` — long-running web service, not a one-shot job like `job-sync` |
-| Auto-deploy | **On** for this service (unlike `job-sync`'s `main`, which has it off) — any push to `main` now deploys `admin` automatically. Since `job-sync` and `admin` both build from `main`, a push that only touches, say, `ingest.py` still triggers a rebuild of `admin` too (harmless — same image either way, just an extra build cycle). |
+| Auto-deploy | **On** — any push to `main` deploys `admin` automatically. `job-sync` was the last hold-out on manual deploys; it was switched to auto 2026-09-02 (see Gotchas #2), so all three code services (`api`, `admin`, `job-sync`) now auto-deploy from `main`. |
 | Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`. `ADMIN_COOKIE_SECURE` intentionally omitted (defaults `true` — correct in production) |
 | Domain | Railway-generated (`generate-domain`), no custom domain attached |
 
