@@ -4,7 +4,7 @@ date: 2026-09-01
 trigger-type: internal
 change-type: new-feature, api-change
 outcome: understand-market-health-before-searching
-status: triaged
+status: in-progress
 ---
 
 # Change Request: Self-healing Batch catch-up for the requirements-extraction backlog
@@ -137,29 +137,53 @@ a later addition, not a redesign.
 
 ## Execution Plan
 
-- [ ] **Step 0 — carried over from `chat-free-tier-key-isolation`.** Confirm a
-  `job-sync` cron run after commit `ddb68b3` stamps new `posting_requirements`
-  rows with `model = gemini-3.6-flash` (not the `gemini-flash-latest` alias).
-  Also fix the observability gap: a requirements-extraction crash must be
-  distinguishable from "nothing to do" in the `ingestion_runs` row (not only in
-  `posting_requirements_failures`).
-- [ ] **Step 1 — `/new-experience`.** Update `design/pipeline-visibility/experience.md`:
-  add batch-job state to the Overview and Ingestion Runs views (in flight →
-  "batch extraction running, N postings, submitted {time}"; last completed;
-  failed → visible as failure, same contract as extraction failures today).
-  Read the existing spec and revise in place. Also read `design/market-health/experience.md`
-  and confirm no change (record the check).
-- [ ] **Step 2 — `/new-backend-spec`.** Update `backend/specs/market-health/api.md`
-  and `backend/specs/pipeline-visibility/api.md` per the Specs Affected table.
-  Nail down: the `BatchProvider` protocol (three methods, provider/model named at
-  the call site, no provider types leaking); constant names/defaults
-  (`REQUIREMENTS_BATCH_MIN_BACKLOG`, `MAX_BATCH_POSTINGS`, `MAX_BATCH_USD`);
-  `batch_jobs` schema and state machine; record-then-submit ordering + the
-  next-run reconciliation rules for each partial-failure case; the token→USD
-  estimate formula; the single shared prompt/parse/validate/insert path and the
-  invariant that both lanes write identical rows; the admin read views.
-- [ ] **Step 3 — `/new-frontend-spec`.** N/A — confirm and record (no consumer
-  frontend change; admin is server-rendered).
+- [~] **Step 0 — carried over from `chat-free-tier-key-isolation`.**
+  `job-sync` deploy `4bb35f10` (commit `f230302`, incl. the `ddb68b3` pin)
+  succeeded 2026-09-02 12:36 UTC — pinned `gemini-3.6-flash` code is live.
+  **Pending:** the first cron run after this (2026-09-03 06:00 UTC) should stamp
+  new `posting_requirements` rows `model = gemini-3.6-flash`. Also in this CR's
+  scope: fix the observability gap — a requirements-extraction crash must be
+  distinguishable from "nothing to do" in the `ingestion_runs` row.
+- [x] **Step 1 — `/new-experience`.** ✅ 2026-09-02. Revised
+  `design/pipeline-visibility/experience.md` in place: new framing note (two
+  extraction lanes, both pipeline-owned, dashboard just makes combined state
+  legible); Overview gets a backlog count + batch-status line ("Batch running /
+  Last batch / Batch failed / No batch needed"); Ingestion Runs rows + detail
+  show per-run batch activity (collected / submitted / errored); batch state
+  added to the status-indicator colour rules (neutral in-flight, emerald
+  complete, red failed); 5 new edge cases incl. the interactive-crash
+  observability gap; new eval metric "is the backlog draining or stuck? < 15s".
+  No new operator controls — stays read-only. `directive: low` unchanged.
+  **`design/market-health/experience.md` — no change (checked):** its
+  requirements-answer honesty rule (User Flow 7b, line 285 — "reports
+  proportions… states the sample size… never an absolute claim") already
+  degrades gracefully on sparse data; more coverage via batch only improves the
+  inputs, it doesn't change how answers are phrased or sourced.
+- [x] **Step 2 — `/new-backend-spec`.** ✅ 2026-09-02. `backend/specs/market-health/api.md`:
+  new Data Model **BatchJob** (`batch_jobs`) with a full state-machine table
+  (incl. reconciliation rows for failed-submit and stuck-running) + orphan
+  detection; new `ingestion_runs` fields `requirements_phase` (5 values, closes
+  the crash-vs-idle gap), `batch_collected`, `batch_submitted_id`; new Business
+  Logic section **Requirements extraction — Batch catch-up lane** (3-step phase,
+  cost estimate, `MAX_BATCH_USD` abort, record-then-submit, budget independence,
+  provenance, generality); Tech Decisions — **`BatchProvider` protocol** (its own
+  Protocol, provider-neutral dataclasses, `providers.batch(...)` factory, grep
+  acceptance check) + **shared extraction path** + batch-catch-up **constants**
+  (`REQUIREMENTS_BATCH_MIN_BACKLOG` ~100, `MAX_BATCH_POSTINGS` ~500,
+  `MAX_BATCH_USD` ~$1.00, dated price constants); `init_schema()` migration note;
+  External Dependencies (batch API used only in `llm/gemini.py`);
+  `backend/BATCH_PROCESSING.md` required.
+  `backend/specs/pipeline-visibility/api.md`: `GET /admin/` gets a
+  `requirements_backlog` block (count via `get_all_needing_requirements()` +
+  current `batch_jobs` state + `expected_by`); `/admin/runs` + `/admin/runs/{id}`
+  get per-run batch activity and the `requirements_phase` failure marker; Data
+  Models + Business Logic note it reads `batch_jobs` (owned by market-health spec)
+  and never writes it.
+- [x] **Step 3 — `/new-frontend-spec`.** ✅ N/A confirmed. No consumer-facing
+  frontend change (SSE contract, market-health views untouched). The admin
+  dashboard is server-rendered Jinja in `backend/src/admin_templates/` — it has
+  no `frontend/specs/` entry by design (`changes/2026-08-13-admin-pipeline-dashboard.md`).
+  Template changes are covered by the pipeline-visibility backend spec + Step 4.
 - [ ] **Step 4 — `/implement-backend`.** In order: (a) `BatchProvider` protocol +
   `GeminiBatchAdapter` + `providers.batch()` factory; (b) extract the shared
   extraction path out of `requirements.py` (pure refactor, existing interactive

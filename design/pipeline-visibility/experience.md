@@ -25,6 +25,14 @@ plain, traditional, read-only dashboard: tables, summary numbers, and charts the
 reads and filters, not a conversation and not an editing surface. Confirmed directly with the
 stakeholder during triage.
 
+Requirements extraction runs in **two lanes**, and the operator needs to see both as one
+picture: the daily interactive extraction (bounded by a per-run cost cap) and an automatic
+**Batch catch-up** that drains whatever the daily lane couldn't reach (cheaper, slower,
+~24h turnaround — see `changes/2026-09-01-requirements-backlog-batch-catchup.md`). The
+operator never triggers or cancels either — both are pipeline-owned. The dashboard only has
+to make the combined state legible: *is everything getting extracted, and if not, is the
+catch-up working?*
+
 ---
 
 ## Information Architecture
@@ -76,8 +84,16 @@ data read directly from the pipeline's own stored results.
      silent background fact
    - Requirements/skills extraction coverage — % of eligible postings with requirements
      extracted, and Skill Group distribution across them
+   - **Requirements extraction backlog & batch status** — how many eligible postings are
+     still waiting for requirements extraction, and the state of the pipeline's Batch
+     catch-up: whether a batch job is in flight right now (how many postings it covers,
+     when it was submitted, roughly when its results are expected), or — if none is in
+     flight — when the last batch job completed and how many postings it processed, or
+     whether the last one **failed**. The operator can tell at a glance whether the
+     backlog is draining or stuck, without querying the database.
    - The most recent Ingestion Run's summary (when it ran, sources/companies attempted,
-     fetched/inserted/error counts, budget usage)
+     fetched/inserted/error counts, budget usage, and whether that run collected a
+     finished batch and/or submitted a new one)
 3. The operator can navigate to **Postings** from the sidebar to see every processed posting
    as a filterable, sortable table (see Interactions).
 4. The operator narrows the table using filters — by Role Category, Level, Track,
@@ -89,7 +105,11 @@ data read directly from the pipeline's own stored results.
    which Ingestion Run(s) touched it, and any errors recorded against it.
 6. Independently, the operator can navigate to **Ingestion Runs** from the sidebar to see the
    full run history — one row per run, with fetched/inserted/error counts and budget usage —
-   and click a run to see its per-source, per-company breakdown.
+   and click a run to see its per-source, per-company breakdown. Each run's row also shows
+   its **batch activity** for that run: whether it collected a finished batch (and how many
+   postings that added), whether it submitted a new batch (and how large), and whether a
+   batch collection or submission errored. A run that did interactive extraction and nothing
+   with batch reads plainly as that — no batch activity is a normal state, not a gap.
 7. The operator refreshes any view on demand to see the latest state. Nothing here
    auto-updates or streams live — matching `outcomes/pipeline-processing-visibility.md`'s
    explicit "periodic/on-demand refresh is sufficient" scope.
@@ -119,8 +139,12 @@ over unchanged. This is the same visual language, applied to a different layout 
   body rows, `text-xs font-medium` column headers — same tokens as the rest of the product's
   Label/Body scale. Row hover uses `gray-700` (Surface raised).
 - **Status indicators** (Requirements Status, run errors, `unknown`/failed classification
-  values) always pair colour with a text label — never colour alone, per Visual Design's
-  "What this rules out."
+  values, **batch job state**) always pair colour with a text label — never colour alone,
+  per Visual Design's "What this rules out." Batch state uses the same semantic mapping as
+  the rest of the dashboard: an in-flight batch is neutral/informational (`gray-300` with a
+  "Batch running" label — it's expected work in progress, not a warning), a completed batch
+  is `emerald-600` ("Batch complete"), a failed batch is `red-600` ("Batch failed") and
+  reads as a failure at a glance, consistent with a failed Ingestion Run.
 - **Detail view**: a single-column stacked layout of labelled fields, using the same
   Surface/card treatment (`gray-800`, `border-gray-700`, `rounded-lg`) as the rest of the
   product.
@@ -161,6 +185,12 @@ over unchanged. This is the same visual language, applied to a different layout 
 - Hover: exact extracted/eligible/pending/failed counts
 - Loading state: skeleton pulse
 - Empty state: "No postings eligible for requirements extraction yet"
+- Directly beneath the bar, a one-line **backlog & batch status** (not a chart — a
+  number plus a status badge): "{backlog} awaiting extraction" and one of:
+  "Batch running — {n} postings, submitted {relative time}, results expected within ~24h"
+  / "Last batch: {n} postings, completed {relative time}" / "Last batch failed
+  {relative time} — see Ingestion Runs" / "No batch needed" (backlog below the trigger
+  floor). This is the operator's single answer to "is the backlog draining?"
 
 ---
 
@@ -174,7 +204,8 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator types in the Postings free-text search | Table filters to postings whose title or company matches, after a short debounce |
 | Operator clicks a column header on a sortable table | Table re-sorts by that column; a second click reverses sort direction |
 | Operator clicks a posting row | Navigates to that posting's Detail view |
-| Operator clicks an ingestion run row | Expands (or navigates to) that run's per-source/per-company breakdown |
+| Operator clicks an ingestion run row | Expands (or navigates to) that run's per-source/per-company breakdown, including that run's batch activity (collected / submitted / errored) |
+| Operator hovers the backlog & batch status line on Overview | Tooltip shows the batch job's exact posting count, estimated cost, submitted/completed timestamps, and — if failed — the recorded error |
 | Operator clicks "Refresh" on any view | Re-fetches current view's data; skeleton pulse shown during the fetch; view updates in place |
 | Operator hovers a chart bar/segment | Tooltip shows exact count and percentage for that value |
 | Operator clicks a chart bar for a specific value (e.g. `unknown` Level) | Navigates to Postings, pre-filtered to that exact value |
@@ -209,6 +240,25 @@ over unchanged. This is the same visual language, applied to a different layout 
   run's row shows a mixed-status indicator, and its detail breakdown shows exactly which
   source/company pairs succeeded vs. failed — matching the existing `terms_processed` JSON
   shape already recorded in `ingestion_runs` (`backend/specs/market-health/api.md`).
+- **A batch job is in flight across a day boundary.** Overview shows "Batch running" for as
+  long as the provider takes (typically well under 24h). This is a normal state, not a
+  stuck one — the status line still shows when it was submitted so a genuinely stuck job
+  (submitted long ago, still running) is visually obvious.
+- **A batch job failed provider-side.** The last-batch status reads "Batch failed" in
+  `red-600`; the failing run's Ingestion Runs row shows the batch-submission/collection
+  error; the individual postings that were in the batch show Requirements Status "Failed"
+  with the error in their Detail view — the same surface a failed interactive extraction
+  already uses. The postings stay in the backlog and are retried, so the backlog count does
+  not drop for that batch.
+- **A batch job returned some malformed results.** Postings whose batch result failed
+  validation are treated exactly as an interactive validation failure — folded into the
+  catch-all / marked Failed per the existing extraction rules, not silently dropped. The
+  Overview backlog count reflects only what genuinely landed.
+- **The interactive run itself crashed before finishing** (e.g. the LLM provider was down).
+  The Ingestion Runs row for that run must read as a failure, distinct from a run that
+  simply had no requirements work to do — the operator can tell "extraction broke" from
+  "nothing to extract" without opening the database. (This closes an observability gap
+  found during `changes/2026-08-29-chat-free-tier-key-isolation.md`.)
 
 ---
 
@@ -219,7 +269,8 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Time to answer "what happened in the most recent run" | Observed usage / operator self-report | Under 30 seconds from opening the dashboard |
 | Clicks to reach a single posting's full detail from Overview | Observed usage | 3 clicks or fewer |
 | Frequency of falling back to direct database queries to answer a pipeline question | Operator self-report | Trends toward zero after adoption |
-| Failure/error discoverability | Observed usage | Every classification or extraction failure is visible from the dashboard without cross-referencing logs |
+| Failure/error discoverability | Observed usage | Every classification or extraction failure — interactive **or batch** — is visible from the dashboard without cross-referencing logs |
+| Time to answer "is the requirements backlog draining or stuck?" | Observed usage / operator self-report | Under 15 seconds from opening Overview |
 
 ---
 

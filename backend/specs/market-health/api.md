@@ -242,8 +242,53 @@ human happened to be watching in a terminal.
 | `requirements_extracted` | `int` | **Added 2026-08-09.** Postings that got a `posting_requirements` row this run (see Business Logic — Requirements extraction). A separate phase from classification, so this is 0 on runs that only classified without reaching the requirements phase. |
 | `requirements_requests_used` | `int` | **Added 2026-08-09.** Same discipline as `llm_requests_used`, tracked separately since requirements extraction uses its own dedicated key/budget (see Business Logic — Requirements extraction) — conflating the two would make either budget impossible to reason about independently. |
 | `requirements_budget_reached` | `bool` | **Added 2026-08-09.** Same meaning as `budget_reached`, scoped to the requirements extraction phase's own daily budget. |
+| `requirements_phase` | `"ok" \| "nothing_to_do" \| "interactive_failed" \| "batch_submit_failed" \| "batch_collect_failed"` | **Added 2026-09-01.** The outcome of this run's requirements phase. Closes the gap where a crashed extraction and an idle extraction both read as `requirements_extracted = 0` with nothing else to distinguish them (found in `changes/2026-08-29-chat-free-tier-key-isolation.md`). `interactive_failed` contributes to `status: "partial"` like a failed classification batch; the two `batch_*_failed` values do **not** by themselves make the run `partial` (the batch is retried; the run's own work succeeded). Multiple things can go wrong in one run — record the most severe (`interactive_failed` > `batch_*_failed` > `nothing_to_do` > `ok`). |
+| `batch_collected` | `int` | **Added 2026-09-01.** Postings whose requirements were inserted this run from a **finished batch job** (step 1 of the requirements phase). Distinct from `requirements_extracted`, which counts the interactive lane only, so the two never double-count. `0` when no batch finished this run. |
+| `batch_submitted_id` | `int \| None` | **Added 2026-09-01.** The `batch_jobs.id` this run submitted, or `None` if it submitted nothing (backlog below the floor, a job already in flight, or the cost estimate exceeded `MAX_BATCH_USD`). |
 | `anomalies` | `JSON` | List of flagged issue strings (see Business Logic — Anomaly flagging); empty list if none |
 | `error_message` | `str \| None` | Set only when `status` is `"failed"` |
+
+---
+
+### BatchJob (`batch_jobs` table) — added 2026-09-01
+
+One row per batch job submitted to an LLM provider's batch API to drain the
+requirements-extraction backlog (see Business Logic — Requirements extraction —
+Batch catch-up lane). At most one row is ever in an active state
+(`submitted`/`running`) at a time.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` (PK) | |
+| `provider` | `str` | e.g. `"gemini"` — which `BatchProvider` adapter owns this job. Named, not assumed, so a future provider switch is visible in the data. |
+| `model` | `str` | Concrete model the job requested, e.g. `"gemini-3.6-flash"`. |
+| `provider_job_ref` | `str \| None` | The provider's own job identifier, stored the moment `submit()` returns. `None` in the window between the row being written and `submit()` succeeding — a row that stays `None` past one run is a **failed submit** (see reconciliation). |
+| `purpose` | `str` | `"requirements"` today. Generic on purpose — a later `"classification"` / `"reprocess"` job reuses this table. |
+| `state` | `"submitted" \| "running" \| "collected" \| "failed"` | See state machine below. `submitted` = row written, provider job created (or being created). `running` = provider confirms it's processing. `collected` = results fetched, parsed, inserted, terminal. `failed` = provider-side failure or an unrecoverable submit error, terminal. |
+| `item_count` | `int` | Postings included in the job. |
+| `posting_ids` | `JSON` | The exact `raw_postings.id` list in the job — needed to record per-posting failures if the job fails, and to detect which are still outstanding. |
+| `est_cost_usd` | `float` | The pre-submit estimate that passed the `MAX_BATCH_USD` gate. |
+| `actual_cost_usd` | `float \| None` | Provider-reported actual cost when available at collection; `None` if the provider doesn't report it. |
+| `submitted_at` | `datetime` | When the row was written (just before `submit()`). |
+| `completed_at` | `datetime \| None` | When it reached `collected` or `failed`. |
+| `error` | `str \| None` | Provider error / submit error when `state = "failed"`. |
+
+**State machine**
+
+| From | To | Trigger |
+|---|---|---|
+| *(none)* | `submitted` | Requirements phase step 3: backlog ≥ floor, none in flight, estimate ≤ `MAX_BATCH_USD` → row written, then `BatchProvider.submit()` called |
+| `submitted` | `running` | A later run's step 1 polls and the provider reports the job is processing |
+| `submitted` / `running` | `collected` | Step 1 polls → finished OK → results fetched, run through the shared parse/validate/insert path, `actual_cost_usd` recorded |
+| `submitted` / `running` | `failed` | Step 1 polls → provider reports failure → `error` set, `record_extraction_failure()` for every id in `posting_ids` |
+| `submitted` (with `provider_job_ref` still `None` after its submitting run ended) | `failed` | **Reconciliation** (start of step 1): the `submit()` call never returned a ref — treat as a failed submit, mark `failed` with `error = "submit did not complete"`. The postings were never charged (no provider job exists) and remain in the backlog; step 3 is free to try again. |
+| `running` (no provider-side movement for an implausibly long time — a constant, default well beyond the provider's stated turnaround) | `failed` | **Reconciliation**: stuck job. Mark `failed`, per-posting failures recorded, postings retried. Surfaced on the dashboard as a failure, not left indefinitely "running". |
+
+**Orphan detection.** If step 1 ever finds a provider job (via the adapter) with
+no matching `batch_jobs` row, it logs a loud error and does **not** collect it —
+an orphan means the record-then-submit ordering was violated somewhere and a human
+needs to look. (This should be impossible given the ordering rule; the check
+exists because the failure mode is "silent double charge".)
 
 ---
 
@@ -712,6 +757,91 @@ which was based on a one-time migration burst, not ongoing load).
   existed did occasionally include a salary figure — confirmed during this revision's
   evidence-gathering — which is exactly the duplication this rule closes.
 
+**Requirements extraction — Batch catch-up lane (added 2026-09-01, `changes/2026-09-01-requirements-backlog-batch-catchup.md`).**
+The interactive extraction above is the **primary** lane: it runs every ingestion
+run, bounded by `MAX_BATCHES_PER_RUN` (a cost cap). Whatever it can't reach is the
+**backlog** (`get_all_needing_requirements()` count). A backlog builds whenever new
+inflow briefly exceeds the cap, or the interactive LLM endpoint is degraded for a
+stretch (the ~1,650 backlog this lane was built for accumulated during a week of
+`gemini-flash*` `503`s). The batch lane drains that backlog through the provider's
+**batch API** — ~50% of interactive per-token price, server-side queued (immune to
+the interactive-endpoint congestion), results within ~24h — and then goes dormant.
+
+*The mental model, deliberately minimal:* the daily run does what its cap allows;
+the rest is backlog; the backlog drains through the cheaper batch lane, one job at
+a time, also capped.
+
+**The `ingest.py` requirements phase becomes three steps, in this order:**
+
+1. **Collect.** If a `batch_jobs` row is in `running`/`submitted` (see Data Models
+   — BatchJob), ask the `BatchProvider` (Tech Decisions — Provider abstraction
+   layer) for its state:
+   - *finished OK* → fetch its result payload, run every result through **the same
+     `_parse` → `_validate` → `insert_requirements` path the interactive extractor
+     uses** (Tech Decisions — Shared extraction path), mark the row `collected`,
+     record `actual_cost_usd` if the provider reports it. Results that fail
+     validation are folded into `other_requirements` / defaulted exactly as an
+     interactive validation failure — never silently dropped.
+   - *finished failed* (provider-side) → mark the row `failed` with the provider
+     error; call `record_extraction_failure()` for every posting that was in the
+     batch (same failure surface interactive extraction already uses); those
+     postings stay in the normal backlog and are retried.
+   - *still running* → leave it; step 3 will not submit another.
+2. **Interactive extraction.** Unchanged — the existing per-run capped lane.
+3. **Maybe submit one batch.** If **all** of:
+   - `get_all_needing_requirements()` count `>= REQUIREMENTS_BATCH_MIN_BACKLOG`
+     (a floor — never submit a trivially small batch that the interactive lane
+     would clear tomorrow anyway), **and**
+   - no `batch_jobs` row is in `submitted` or `running` (at most one in flight),
+   then: take up to `MAX_BATCH_POSTINGS` from the backlog **oldest-first** (same
+   fairness rule as everywhere else in this pipeline); group into prompts with the
+   existing `_group_into_batches` / skill-group logic; estimate cost (below);
+   **if the estimate exceeds `MAX_BATCH_USD`, abort without submitting** and log it
+   (the interactive lane keeps chipping away; a human decides whether to raise the
+   cap); otherwise **write the `batch_jobs` row first, then call
+   `BatchProvider.submit()`** — never the reverse (the batch API is not
+   idempotent; a crash after submit but before persist must be *reconcilable*, not
+   a silent second billable job — see BatchJob reconciliation).
+
+**Cost estimate (pre-submit).** `est_cost_usd ≈ (prompt_tokens + expected_output_tokens)`
+priced at the model's published per-token rates × `0.5` (batch discount), where
+`prompt_tokens` ≈ Σ over prompts of (`_system_instruction` length + Σ posting
+`min(len(description), MAX_DESCRIPTION_CHARS)`) and `expected_output_tokens` ≈
+`item_count × PER_POSTING_OUTPUT_TOKEN_ESTIMATE`. A coarse char/4 token
+approximation is acceptable — this is a guard-rail, not an invoice. The published
+rates live in one named constant near the model constants, with a comment dating
+them and pointing at the provider's pricing page (they will drift).
+
+**Budget interaction.** The batch lane has **no relationship to
+`REQUIREMENTS_DAILY_REQUEST_BUDGET`** (that governs interactive request count).
+Batch spend is bounded only by `MAX_BATCH_USD` per job × at most one job per run,
+plus the prepaid-project balance as the hard backstop (`DEPLOYMENT.md` — Gemini
+projects & LLM billing). This lane is intentionally independent of the pending
+interactive spend-ledger work — a batch job of known size is self-bounding.
+
+**Observability fix (closes a gap found in `changes/2026-08-29-chat-free-tier-key-isolation.md`).**
+Today an `ingestion_runs` row cannot distinguish "requirements extraction
+*crashed*" from "there was *nothing to extract*" — both leave
+`requirements_extracted = 0`, `status` unaffected, `error_message` null. The
+requirements phase must now set a dedicated `requirements_phase` outcome on the run
+(see IngestionRun — Data Models): `ok` / `nothing_to_do` / `interactive_failed` /
+`batch_submit_failed` / `batch_collect_failed`. A crash in the interactive lane
+sets `interactive_failed` and contributes to `status: "partial"` the same way a
+failed classification batch does; a batch-lane failure sets the matching value but
+does **not** by itself make the run `partial` (the batch is retried, the run's own
+work succeeded).
+
+**Provenance.** `posting_requirements.model` records the concrete model used, same
+as today. Batch-lane rows and interactive-lane rows are otherwise **byte-identical**
+— the shared path guarantees it. If the batch job used a different model than the
+interactive lane, that difference shows only in `model`, honestly.
+
+**Generality.** `batch_jobs.purpose` is `"requirements"` for now — the
+classification backlog is empty and the daily title-cache keeps it that way. The
+table, the `BatchProvider` protocol, and the collect/submit/reconcile logic are
+written so a `"classification"` or `"reprocess"` purpose is a later addition, not a
+redesign.
+
 **Taxonomy reprocessing (2026-08-11) — a one-time, explicit migration, not a recurring
 pattern.** Covers how the ~5,105 already-classified postings and the ~82 already-
 requirements-extracted postings move onto this revision's taxonomy. Tracked entirely by
@@ -1010,7 +1140,7 @@ true — `ingest.py` has never been called from any request path) but in deploym
 
 | Dependency | Purpose |
 |---|---|
-| Google Generative AI Python SDK (`google-genai`) | Streaming Gemini responses for `/api/chat`; `query_market_data` tool-calling; posting classification |
+| Google Generative AI Python SDK (`google-genai`) | Streaming Gemini responses for `/api/chat`; `query_market_data` tool-calling; posting classification; **Gemini batch API** for the requirements catch-up lane (added 2026-09-01). Used **only** inside `llm/gemini.py` — see Tech Decisions — Provider abstraction layer. |
 | Google Search grounding (via `google-genai`) | Real, citable external sources for `/api/chat` questions outside the platform's own data |
 | Greenhouse Job Board API (`boards-api.greenhouse.io/v1/boards/{board_token}/jobs`) | Source of live job postings for `raw_postings` (`source: "greenhouse"`). Public, unauthenticated GET, no credentials. No documented rate limit for this endpoint (confirmed against Greenhouse's own API docs, 2026-08-03) — paced conservatively regardless (Business Logic — Ingestion). |
 | Lever Postings API (`api.lever.co/v0/postings/{site}`) | Source of live job postings for `raw_postings` (`source: "lever"`). Public, unauthenticated GET, no credentials. Documents a rate limit only for its POST application-submission endpoint (2 req/sec) — this product never calls that endpoint; the GET postings endpoint has no documented limit, paced conservatively regardless. |
@@ -1039,6 +1169,18 @@ workload's existing request-count budget (`DAILY_REQUEST_BUDGET`,
 `REQUIREMENTS_DAILY_REQUEST_BUDGET`) remains the operative spend cap and must not
 be raised. See Business Logic — Scheduled ingestion agent for why the keys are
 kept separate.
+
+The requirements **batch catch-up lane** (Business Logic — Requirements extraction
+— Batch catch-up lane, added 2026-09-01) uses `GEMINI_API_KEY_REQUIREMENTS` — same
+key, same prepaid project. Its spend is bounded per-job by `MAX_BATCH_USD` (not by
+`REQUIREMENTS_DAILY_REQUEST_BUDGET`), and the prepaid balance is the hard backstop
+for all lanes combined.
+
+**Plain-language doc:** `backend/BATCH_PROCESSING.md` (written as part of
+`/implement-backend`, same house style as `backend/AI_INTERACTION_SETTINGS.md`) —
+what the daily cap is, why a backlog forms, what the batch lane does and why it's
+cheaper, the three-step phase, the cost gate, and how to point the lane at a
+different batch provider. Numbers stay in code; the doc explains the *why*.
 
 ---
 
@@ -1130,6 +1272,18 @@ kept separate.
   deliberately separate from classification's constants (Business Logic — Requirements
   extraction) rather than reused, so the two extraction types can't silently starve each
   other's budget.
+- **Batch catch-up constants (added 2026-09-01)** — `REQUIREMENTS_BATCH_MIN_BACKLOG`
+  (floor: don't submit a batch the interactive lane would clear anyway — start
+  ~100), `MAX_BATCH_POSTINGS` (cap per job so a large backlog spreads over several
+  days and each job stays inspectable — start ~500), `MAX_BATCH_USD` (pre-submit
+  cost gate — start ~$1.00, comfortably inside the $5 prepaid balance), and the
+  dated per-token price constants used by the estimate. All named, each with a
+  one-line "why this value" comment, same convention as the constants above. The
+  *policy* (a floor, a per-job size cap, a per-job dollar gate, at most one job in
+  flight) is what this spec fixes; the numbers are tuned from real batch cost/
+  turnaround data. Batch spend is **not** governed by
+  `REQUIREMENTS_DAILY_REQUEST_BUDGET` — see Business Logic — Requirements
+  extraction — Batch catch-up lane.
 - **Industry lookup is a static Python dict, not a database table** — 35 entries, reviewed
   the same way the curated `COMPANIES` lists are, not a new schema concept. Simplicity is
   deliberate: a real company→industry mapping table would be over-engineering for 35
@@ -1147,6 +1301,11 @@ kept separate.
   `role_family_query` `DROP NOT NULL`, run as part of `init_schema()` (idempotent — safe to run
   on every startup, same as the existing `CREATE TABLE IF NOT EXISTS` calls) rather than a
   separate manual migration step.
+  - **2026-09-01 additions:** `CREATE TABLE IF NOT EXISTS batch_jobs (...)` plus
+    `ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS` for `requirements_phase`
+    (default `'ok'` for legacy rows — they predate the distinction and were not
+    crashes), `batch_collected` (default `0`), `batch_submitted_id` (nullable).
+    Same idempotent `init_schema()` discipline.
 
 **Source adapter abstraction**
 Mirrors the `LLMProvider` pattern (below) for job-data sources instead of AI providers — the
@@ -1258,6 +1417,49 @@ Adding a new provider means creating one new adapter file — no changes to endp
 business logic. The adapter is responsible for message format conversion, streaming, and
 mapping provider-specific errors to the common error surface. See `backend/specs/ai-reasoning-panel/api.md`
 for the same pattern applied to the reasoning trace feature.
+
+**`BatchProvider` — batch API abstraction (added 2026-09-01, `changes/2026-09-01-requirements-backlog-batch-catchup.md`).**
+Batch processing is a **distinct capability** from interactive `LLMProvider`
+calls — an asynchronous job lifecycle, not request/response — so it is its own
+`Protocol` in `llm/base.py`, not more methods bolted onto `LLMProvider`. Not every
+provider needs to implement it.
+
+```python
+class BatchProvider(Protocol):
+    async def submit(self, requests: list[BatchRequest]) -> str: ...   # -> provider_job_ref
+    async def poll(self, job_ref: str) -> BatchState: ...              # submitted|running|succeeded|failed
+    async def fetch(self, job_ref: str) -> list[BatchResult]: ...      # only valid once succeeded
+```
+
+- `BatchRequest` / `BatchResult` / `BatchState` are **provider-neutral** dataclasses
+  in `llm/base.py`. A `BatchRequest` carries a caller-chosen `custom_id` (the
+  `raw_postings.id`), the `prompt`, and the `system` instruction — the same three
+  things `LLMProvider.complete()` takes. A `BatchResult` carries the `custom_id`
+  back plus the raw text (or an error). No provider type — no `google.genai`
+  object, no OpenAI batch object — ever crosses this boundary.
+- `providers.batch("gemini", model, api_key=...)` is the factory (in
+  `llm/providers.py`), mirroring `providers.gemini(...)`. Switching the batch
+  provider is **one new adapter file + one line in the factory** — the
+  `ai-provider-flexibility` outcome, applied to a second capability.
+- `llm/gemini.py` gains a `GeminiBatchAdapter` implementing `BatchProvider` over
+  Gemini's batch API (JSONL request file → job → poll → results file). All of
+  Gemini's batch-specific mechanics — file upload, the `batches.create` shape,
+  polling cadence, result-file parsing — stay inside that class.
+- The pipeline (`ingest.py`, the requirements module) imports **only**
+  `BatchProvider` and the neutral dataclasses. **Acceptance check:** grep the
+  implementation diff for `google` / `genai` / a batch-API type anywhere outside
+  `llm/gemini.py` → zero hits.
+
+**Shared extraction path (added 2026-09-01).** `requirements.py`'s
+prompt-build → `_parse_response` → `_validate` → `insert_requirements` sequence is
+extracted into one callable used by **both** lanes:
+- interactive: `extract_batch()` calls it with response text from `_complete_with_retry()`
+- batch collect: the collector calls it with response text from `BatchProvider.fetch()`
+
+Both lanes therefore write **identical** `posting_requirements` / `posting_skills`
+/ `posting_languages` rows; the only legitimate difference is `model`. This is a
+pure refactor of existing interactive behaviour — verify the interactive lane is
+unchanged (same rows for the same inputs) **before** wiring the batch lane on top.
 
 **Two protocol extensions needed for this change** (both to `backend/src/llm/base.py` and the
 Gemini adapter — implementation detail of the exact method signature is left to

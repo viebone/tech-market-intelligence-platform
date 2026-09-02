@@ -58,10 +58,16 @@ no password reset flow, no refresh tokens:
 
 ## Data Models
 
-No new tables. This spec is entirely READ-only over tables already documented in
-`backend/specs/market-health/api.md`: `raw_postings`, `classifications`,
-`posting_requirements`, `posting_skills`, `posting_languages`, `ingestion_runs`. See that
-spec for full field definitions — not repeated here.
+No new tables *owned by this spec*. It is entirely READ-only over tables
+documented in `backend/specs/market-health/api.md`: `raw_postings`,
+`classifications`, `posting_requirements`, `posting_skills`, `posting_languages`,
+`ingestion_runs`, and — added 2026-09-01 — **`batch_jobs`** plus the new
+`ingestion_runs` columns `requirements_phase` / `batch_collected` /
+`batch_submitted_id`. `batch_jobs` is defined and owned by the market-health spec
+(Data Models — BatchJob); this dashboard only reads it, to render the Overview
+backlog & batch status line and per-run batch activity per
+`design/pipeline-visibility/experience.md`. See that spec for full field
+definitions — not repeated here.
 
 **One additive column, needed to honestly answer the experience spec's "which ingestion run
 touched it" requirement (`design/pipeline-visibility/experience.md`, User Flow step 5):**
@@ -183,10 +189,30 @@ breakdown, requirements coverage, and the most recent ingestion run, per
     { "version": "2026-06-13", "count": 2962, "is_current": false }
   ],
   "requirements_coverage": { "extracted": 82, "eligible": 4994, "pct": 1.6 },
+  "requirements_backlog": {
+    "count": 1629,
+    "batch": { "state": "running", "item_count": 500, "submitted_at": "2026-09-03T06:05:00Z", "est_cost_usd": 0.42, "expected_by": "2026-09-04T06:05:00Z" }
+  },
   "skill_group_distribution": [{ "value": "Frontend", "count": 340 }, "..."],
-  "latest_run": { "id": 412, "started_at": "2026-08-15T06:00:00Z", "status": "success", "total_fetched": 340, "total_inserted": 12, "total_classified": 1314, "budget_reached": true }
+  "latest_run": { "id": 412, "started_at": "2026-08-15T06:00:00Z", "status": "success", "total_fetched": 340, "total_inserted": 12, "total_classified": 1314, "budget_reached": true, "requirements_phase": "ok", "batch_collected": 0, "batch_submitted_id": 51 }
 }
 ```
+
+`requirements_backlog` (added 2026-09-01, per `design/pipeline-visibility/experience.md`
+— Overview backlog & batch status line):
+- `count` — `get_all_needing_requirements()` count. The number the operator reads
+  to know whether the backlog is draining.
+- `batch` — the current or most-recent `batch_jobs` row (see
+  `backend/specs/market-health/api.md` — Data Models — BatchJob), or `null` if a
+  batch has never been submitted. `state` is one of `submitted` / `running` /
+  `collected` / `failed`. When `collected`, also carries `completed_at` and
+  `item_count` (rendered as "Last batch: N postings, completed {relative}").
+  When `failed`, carries `error` and `completed_at` (rendered in `red-600` with a
+  link to that run). When `null` **and** `count` is below
+  `REQUIREMENTS_BATCH_MIN_BACKLOG`, the view renders "No batch needed".
+- `expected_by` — `submitted_at` + the provider's stated turnaround, shown only
+  while `submitted`/`running` so a genuinely stuck job (long past `expected_by`)
+  is visually obvious.
 
 ### GET /admin/postings
 **Purpose**: Filterable, sortable, paginated postings table, per
@@ -244,7 +270,13 @@ step 6.
 **Query params**: `page` (`int`, default `1`), `page_size` (`int`, default `25`)
 **Response**: `runs.html` — one row per run: `started_at`, `status`, `total_fetched`,
 `total_inserted`, `total_classified`, `requirements_extracted`, `budget_reached`,
-`other_rate`. Each row links to `/admin/runs/{run_id}`.
+`other_rate`, and (added 2026-09-01) `requirements_phase` + a compact **batch
+activity** cell derived from `batch_collected` / `batch_submitted_id`: e.g.
+"collected 480 · submitted #52", "submitted #52", "—" (no batch activity), or
+"batch failed" in `red-600` when `requirements_phase` is `batch_submit_failed` /
+`batch_collect_failed`. A run whose `requirements_phase` is `interactive_failed`
+shows that as a failure marker next to `status`. Each row links to
+`/admin/runs/{run_id}`.
 
 ### GET /admin/runs/{run_id}
 **Purpose**: Per-source/per-company breakdown for a single run, per
@@ -255,6 +287,14 @@ step 6.
 directly, since that JSON shape is already exactly what the run-detail view needs, no
 reshaping required. Legacy pre-2026-08-03 rows (old `{"term": ...}` shape) are rendered with
 a "legacy run format" note rather than forced into the current shape.
+
+**Batch activity (added 2026-09-01).** The detail view also shows this run's
+requirements-phase outcome (`requirements_phase`) in plain language, and — if the
+run collected and/or submitted a batch — the relevant `batch_jobs` row(s): state,
+`item_count`, `est_cost_usd` / `actual_cost_usd`, timestamps, and `error` if
+`failed`. When `requirements_phase` is `interactive_failed`, the recorded error is
+shown here too — this is the surface that makes "extraction crashed" legible
+without the database, per `design/pipeline-visibility/experience.md` — Edge Cases.
 **Errors**:
 | Code | Reason |
 |---|---|
@@ -301,6 +341,31 @@ Classification table), not duplicated as a separate constant. A row's `taxonomy_
 **Requirements coverage %** — `extracted / eligible`, where `eligible` = count of
 `classifications` rows with `role_category NOT IN ('other', 'unknown')` — same eligibility
 rule as Requirements Status above, not a separate calculation.
+
+**Requirements backlog & batch status (added 2026-09-01)** — the Overview
+`requirements_backlog` block:
+- `count` — reuse `get_all_needing_requirements()` (the pipeline's own function),
+  not a re-implemented query, so the dashboard number and the number the pipeline
+  acts on can never disagree.
+- `batch` — the single most-recent `batch_jobs` row by `submitted_at` (there is
+  at most one active; older ones are history). `expected_by` is computed as
+  `submitted_at + BATCH_PROVIDER_TURNAROUND` (a named constant, the provider's
+  stated SLA) and rendered only while `submitted`/`running`.
+- "No batch needed" vs "no batch yet": render "No batch needed" only when there
+  is no active batch **and** `count < REQUIREMENTS_BATCH_MIN_BACKLOG`; otherwise
+  show the last batch's terminal state (or, on a brand-new deployment with no
+  `batch_jobs` rows at all and a below-floor backlog, "No batch needed").
+- This view triggers/cancels nothing — it is read-only over `batch_jobs`, which
+  the `job-sync` pipeline writes.
+
+**Per-run batch activity (added 2026-09-01)** — for `/admin/runs` rows and
+`/admin/runs/{run_id}`: read `requirements_phase`, `batch_collected`,
+`batch_submitted_id` straight off the `ingestion_runs` row; for the detail view,
+join `batch_submitted_id` and any `batch_jobs` row whose `collected` transition
+happened during that run's window to show the full job. A run with
+`requirements_phase = 'interactive_failed'` renders as a failure regardless of its
+`status` value (the two can legitimately differ — see
+`backend/specs/market-health/api.md` — IngestionRun).
 
 **Postings query construction** — filters build a `WHERE` clause from a fixed, named set of
 optional exact-match params (never raw user-supplied SQL fragments); `sort` is validated
