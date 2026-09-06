@@ -33,10 +33,54 @@ from models import (
     PostingPeriod,
     SearchImplication,
 )
+from curated_answers import suggestions as curated_suggestions
+from market_stories import build_welcome, get_story, list_stories
 
 router = APIRouter()
 
 VALID_PERIODS = {"3m", "6m", "12m"}
+
+
+# ---------------------------------------------------------------------------
+# Welcome (pinned; not a story-catalogue entry — see market_stories.build_welcome)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/market-health/welcome")
+def get_market_health_welcome() -> JSONResponse:
+    """Platform inventory + current story-catalogue shortcuts for 'About this platform'."""
+    return JSONResponse(content=build_welcome())
+
+
+# ---------------------------------------------------------------------------
+# Chat suggestions — the curated instant-answer catalogue's questions, for the
+# frontend's suggested-question chips. Metadata only, no answers, no model.
+# See curated_answers.py and changes/2026-09-03-chat-resilience-and-instant-answers.md.
+# ---------------------------------------------------------------------------
+
+@router.get("/api/market-health/chat-suggestions")
+def get_chat_suggestions() -> JSONResponse:
+    """The curated instant-answer questions (id + question), in catalogue order."""
+    return JSONResponse(content=curated_suggestions())
+
+
+# ---------------------------------------------------------------------------
+# Data stories
+# ---------------------------------------------------------------------------
+
+@router.get("/api/market-health/stories")
+def get_market_health_stories() -> JSONResponse:
+    """Return predefined story metadata without calculating an answer."""
+    return JSONResponse(content=list_stories())
+
+
+@router.post("/api/market-health/stories/{story_id}")
+def post_market_health_story(story_id: str) -> JSONResponse:
+    """Execute a predefined story against the current owned-data snapshot."""
+    try:
+        story = get_story(story_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown market-health story: {story_id}")
+    return JSONResponse(content=story)
 
 
 # ---------------------------------------------------------------------------

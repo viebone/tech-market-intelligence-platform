@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-08-16
+updated: 2026-09-04
 ---
 
 # Market Health — Backend Architecture Spec
@@ -333,9 +333,9 @@ exists because the failure mode is "silent double charge".)
 
 ### GET /api/market-health/openings
 
-**Purpose**: Returns monthly job-opening counts per Role Category (Designer, Product Manager,
-Engineer) for the trend chart, plus a written trend summary, sourced from live-ingested,
-LLM-classified postings.
+**Purpose**: Returns weekly or monthly job-opening counts per Role Category (Designer, Product
+Manager, Engineer) for the trend chart, plus a written trend summary, sourced from
+live-ingested, LLM-classified postings.
 
 > **Note**: this is the endpoint the shipped frontend actually calls. This spec previously
 > described a `GET /api/market-health/trends` endpoint with a `series`/`roleCategory` shape —
@@ -350,15 +350,17 @@ LLM-classified postings.
 **Query params**:
 | Param | Type | Default |
 |---|---|---|
-| `range` | `"this_year" \| "past_5_years" \| "all_time"` | `"this_year"` |
+| `range` | `"six_months" \| "this_year" \| "past_5_years" \| "all_time"` | `"six_months"` |
+| `granularity` | `"week" \| "month"` | `"week"` |
 
 **Response**:
 ```json
 {
-  "range": "this_year",
+  "range": "six_months",
+  "granularity": "week",
   "data": [
-    { "month": "2026-01", "designer": 34, "product_manager": 21, "engineer": 89 },
-    { "month": "2026-02", "designer": 41, "product_manager": 19, "engineer": 96 }
+    { "period": "2026-08-03", "designer": 8, "product_manager": 5, "engineer": 21 },
+    { "period": "2026-08-10", "designer": 11, "product_manager": 7, "engineer": 26 }
   ],
   "summary": "Over this period, Designer openings are up 21%, Product Manager openings have stayed roughly flat, and Engineer openings are down 8%. Counts reflect postings first observed by live daily ingestion, not a backfilled historical series.",
   "as_of": "2026-07-19",
@@ -371,14 +373,42 @@ breakdown — matching this endpoint's existing behaviour of blending all source
 series. A user who wants to know which specific source contributed to a number uses the chat
 endpoint's per-turn provenance (Business Logic — Conversational data sourcing), not this field.
 
-One row per calendar month that has at least one non-`"other"` classified posting.
-`range=all_time` returns every month since ingestion started — there is no earlier data,
-since Adzuna's API cannot answer "what was live in the past" (see Business Logic below).
+One row per week or month bucket that has at least one classified posting in a **plotted**
+Role Category (`"Designer"`, `"Product Manager"`, `"Engineer"` — `"other"` and `"unknown"`
+are both excluded, since neither is a line on the chart and counting them would make the
+summary's totals disagree with the lines). Weeks begin on Monday. `range=six_months` returns
+the most recent six calendar months (current month plus the five before it), and works
+identically for `week` and `month` granularity. `range=all_time` returns every bucket since
+ingestion started — there is no earlier data, since the source APIs cannot answer "what was
+live in the past" (see Business Logic below).
+
+**Collection baseline (corrected 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`).**
+The baseline is the **earliest calendar date** any posting was observed —
+`min(raw_postings.fetched_at::date)`. Every posting `fetched_at` on that date is excluded from
+trend counts: the first crawl is a one-time bulk load of whatever the sources had open at that
+moment (collection setup), not market activity in that period. The earliest bucket returned
+therefore starts on the day after the baseline date.
+
+This replaces the previous rule, which keyed the baseline on
+`raw_postings.ingestion_run_id` matching "the earliest ingestion run with `total_inserted > 0`".
+That column was added 2026-08-11 and never backfilled — it is NULL on ~94% of production rows —
+so keying on it silently dropped almost the entire dataset. Trend aggregation **must not**
+filter or group on `ingestion_run_id` at all.
+
+**Complete periods only.** The in-progress bucket (the current week or month, whose period has
+not fully elapsed) is excluded from `data` entirely, not just from the summary. A part-period
+plotted at full scale beside a complete one reads as a cliff — a 4-day September next to a
+31-day August looks like an ~80% drop. `data` therefore ends at the most recent fully elapsed
+bucket; `data` can legitimately have zero or one row when the platform is only days or weeks
+past its baseline.
+
+The summary always names the selected range and granularity, and states that counts begin
+after the baseline date.
 
 **Errors**:
 | Code | Reason |
 |---|---|
-| 400 | Invalid `range` value |
+| 400 | Invalid `range` or `granularity` value |
 | 503 | Database unavailable |
 
 ---
@@ -430,8 +460,15 @@ its shape.
 **Errors**:
 | Code | Reason |
 |---|---|
-| 400 | Malformed messages array |
-| 502 | Gemini API unreachable |
+| 400 | Malformed messages array, empty content, a role other than `user`/`assistant`, the first message not `user`, or a message over `MAX_USER_MESSAGE_CHARS` |
+
+**Corrected 2026-09-04** (`changes/2026-09-03-chat-resilience-and-instant-answers.md`, Step 0)
+— there is no `502` row. Once the stream starts (headers sent, always `200`), a model failure
+can never become an HTTP error status — SSE has already committed to `200`. Every provider
+failure surfaces as a **text chunk inside the stream** instead: see Business Logic — Chat
+model tier and retry, below, for the calm "briefly unavailable" message. This corrects the
+previous version of this row, which described a `502` that the implementation never actually
+returns.
 
 ---
 
@@ -884,20 +921,40 @@ anticipates (Data Models — Classification, above), not a violation of it.
 
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their
-`classifications` row, excluding `role_category: "other"` — grouped by `role_category` and
-the calendar month of `fetched_at`, then pivots into one row per month with a column per
-Role Category. This counts postings newly observed by the ingestion pipeline in that month,
-not "total open positions" at any point in time: an inherent limit shared by all three source
-platforms' public APIs (none support a historical date-range query — each only ever returns
-what's currently live — confirmed empirically for Adzuna and, separately, for Greenhouse,
-Lever, and Ashby). Because ingestion runs daily with dedupe-by-id, each posting is counted
-exactly once, in the month it was first captured.
+`classifications` row, keeping only `role_category` in `{"Designer", "Product Manager",
+"Engineer"}` (`"other"` and `"unknown"` are both excluded) — grouped by `role_category` and
+the `week` or `month` bucket of `fetched_at` (`date_trunc`, weeks starting Monday), then
+pivots into one row per bucket with a column per Role Category. This counts postings newly
+observed by the ingestion pipeline in that bucket, not "total open positions" at any point in
+time: an inherent limit shared by all three source platforms' public APIs (none support a
+historical date-range query — each only ever returns what's currently live — confirmed
+empirically for Adzuna and, separately, for Greenhouse, Lever, and Ashby). Because ingestion
+runs daily with dedupe-by-id (`ON CONFLICT (id) DO NOTHING`, so `fetched_at` is the
+first-seen time and never moves), each posting is counted exactly once, in the bucket it was
+first captured.
+
+Postings whose `fetched_at::date` equals the baseline date (`min(fetched_at::date)` across
+`raw_postings`) are excluded before bucketing — see the Collection baseline note under
+`GET /api/market-health/openings` above. The aggregation never references
+`ingestion_run_id`. Range filtering is applied after bucketing: compare the bucket key to a
+cutoff derived from today, and make the cutoff and the bucket key the same shape (both
+`YYYY-MM-DD` for week, both `YYYY-MM` for month) so a lexical comparison can't drop a
+boundary bucket.
 
 **Written summary generation**
 The `summary` string is generated deterministically (percentage change from the first to
-last month in the requested range, per Role Category), not by an LLM call — matching the
-pattern already used by this endpoint before this change (no `/api/chat` call was ever wired
-into the opening summary). Extending it to an LLM-generated summary is out of scope here.
+last **complete** bucket in the requested post-baseline range, per Role Category), not by an
+LLM call — matching the pattern already used by this endpoint before this change (no
+`/api/chat` call was ever wired into the opening summary). Extending it to an LLM-generated
+summary is out of scope here.
+
+A bucket is complete when its whole period has elapsed: for `week`, the bucket's Sunday is
+before today; for `month`, the bucket is earlier than the current calendar month. The
+in-progress bucket is excluded from `data` altogether (see **Complete periods only** under the
+endpoint), so the first/last comparison is simply over the returned rows, dropping the first
+one when it contains the baseline day. When fewer than two such buckets exist, `summary`
+states that the series is too short to show a trend yet (corrected 2026-09-04 —
+`changes/2026-09-04-chart-baseline-and-render-fixes.md`).
 
 **Market Health Signal verdict (v1 mock rule)**
 The verdict is pre-set in the mock data. When a real data source is connected, the rule is:
@@ -1042,6 +1099,79 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    blended into one statement — and must decline to judge (data only) if `total_matching`
    from `query_requirements_data` is too small to support a confident conclusion (exact
    threshold is an implementation/prompt-tuning detail, not spec'd as a precise number here).
+
+**Curated instant-answer engine — tried before any model call (added 2026-09-06 — Steps 13/15
+of `changes/2026-09-03-chat-resilience-and-instant-answers.md`).** Before Stage 1 runs, the
+user's last message is matched against a **curated catalogue** of well-understood questions.
+On a match, the answer is built **deterministically in code** — no model call — and streamed
+back; the model stages are skipped entirely.
+
+- **Module**: `backend/src/curated_answers.py`. The catalogue is a module-level tuple; each
+  entry is `{id, question (canonical), match_phrasings (list[str]), builder}`. `builder` is a
+  plain function that runs one or more of the real `query_market_data` /
+  `query_compensation_data` / `query_requirements_data` functions (the same ones the model
+  stages expose as tools) and returns `(answer_text, list[ToolCall])` — the tool calls feed
+  the reasoning trace, exactly as a model answer's do.
+- **Matching** is intentionally simple and conservative: normalise (lowercase, collapse
+  whitespace, strip trailing punctuation) and match if the normalised message equals, or
+  clearly contains, a `question`/`match_phrasings` string. Anything ambiguous does **not**
+  match and falls through to the model — a wrong curated answer is worse than a slow one.
+- **Honesty parity is mandatory.** A curated answer states the data's time window (from the
+  query's `data_range`), uses proportions with their denominator (never absolutes), and keeps
+  structured vs. parsed compensation separate — the same rules
+  `design/market-health/experience.md` puts on a model answer (User Flow 7c). The builders
+  encode these; a builder that can't honour them for its question doesn't belong in the
+  catalogue.
+- **Live, never stored.** The catalogue fixes the *questions and their query + template*; the
+  numbers are computed from current data every time. The same curated question a week apart
+  returns two different, current answers.
+- **Reasoning trace**: `sources_and_tools` lists the real `query_*` call(s) the builder ran;
+  `reasoning_steps` ends with an explicit "No language model was used for this answer."
+- **Adding a question is a one-file change**: one catalogue entry + its builder + a focused
+  test. No change to the model stages, the tool interface, or the stream contract.
+
+### GET /api/market-health/chat-suggestions
+
+**Purpose**: the curated catalogue's questions, for the frontend's suggested-question chips.
+
+**Auth required**: no (v1)
+
+**Response**: `{ "suggestions": [{ "id": "roles-growing", "question": "Which roles are growing right now?" }, ...] }`
+— presentation metadata only, no answers. Order is the catalogue's own order.
+
+**Chat model tier and retry — REVISED 2026-09-06: paid-only (Step 13 of
+`changes/2026-09-03-chat-resilience-and-instant-answers.md`).** A question that does **not**
+match the curated catalogue falls through to the model stages (Stage 1 data-tool query, the
+optional Stage 2 search grounding, Stage 3 synthesis stream). Each of those calls goes through
+**one** model tier — there is no free tier and no tier list:
+
+- `providers.gemini("gemini-3.6-flash", GEMINI_API_KEY_CHAT_PAID)` — chat's dedicated,
+  isolated, spend-capped paid project (outcome `llm-spend-is-bounded-and-isolated`). This is
+  the only model `/api/chat` uses. `GEMINI_API_KEY` (the old free-tier key) is no longer read
+  by `/api/chat`.
+- **Why paid-only** (was free-first until 2026-09-06): the free-tier project's
+  `gemini-3.6-flash` allows only **20 requests/day** (`generate_content_free_tier_requests`,
+  Google's own payload) — ~6 chat turns total per day — and is slower and less predictable
+  than paid. "Free-first" also wasted ~8s per request retrying a spent free tier. See this
+  CR's Decision Log (2026-09-06 entries).
+- **Retry**: within a call, a transient error (`429`/`RESOURCE_EXHAUSTED`, `5xx`/`UNAVAILABLE`,
+  timeout, connection) is retried up to twice with a short backoff (1s, then 2s) —
+  interactive-appropriate, much shorter than the batch pipeline's 5×60s. A non-transient error
+  (a real `400`, a bug) raises immediately.
+- **Daily cap**: every model call that reaches the paid tier is counted in the `chat_paid_usage`
+  table (one row per UTC day). When today's count is at `CHAT_PAID_DAILY_REQUEST_CAP`
+  (`ai_interaction_settings.py`, 100/day) the model stages are not attempted at all —
+  chat behaves as if the model were unavailable.
+- **Degraded message**: when the model is genuinely unavailable after retries, or the daily
+  cap is spent, the synthesis stage yields one calm message instead of a hang or a bare
+  error: *"The assistant is briefly unavailable — please try again in a moment. Meanwhile,
+  the suggested questions below answer instantly, and 'About this platform' / 'What we know
+  about the market' in the task panel never use AI."* Stage 1/2 failures degrade quietly
+  (Stage 3 still runs with whatever it has, or states plainly it has nothing).
+
+Retry is a small helper in `llm/chat_fallback.py` (provider-agnostic — operates only on
+`llm.base.LLMProvider`). It no longer does multi-tier failover; that plumbing was removed
+with the free tier.
 
 **Bounded conversation history, not the full transcript.** Each stage gets only as much
 recent conversation as it actually needs, not everything since the conversation began — see
@@ -1477,3 +1607,177 @@ Gemini adapter — implementation detail of the exact method signature is left t
    with the `query_market_data` function tool, a separate call with search grounding enabled —
    never both tools in the same call. This is new surface on the protocol, not a change to
    `stream()`/`complete()`'s existing behavior for callers that don't need it.
+
+## Data stories
+
+See `design/market-health/data-stories.md` for the user-facing catalogue and first story
+contract. Data stories are resolved before any model call.
+
+### GET /api/market-health/stories
+
+**Purpose**: Return the predefined story catalogue used to offer fast, common questions.
+
+**Auth required**: no (v1)
+
+**Response**:
+```json
+{
+  "stories": [
+    {
+      "id": "market-data-briefing",
+      "display_name": "What we know about the market",
+      "question": "What do we currently know about the tech job market?",
+      "example_phrasings": [
+        "Give me an overview of the tech job market",
+        "What does your job market data show?"
+      ]
+    }
+  ]
+}
+```
+
+`display_name` (added 2026-09-04) is the short Task Panel label — distinct from `question`,
+which is a full sentence. Both are required per entry so the Task Panel and the Welcome (see
+Welcome, below) can be built entirely from this catalogue, with no per-story frontend copy.
+
+The catalogue response contains presentation-safe metadata only. It does not contain an
+answer or precomputed numbers.
+
+### POST /api/market-health/stories/{story_id}
+
+**Purpose**: Execute one predefined story against current platform-owned data without an LLM
+call.
+
+**Auth required**: no (v1)
+
+**Request**:
+```json
+{}
+```
+
+**Response**:
+```json
+{
+  "story_id": "market-data-briefing",
+  "question": "What do we currently know about the tech job market?",
+  "as_of": "2026-09-04T12:00:00Z",
+  "sections": [
+    {
+      "id": "coverage-window",
+      "title": "Coverage window",
+      "status": "ready",
+      "content": {
+        "first_captured_at": "2026-07-20T09:00:00Z",
+        "latest_captured_at": "2026-09-04T11:45:00Z"
+      },
+      "qualifier": "This is the platform's observation window, not the full history of the tech job market."
+    }
+  ],
+  "provenance": {
+    "sources": ["raw_postings", "classifications", "posting_skills", "posting_requirements"],
+    "model_used": false,
+    "query_time": "2026-09-04T12:00:00Z"
+  },
+  "limitations": [
+    "Coverage reflects tracked companies and sources only."
+  ]
+}
+```
+
+Each story section has `status: "ready" | "insufficient_data"`. An insufficient section
+includes a human-readable explanation and no fabricated values. The full response is current
+at request time; it is not cached as a prepared answer.
+
+### Story business logic
+
+- Match an explicit `story_id` first. For typed questions, use the catalogue's approved
+  example phrasings only; ambiguous text falls through to normal chat routing.
+- Run the story's declared aggregates against the current database snapshot. Do not invoke
+  `LLMProvider`, external search, or an ingestion adapter while rendering an answer.
+- Keep denominators visible for role, skill, compensation, and geography percentages.
+- Keep structured and parsed compensation coverage separate. Never infer a salary or merge
+  confidence levels.
+- Treat `unknown`, `other`, null, and unclassified values as coverage information rather than
+  silently assigning them to a known category.
+- Add a new story by registering one catalogue entry, its aggregate query, its deterministic
+  renderer, and focused tests. Generic routing and source adapters remain unchanged.
+
+## Welcome
+
+Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`. See
+`design/market-health/experience.md` — Opening Welcome and
+`design/market-health/data-stories.md` — Relationship to the Welcome. The welcome is the
+Task Panel's pinned, always-first, always-default item. **It is not a story-catalogue entry**
+— it has no `story_id`, is never matched by the chat router, and this endpoint's contract must
+not grow story-specific fields as the catalogue grows.
+
+### GET /api/market-health/welcome
+
+**Purpose**: Return the platform orientation shown by "About this platform" — a live data
+inventory plus a shortcut for every story currently in the catalogue.
+
+**Auth required**: no (v1)
+
+**Response**:
+```json
+{
+  "inventory": {
+    "total_postings": 1900,
+    "companies": 210,
+    "collection_started_at": "2026-08-03T09:00:00Z",
+    "role_categories": ["Designer", "Product Manager", "Engineer"],
+    "role_breakdown": [
+      { "role_category": "Engineer", "postings": 1500 },
+      { "role_category": "Product Manager", "postings": 260 },
+      { "role_category": "Designer", "postings": 140 }
+    ],
+    "signals_available": ["skills", "compensation", "location"]
+  },
+  "story_shortcuts": [
+    {
+      "id": "market-data-briefing",
+      "display_name": "What we know about the market",
+      "question": "What do we currently know about the tech job market?"
+    }
+  ],
+  "provenance": {
+    "sources": ["raw_postings", "classifications"],
+    "model_used": false,
+    "query_time": "2026-09-04T12:00:00Z"
+  },
+  "as_of": "2026-09-04T12:00:00Z"
+}
+```
+
+**Business logic**:
+- `inventory.total_postings` — `count(distinct raw_postings.id)`.
+- `inventory.companies` — `count(distinct raw_postings.company)`, non-null normalized values
+  only.
+- `inventory.collection_started_at` — `min(raw_postings.fetched_at)`; `null` if no postings
+  exist yet (see empty-collection behavior below).
+- `inventory.role_categories` — the platform's tracked Role Categories (the closed set
+  `"Designer" | "Product Manager" | "Engineer"`, same set the trend chart plots and the
+  `role_category` field uses elsewhere in this spec) — a fixed list, not derived from which
+  categories currently have postings.
+- `inventory.role_breakdown` (replaces the earlier single-fact `headline` field — revised
+  2026-09-04 for the welcome's Category Share Bar, `changes/2026-09-04-welcome-visual-data-points.md`)
+  — one row per entry in `inventory.role_categories`, each with `count(distinct rp.id)` of its
+  classified, non-`"other"`, non-`"unknown"` postings, ordered by count descending. `[]` if no
+  postings are classified yet. This is the full breakdown, not a single "largest" fact — the
+  frontend renders it directly as a share chart. It intentionally overlaps with
+  `market-data-briefing`'s fuller "roles-offered" section (which adds top titles and
+  specializations); the welcome's version is deliberately smaller.
+- `inventory.signals_available` — a fixed statement of which signal *types* exist on the
+  platform (skills, compensation, location), not counts or coverage percentages.
+- `story_shortcuts` — exactly `GET /api/market-health/stories`'s `stories` array, reduced to
+  `{id, display_name, question}`. This endpoint calls the same catalogue read
+  `GET /api/market-health/stories` uses; it does not maintain a separate list. If the catalogue
+  is empty, `story_shortcuts` is an empty array — the frontend omits the shortcut list rather
+  than rendering nothing useful.
+- No `LLMProvider`, external search, or ingestion adapter call. Computed fresh on every
+  request, not cached as a prepared answer — same freshness rule as a story.
+
+**Empty-collection behavior**: if `raw_postings` has no rows yet, `total_postings` and
+`companies` are `0`, `collection_started_at` is `null`, `role_breakdown` is `[]`, and
+`role_categories`/`signals_available`/`story_shortcuts` are unaffected (they describe what the
+platform tracks and offers, not what it has collected so far).

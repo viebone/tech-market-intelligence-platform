@@ -62,7 +62,7 @@ class LayoffSignal:
 
 @dataclass
 class OpeningDataPoint:
-    month: str            # "YYYY-MM"
+    period: str           # "YYYY-MM-DD" for week, "YYYY-MM" for month
     designer: int
     product_manager: int
     engineer: int

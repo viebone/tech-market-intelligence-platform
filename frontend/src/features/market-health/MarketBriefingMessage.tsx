@@ -1,4 +1,4 @@
-import { JobOpeningsChart, OpeningDataPoint, TimeRange } from "./JobOpeningsChart";
+import { JobOpeningsChart, OpeningDataPoint, TimeRange, Granularity } from "./JobOpeningsChart";
 
 export const OPENING_PROMPT =
   "Show me the current trend in tech job openings by role category — Designer, Product Manager, " +
@@ -10,6 +10,8 @@ export const OPENING_PROMPT =
 interface MarketBriefingMessageProps {
   range: TimeRange;
   onRangeChange: (r: TimeRange) => void;
+  granularity: Granularity;
+  onGranularityChange: (g: Granularity) => void;
   data: OpeningDataPoint[] | undefined;
   summary: string | undefined;
   isLoading: boolean;
@@ -21,6 +23,8 @@ interface MarketBriefingMessageProps {
 export function MarketBriefingMessage({
   range,
   onRangeChange,
+  granularity,
+  onGranularityChange,
   data,
   summary,
   isLoading,
@@ -50,6 +54,8 @@ export function MarketBriefingMessage({
         data={data ?? []}
         range={range}
         onRangeChange={onRangeChange}
+        granularity={granularity}
+        onGranularityChange={onGranularityChange}
         isLoading={isLoading || isFetching}
       />
 

@@ -46,3 +46,12 @@ TOOL_STAGE_HISTORY_MESSAGES = 6
 # message). Rejecting with clear feedback is both cheaper and a better
 # experience than either alternative.
 MAX_USER_MESSAGE_CHARS = 4000
+
+# Chat's paid fallback tier (changes/2026-09-03-chat-resilience-and-instant-answers.md, Step 0)
+# is a capped safety net, not a second free lane — it exists so a free-tier outage doesn't
+# take chat down, not to let cost grow with traffic. This bounds it to a small number of
+# requests per UTC day (pennies/day at typical Gemini flash-tier pricing), same mechanism as
+# the ingestion pipeline's existing daily budgets (ingestion_runs.llm_requests_used). Once
+# reached, chat behaves as if the paid tier were also unavailable for the rest of the day —
+# the free tier, and the existing data-story/welcome zero-LLM paths, are unaffected.
+CHAT_PAID_DAILY_REQUEST_CAP = 100

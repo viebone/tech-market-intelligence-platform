@@ -53,8 +53,36 @@ place, and the first runaway loop, retry storm, or bulk re-ingestion produces a
 bill the user explicitly said they need to be certain cannot happen.
 
 ## Success looks like
-- A workload that must not cost money (chat, currently) runs on a billing tier
-  where a call that would incur charges cannot succeed — verified, not assumed
+
+> **Amended 2026-09-03 (`changes/2026-09-03-chat-resilience-and-instant-answers.md`).**
+> Chat is no longer a "must never cost money" workload. The free tier could not
+> serve it reliably (persistent `503`s), so chat becomes free-tier-first with a
+> **paid fallback that lives in its own dedicated Google Cloud project**, separate
+> from every other workload, under its own per-day request cap. The isolation
+> requirement is unchanged and now applies to chat too; the "cannot bill at all"
+> requirement is replaced by "cannot bill beyond its own capped, isolated share".
+> Chat also gains a zero-LLM answer path (curated questions answered from live
+> data) that carries no cost at all and is the preferred path.
+>
+> **Further amended 2026-09-06 (same change).** After testing, the free tier is
+> removed from chat entirely — its 20-requests/day ceiling and unpredictable
+> latency made it unusable, and "free-first" wasted seconds per request retrying
+> a dead tier. Chat now runs on its **dedicated paid project only**, with **no
+> free tier**. The bullets below that say "free-tier-first" / "falls to its paid
+> project only on a hard signal" are superseded: chat's paid project is its sole
+> model tier, and the **per-day request cap (`CHAT_PAID_DAILY_REQUEST_CAP`) is the
+> spend guard** — when it is reached, chat degrades to the zero-cost curated
+> path. The isolation requirement and the "cannot bill beyond its own capped,
+> isolated share" requirement are unchanged and fully intact.
+
+- Every LLM workload runs against a credential/project scoped to that workload
+  alone — a spike or a bug in one workload cannot draw down the balance another
+  workload depends on (chat's paid fallback, classification, and requirements are
+  three separate projects)
+- The workload that should normally cost nothing (chat) runs free-tier-first and
+  falls to its paid project only on a hard availability/quota signal — never for a
+  routine answer — with a zero-cost curated-answer path tried before any model
+  call at all
 - Total LLM spend across all paid workloads cannot exceed a single configured
   monthly ceiling; when the ceiling is reached the pipeline stops itself and
   records that it stopped on purpose, the same way it already treats reaching a
@@ -68,7 +96,9 @@ bill the user explicitly said they need to be certain cannot happen.
   leaving the product (e.g. the admin dashboard) — the user never has to log
   into a cloud console to know where they stand against the budget
 - Each paid workload has its own share of the ceiling, so a heavy day for one
-  cannot starve another
+  cannot starve another (chat's paid fallback has its own per-day request cap;
+  when it is reached chat degrades to the curated-answer path rather than
+  spending past the cap)
 - Adding a new LLM-using workload requires giving it its own budgeted share —
   it cannot silently draw down an existing workload's headroom
 - Spend accounting reflects real provider-side billing, including hidden costs
@@ -83,8 +113,11 @@ bill the user explicitly said they need to be certain cannot happen.
 - Automatic switching between providers/models based on price or load (routing
   is always explicit, never cost-driven magic — consistent with
   `ai-provider-flexibility`'s own exclusion)
-- Billing/upgrading the chat workload — chat stays on the free tier "for now";
-  if that changes it is a new change request against this same outcome
+- ~~Billing/upgrading the chat workload — chat stays on the free tier "for now";
+  if that changes it is a new change request against this same outcome~~
+  **Done 2026-09-03 via `changes/2026-09-03-chat-resilience-and-instant-answers.md`**
+  — chat is now free-first with an isolated, capped paid fallback (see the
+  amendment note under "Success looks like")
 - Forecasting or optimising cost per classification over time, or a cost
   dashboard richer than "where am I against this month's budget"
 - Provisioning or managing the cloud billing account itself (attaching a card,

@@ -101,6 +101,10 @@ the system must clarify before acting.
 
 *UX anchors: Intent Surface · Aided Prompt Understanding · Delegation Boundaries*
 
+**Control density:** Keep up to two related filter groups visible at the point of use. When a
+view needs more than two filter groups, place the additional groups behind a clearly labelled
+filter control so the interface stays easy to scan.
+
 ### 2. Configurable Supervisory Control
 The user operates as a supervisor of autonomous processes, not a manual operator, with
 fine-grained control over system authority.

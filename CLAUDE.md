@@ -116,18 +116,36 @@ npm run dev
 
 **LLM / Gemini billing** (set up 2026-08-29 — see
 `outcomes/llm-spend-is-bounded-and-isolated.md`,
-`changes/2026-08-29-chat-free-tier-key-isolation.md`, and `DEPLOYMENT.md` —
-"Gemini projects & LLM billing"). Google Cloud billing is **per project**. Three
-Gemini keys, two projects:
-- `GEMINI_API_KEY` — `/api/chat` + reasoning trace — **free-tier** project
-  (`gen-lang-client-0003173949`), model `gemini-3.6-flash` (pinned — the
-  `gemini-flash-latest` alias is throttled on this project). Chat cannot incur
-  spend.
+`changes/2026-08-29-chat-free-tier-key-isolation.md`,
+`changes/2026-09-03-chat-resilience-and-instant-answers.md`, and `DEPLOYMENT.md` —
+"Gemini projects & LLM billing"). Google Cloud billing is **per project**.
+- `GEMINI_API_KEY_CHAT_PAID` — **the only model `/api/chat` uses** (revised
+  2026-09-06). Its own separate, dedicated Gemini project (never the
+  classification/requirements one — isolation is the point), model
+  `gemini-3.6-flash`, auto-recharge OFF. Bounded by `CHAT_PAID_DAILY_REQUEST_CAP`
+  (`ai_interaction_settings.py`, 100/day) tracked in the `chat_paid_usage` table —
+  when the cap is hit, chat degrades to the curated instant-answer path
+  (`curated_answers.py`, no model call) / a calm "briefly unavailable" message.
+  **Local `backend/.env`: set + verified 2026-09-06.** ⚠️ **Not yet set on the
+  Railway `api` service** — must be set there before/with the deploy. GCP project
+  id / prepaid balance: _operator to record here_.
+- `GEMINI_API_KEY` — the old **free-tier** chat key
+  (`gen-lang-client-0003173949`). **No longer used by `/api/chat`** (removed
+  2026-09-06 — its `gemini-3.6-flash` quota is only 20 requests/day, ~6 chat
+  turns, and it was slower and less predictable than paid). Left in the env for
+  now; nothing reads it. Safe to remove once confirmed unused elsewhere.
 - `GEMINI_API_KEY_CLASSIFICATION` (`gemini-2.5-flash`) and
   `GEMINI_API_KEY_REQUIREMENTS` (`gemini-flash-latest`) — the `job-sync`
   pipeline — **prepaid** project (`gen-lang-client-0963554051`), one shared
   balance. Keep auto-recharge OFF; don't raise the code's request budgets until
   the follow-on spend-ledger change lands.
+
+Chat's "super fast" path is `curated_answers.py` — common questions
+("which roles are in demand?", "what do engineers earn?", "top skills for PMs?")
+answered from the DB with **no model call**, in under a second, surfaced as
+tappable chips. Anything not in that catalogue goes to the paid model and takes
+10–30s (inherent to `gemini-3.6-flash` doing live-data tool calls). Grow the
+catalogue: one entry in `curated_answers.py` + a test.
 
 **Admin dashboard** (operator-only pipeline visibility — see
 `backend/specs/pipeline-visibility/api.md`) — a separate FastAPI app, run the

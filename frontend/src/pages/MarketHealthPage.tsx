@@ -3,22 +3,29 @@ import { useQuery } from "@tanstack/react-query";
 import { useChat } from "ai/react";
 import type { Message, JSONValue } from "ai";
 
-import { TimeRange, OpeningDataPoint } from "../features/market-health/JobOpeningsChart";
+import { TimeRange, Granularity, OpeningDataPoint } from "../features/market-health/JobOpeningsChart";
 import { TopBar } from "../features/market-health/TopBar";
-import { TaskPanel } from "../features/market-health/TaskPanel";
+import { TaskPanel, StoryMeta, WELCOME_TASK_ID } from "../features/market-health/TaskPanel";
 import { ConversationThread } from "../features/market-health/ConversationThread";
 import { MarketBriefingMessage, OPENING_PROMPT } from "../features/market-health/MarketBriefingMessage";
 import { ChatInput } from "../features/market-health/ChatInput";
 import { OutputPanel } from "../features/market-health/OutputPanel";
 import { ReasoningTrace } from "../components/ReasoningPanel";
+import { DataStoryResult } from "../features/market-health/DataStoryMessage";
+import { WelcomeResult } from "../features/market-health/WelcomeMessage";
 
 
 interface OpeningsResponse {
   range: TimeRange;
+  granularity: Granularity;
   data: OpeningDataPoint[];
   summary: string;
   as_of: string;
   source: string;
+}
+
+interface StoriesResponse {
+  stories: StoryMeta[];
 }
 
 interface TraceEntry {
@@ -26,21 +33,121 @@ interface TraceEntry {
   generationTimeMs: number | null;
 }
 
-async function fetchOpenings(range: TimeRange): Promise<OpeningsResponse> {
-  const res = await fetch(`/api/market-health/openings?range=${range}`);
+async function fetchOpenings(range: TimeRange, granularity: Granularity): Promise<OpeningsResponse> {
+  const res = await fetch(`/api/market-health/openings?range=${range}&granularity=${granularity}`);
   if (!res.ok) throw new Error(`Failed to fetch opening trends (${res.status})`);
   return res.json();
 }
 
+async function fetchStories(): Promise<StoriesResponse> {
+  const res = await fetch(`/api/market-health/stories`);
+  if (!res.ok) throw new Error(`Failed to load the story catalogue (${res.status})`);
+  return res.json();
+}
+
+async function fetchStory(storyId: string): Promise<DataStoryResult> {
+  const res = await fetch(`/api/market-health/stories/${storyId}`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to load data story (${res.status})`);
+  return res.json();
+}
+
+async function fetchWelcome(): Promise<WelcomeResult> {
+  const res = await fetch(`/api/market-health/welcome`);
+  if (!res.ok) throw new Error(`Failed to load the welcome (${res.status})`);
+  return res.json();
+}
+
 export function MarketHealthPage() {
-  const [range, setRange] = useState<TimeRange>("this_year");
-  const [activeTaskId, setActiveTaskId] = useState("market-health");
+  const [range, setRange] = useState<TimeRange>("six_months");
+  const [granularity, setGranularity] = useState<Granularity>("week");
+  const [activeTaskId, setActiveTaskId] = useState(WELCOME_TASK_ID);
+
+  function handleTaskSelect(taskId: string) {
+    setActiveTaskId(taskId);
+  }
+
+  // The story catalogue drives both the Task Panel's catalogue section and which
+  // task ids should be treated as "select a story" rather than a pinned task —
+  // see changes/2026-09-04-about-this-platform-welcome.md.
+  const storiesQuery = useQuery<StoriesResponse, Error>({
+    queryKey: ["market-health", "stories"],
+    queryFn: fetchStories,
+    staleTime: 5 * 60 * 1000,
+  });
+  const stories = storiesQuery.data?.stories ?? [];
+  const selectedStoryId = stories.some((story) => story.id === activeTaskId) ? activeTaskId : null;
 
   const openingsQuery = useQuery<OpeningsResponse, Error>({
-    queryKey: ["market-health", "openings", range],
-    queryFn: () => fetchOpenings(range),
+    queryKey: ["market-health", "openings", range, granularity],
+    queryFn: () => fetchOpenings(range, granularity),
     placeholderData: (prev) => prev,
   });
+
+  const storyQuery = useQuery<DataStoryResult, Error>({
+    queryKey: ["market-health", "story", selectedStoryId],
+    queryFn: () => fetchStory(selectedStoryId as string),
+    enabled: selectedStoryId !== null,
+  });
+
+  const welcomeQuery = useQuery<WelcomeResult, Error>({
+    queryKey: ["market-health", "welcome"],
+    queryFn: fetchWelcome,
+    enabled: activeTaskId === WELCOME_TASK_ID,
+  });
+
+  const welcomeTrace: ReasoningTrace | null = welcomeQuery.data
+    ? {
+        input_context: "Platform welcome — orientation and current story-catalogue shortcuts.",
+        sources_and_tools: welcomeQuery.data.provenance.sources.map((source, index) => ({
+          sequence: index + 1,
+          source_type: "data_source",
+          name: source,
+          purpose: "Provide the current data inventory shown in the welcome",
+        })),
+        reasoning_steps: [
+          {
+            sequence: 1,
+            content: "Read the platform's current data inventory (postings, companies, collection start, largest role area).",
+          },
+          {
+            sequence: 2,
+            content: "Read the current story catalogue for the 'what you can ask' shortcuts.",
+          },
+          {
+            sequence: 3,
+            content: "No language model was used for this answer.",
+          },
+        ],
+        is_complete: true,
+      }
+    : null;
+
+  const storyTrace: ReasoningTrace | null = storyQuery.data
+    ? {
+        input_context: `Predefined data story: "${storyQuery.data.question}"`,
+        sources_and_tools: storyQuery.data.provenance.sources.map((source, index) => ({
+          sequence: index + 1,
+          source_type: "data_source",
+          name: source,
+          purpose: "Provide live platform-owned data for the data story",
+        })),
+        reasoning_steps: [
+          {
+            sequence: 1,
+            content: "Matched the predefined market-data briefing story.",
+          },
+          {
+            sequence: 2,
+            content: "Queried the current owned-data aggregates and rendered the prepared sections.",
+          },
+          {
+            sequence: 3,
+            content: "No language model was used for this answer.",
+          },
+        ],
+        is_complete: true,
+      }
+    : null;
 
   // ── Briefing load time ─────────────────────────────────────────────────────
   const pageLoadRef = useRef(Date.now());
@@ -105,7 +212,7 @@ export function MarketHealthPage() {
   const processedDataCount = useRef(0);
 
   // ── Chat ──────────────────────────────────────────────────────────────────
-  const { messages, input, handleInputChange, handleSubmit, isLoading, data } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, isLoading, data, append } = useChat({
     api: "/api/chat",
     streamProtocol: "data",
     body: { context: { role: "all", level: "all", location: "all" } },
@@ -149,22 +256,36 @@ export function MarketHealthPage() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left — Task Panel */}
-        <TaskPanel activeTaskId={activeTaskId} onSelect={setActiveTaskId} />
+        <TaskPanel activeTaskId={activeTaskId} onSelect={handleTaskSelect} stories={stories} />
 
         {/* Centre — Working Space */}
         <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
           <ConversationThread
             messages={messages as Message[]}
+            activeTaskId={activeTaskId}
             isLoading={isLoading}
             briefingTimeMs={briefingTimeMs}
             briefingTrace={briefingTrace}
             briefingIsStreaming={openingsQuery.isLoading}
             traces={traces}
             activeDemoSim={null}
+            selectedStoryId={selectedStoryId}
+            storyResult={storyQuery.data ?? null}
+            storyLoading={storyQuery.isLoading}
+            storyError={storyQuery.error}
+            storyTrace={storyTrace}
+            welcomeResult={welcomeQuery.data ?? null}
+            welcomeLoading={welcomeQuery.isLoading}
+            welcomeError={welcomeQuery.error}
+            welcomeTrace={welcomeTrace}
+            onSelectShortcut={handleTaskSelect}
+            onAskSuggestion={(q) => append({ role: "user", content: q })}
           >
             <MarketBriefingMessage
               range={range}
               onRangeChange={setRange}
+              granularity={granularity}
+              onGranularityChange={setGranularity}
               data={openingsQuery.data?.data}
               summary={openingsQuery.data?.summary}
               isLoading={openingsQuery.isLoading}

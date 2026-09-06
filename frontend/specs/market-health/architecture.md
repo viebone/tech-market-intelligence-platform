@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-08-22
+updated: 2026-09-04
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -64,10 +64,13 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 |---|---|---|
 | `MarketHealthPage` | Top-level page. Orchestrates the opening briefing fetch and the follow-up conversation. Composes all zones. | `frontend/src/pages/MarketHealthPage.tsx` |
 | `TopBar` | Fixed header. Product title only. No navigation in v1. | `frontend/src/features/market-health/TopBar.tsx` |
+| `TaskPanel` *(catalogue-driven, added 2026-09-04)* | Left-column navigation. Renders one pinned welcome item ("About this platform"), then one item per entry in `GET /api/market-health/stories` (label = that entry's `display_name`, in catalogue order), then pinned feature tasks (currently just "Tech market hiring status"). A new backend story needs no change here — the list is fetched, not hardcoded. | `frontend/src/features/market-health/TaskPanel.tsx` |
+| `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/WelcomeMessage.tsx` |
+| `DataStoryMessage` *(existing, undocumented until now)* | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
-| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ month, designer, product_manager, engineer }`, one row per month — the real `/openings` response shape). Each of the three fixed series keys maps to its accent colour from `design/visual-design.md` (indigo / purple / emerald), matching `job-classification.md` Role Category names. Owns the time range tab selector (`This Year · Past 5 Years · All Time`). Fetches trend data via TanStack Query on mount and on range change. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
+| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ period, designer, product_manager, engineer }`). Owns two directly visible dropdown filters: granularity (`Week · Month`) and time range (`6 Months · This Year · Past 5 Years · All Time`). Week is the default granularity and 6 Months is the default range. Fetches trend data via TanStack Query when either control changes. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
 | `WrittenSummary` | The 3–4 sentence AI-generated summary below the chart. Receives streamed text. Shows bouncing-dots while streaming; fades in text as it arrives. | `frontend/src/features/market-health/WrittenSummary.tsx` |
 | `PromptBadge` | Small "view prompt" affordance anchored to every AI message. On click, opens `PromptViewer`. Receives the prompt string as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
 | `PromptViewer` | Read-only overlay showing the prompt behind an AI message. Dismissible with Escape or outside click. | `frontend/src/features/market-health/PromptViewer.tsx` |
@@ -86,7 +89,87 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 
 **Prompt viewer state** is local to `PromptBadge` — a boolean open/closed flag.
 
+**Task selection** (added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`)
+lives in `MarketHealthPage` as `activeTaskId: string`, defaulting to `"about-this-platform"`.
+Selecting any Task Panel item, or any shortcut inside `WelcomeMessage`, calls the same
+`setActiveTaskId(id)` — a shortcut click is not a different code path from a Task Panel click,
+it is the same handler with that entry's `id`.
+
+**Story catalogue** (added 2026-09-04) is fetched once via TanStack Query
+(`['market-health', 'stories']`, `GET /api/market-health/stories`) and consumed by both
+`TaskPanel` (to render one item per entry, using `display_name`) and by routing logic that
+decides what the working space renders for the active task — it is not re-fetched per
+component. `WelcomeMessage` does not read this query directly; it gets its shortcut list from
+`GET /api/market-health/welcome`'s own `story_shortcuts` field (same underlying catalogue,
+fetched together with the welcome's inventory in one request).
+
 No Zustand store required for v1.
+
+---
+
+## Chart rendering rules
+
+Added 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`. The trend chart is
+`frontend/src/features/market-health/JobOpeningsChart.tsx` (the spec's older `TrendChart` name).
+It is a hand-rolled SVG line chart. These rules exist because the first implementation broke on
+the shapes real sparse data actually takes:
+
+- **Period parsing must handle both granularities.** `data[].period` is `YYYY-MM-DD` for
+  `week` and `YYYY-MM` for `month`. Normalise a month period to `YYYY-MM-01` before
+  constructing a `Date` — `new Date("2026-08T00:00:00")` is `Invalid Date` and leaks
+  "Invalid Date" into axis labels and the tooltip.
+- **Zero-width value range.** When every visible value is equal (a genuinely flat series, or a
+  single bucket), the y-domain has zero height. Give it a synthetic pad so the line renders as
+  a straight horizontal line and the y-axis still shows a readable tick — never divide by a
+  zero span (produces `NaN` path coordinates and a blank chart).
+- **Single bucket.** One data point renders as labelled dots (no line — a lone `M x,y` draws
+  nothing) plus a caption in the plot area naming the period and saying a trend line needs at
+  least two. This is the normal monthly view until a second month closes.
+- **X-axis label density.** Never render more tick labels than fit without overlap. For short
+  ranges at `week` granularity (up to ~26 buckets), thin labels to an evenly spaced subset.
+  The line itself always uses every bucket.
+- **Long ranges.** `past_5_years` / `all_time` show at least one tick per year at both
+  granularities — do not rely on a period string ending in `-01`, which almost never happens
+  for Monday-anchored week keys.
+- **Baseline and in-progress period.** The backend already excludes the baseline day and the
+  current in-progress week/month; the chart draws exactly what it receives, never back-fills or
+  pads the empty pre-collection span of a wide range, and never re-adds a "today so far" point.
+
+---
+
+## Welcome rendering rules
+
+Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`; restructured
+2026-09-04 into a landing-page hero — `changes/2026-09-04-welcome-visual-data-points.md`.
+`WelcomeMessage` must keep working unchanged as the story catalogue grows or shrinks:
+
+- **Three bands, fixed order: Hero, Proof, Call to action.** Hero is static copy. Proof
+  renders `welcome.inventory`. Call to action renders `welcome.story_shortcuts`. Do not
+  reorder or merge them — the hierarchy (headline → hero figure → CTA cards) is the point.
+- **Category Share Bar is fully data-driven.** Render one segment per row in
+  `inventory.role_breakdown`, in the order the API returns (descending by count). Map each
+  `role_category` to its existing accent colour by name (`design/visual-design.md`'s Accent
+  palette — Designer/indigo-500, Product Manager/purple-500, Engineer/emerald-500); never
+  assign colour by position or invent a colour for an unrecognised category — fall back to a
+  neutral gray-600 segment rather than guessing a hue, and still label it by name.
+- **Shortcut cards are fully data-driven.** Render exactly one Shortcut Card per entry in
+  `welcome.story_shortcuts`, in the order the API returns. Never hardcode a story's id,
+  question, or count in this component.
+- **Selecting a shortcut selects a task, it does not send a message.** Call the shared
+  `setActiveTaskId(shortcut.id)` — the same function `TaskPanel` calls on click. There is no
+  chat-send path from the welcome.
+- **Empty catalogue.** If `story_shortcuts` is `[]`, omit the Call to action's card list
+  entirely (no empty box, no "no stories available" message) and still show the generic "ask
+  your own question" sentence and the out-of-scope sentence.
+- **Empty or partial inventory.** `inventory.collection_started_at` may be `null` and
+  `inventory.role_breakdown` may be `[]` (nothing collected yet). The Hero Figure and Stat
+  Tiles render the "not collected yet" phrasing from the experience spec's edge case rather
+  than showing `0`; the Category Share Bar section is omitted rather than rendered empty.
+- **No client-side computation.** Every figure in Proof is read directly from
+  `GET /api/market-health/welcome`'s response — this component never derives a count,
+  percentage, or share itself. A segment's share (for its label) is the one exception: it may
+  be computed client-side from the returned counts (`count / total_postings`), since that's
+  formatting a number the response already carries, not deriving a new fact.
 
 ---
 
@@ -94,7 +177,10 @@ No Zustand store required for v1.
 
 | Data | Source | When fetched |
 |---|---|---|
-| Trend chart data + written summary (monthly openings per Role Category, from live-classified postings) | `GET /api/market-health/openings?range={range}` — returns `{ range, data: [{ month, designer, product_manager, engineer }], summary, as_of, source }` | On page mount; refetch on time range change |
+| Platform welcome (added 2026-09-04) | `GET /api/market-health/welcome` — returns `{ inventory, story_shortcuts, provenance, as_of }` | On page mount (default task); also whenever "About this platform" is selected, so figures stay current |
+| Story catalogue (added 2026-09-04) | `GET /api/market-health/stories` — returns `{ stories: [{ id, display_name, question, example_phrasings }] }` | Once, on page mount — drives `TaskPanel`'s catalogue section |
+| Chat suggestions (added 2026-09-06) | `GET /api/market-health/chat-suggestions` — returns `{ suggestions: [{ id, question }] }` | Once, on page mount — drives `SuggestedQuestions` chips |
+| Trend chart data + written summary (weekly or monthly openings per Role Category, from post-baseline live-classified postings) | `GET /api/market-health/openings?range={range}&granularity={granularity}` — returns `{ range, granularity, data: [{ period, designer, product_manager, engineer }], summary, as_of, source }`; `summary` names the selected range and granularity | On page mount; refetch when range or granularity changes |
 | Opening written summary | `POST /api/chat` (streaming) — opening prompt sent on mount | On page mount |
 | Summary for new time range | `POST /api/chat` (streaming) — range-specific prompt | On time range change |
 | Follow-up AI responses | `POST /api/chat` (streaming) via `useChat` | On each user message |
@@ -105,8 +191,12 @@ No Zustand store required for v1.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/market-health/openings` | Time-series data for the trend chart plus a written summary. Param: `range` (`this_year` \| `past_5_years` \| `all_time`). Returns one row per month (`{ month, designer, product_manager, engineer }`) — sourced from live-ingested, LLM-classified postings, not mock data. See `backend/specs/market-health/api.md`. |
-| POST | `/api/chat` | Accepts `{ messages: [...] }`. Streams Claude responses. Used for the opening summary, range-change summary regeneration, and user follow-up questions. |
+| GET | `/api/market-health/openings` | Time-series data for the trend chart plus a written summary. Params: `range` (`six_months` \| `this_year` \| `past_5_years` \| `all_time`) and `granularity` (`week` \| `month`). Returns one row per bucket (`{ period, designer, product_manager, engineer }`) — sourced from live-ingested, LLM-classified postings, not mock data. See `backend/specs/market-health/api.md`. |
+| GET | `/api/market-health/welcome` *(added 2026-09-04)* | Platform inventory + one shortcut per current story-catalogue entry, for `WelcomeMessage`. No auth, no LLM. See `backend/specs/market-health/api.md` — Welcome. |
+| GET | `/api/market-health/stories` *(added 2026-09-04 to this spec — endpoint pre-existing)* | The story catalogue's presentation metadata (`{ id, display_name, question, example_phrasings }[]`), for `TaskPanel`. No answer content. |
+| POST | `/api/market-health/stories/{story_id}` *(added 2026-09-04 to this spec — endpoint pre-existing)* | Resolves one story's answer for `DataStoryMessage`, when that story's task is selected. No LLM. |
+| GET | `/api/market-health/chat-suggestions` *(added 2026-09-06)* | The curated instant-answer catalogue's questions (`{ id, question }[]`), for `SuggestedQuestions` chips. No answers, no LLM. |
+| POST | `/api/chat` | Accepts `{ messages: [...] }`. Streams the response. A message matching the curated catalogue is answered instantly with no model call; otherwise it goes to the paid Gemini tier (10–30s). Also used for the opening summary and range-change summary regeneration. |
 
 **Reviewed 2026-07-22** (change: chat data sourcing/attribution fix + scheduled classification
 agent, `backend/specs/market-health/api.md`): confirmed no frontend changes needed. The
@@ -267,3 +357,74 @@ assumption here relied on, or conflicted with, the old hardcoded-localhost-only 
 - Exception / alert banner
 - Authentication and user session management
 - Side-by-side market comparison
+
+## Data stories
+
+See `design/market-health/data-stories.md` for the product-facing catalogue and first story
+contract. The frontend treats a story as a normal assistant turn with additional structured
+content, not as a separate page.
+
+### First story: market data briefing
+
+The first story is the dedicated Task Panel item **"What we know about the market"**, placed
+above **"Tech market hiring status"** and selected by default. Selecting it loads the canonical story id and replaces
+the working-space content with the briefing. The question remains the story's canonical
+question: **"What do we currently know about the tech job market?"**
+
+The visible response renders a short market read, up to three supporting facts, and one
+coverage note. Values are dynamic and written in plain, business-oriented language. Detailed
+source and calculation information remains available in the existing Reasoning Panel.
+
+### Catalogue and response state
+
+- The Task Panel owns story selection. The frontend does not render the story as an inline
+   suggested-question block beneath the opening briefing.
+- The initial task id is `market-data-briefing`; selecting `market-health` switches back to
+   the hiring-status chart and conversation.
+- A story request carries `story_id` when selected. The frontend does not duplicate intent
+   matching or aggregate logic in the browser.
+- Story answers show freshness and provenance in the existing Reasoning Panel. The trace must
+   say that no language model was used and identify the owned-data aggregates queried.
+- Loading, empty, partial-coverage, and unavailable states use the existing assistant-turn
+   layout. A story must never render a blank panel when one section has no data.
+- **Chat degraded-service message (added 2026-09-04 — Step 0 of
+   `changes/2026-09-03-chat-resilience-and-instant-answers.md`).** When the chat model is
+   unavailable or its daily cap is spent (`backend/specs/market-health/api.md` — Chat model
+   tier and retry), the backend streams the calm "briefly unavailable" message as an ordinary
+   text chunk — it renders through the existing follow-up `AITurn` text path with no new
+   component. No frontend change needed for the message itself.
+
+### Suggested questions (curated instant answers — added 2026-09-06, Step 14)
+
+The curated instant-answer engine (`backend/specs/market-health/api.md` — Curated
+instant-answer engine) answers common questions from the database with **no model call**, in
+under a second. The frontend surfaces them so the fast path is one tap:
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `SuggestedQuestions` | Fetches `GET /api/market-health/chat-suggestions` once on mount. Renders each `question` as a chip (the existing Shortcut-Card-lite / button token — no new visual pattern). Clicking a chip submits that exact question through the same `useChat` `append` path as typing it — the backend then matches it to the curated catalogue and returns the instant answer. | `frontend/src/features/market-health/SuggestedQuestions.tsx` |
+
+- **Placement**: inside the conversation area, below the opening hiring-status briefing and
+  above the first follow-up turn (so it's visible before the user types), and again in the
+  degraded-service turn's body (the "briefly unavailable" message is followed by the chips).
+  No new layout zone — it lives in the existing `ConversationThread`, consistent with the
+  2026-09-03 IA review (no new node/zone).
+- **Behaviour**: a chip click is identical to typing that question — same request, same
+  streamed response, same Reasoning Panel. A curated hit streams instantly and its trace says
+  "No language model was used"; if the catalogue ever changes and a chip no longer matches, it
+  simply falls through to the model like any typed question (no special-casing in the client).
+- **Empty/failed fetch**: render nothing (no error, no empty box) — the chips are an
+  enhancement, not a dependency.
+- The chip list is server-owned; adding a curated question is a backend catalogue change with
+  zero frontend edits.
+
+### Components
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `DataStoryMessage` | Renders a resolved story's fixed sections, freshness, and limitations | `frontend/src/features/market-health/DataStoryMessage.tsx` |
+| `ReasoningPanel` | Shows story provenance and the explicit no-model path | Existing reasoning-panel component |
+
+The catalogue and story response are server-owned contracts. Adding a story should not require
+changing the generic assistant message parser; adding a navigation entry is an explicit product
+task change.

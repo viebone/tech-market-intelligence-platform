@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.1
+version: 1.2
 status: active
 created: 2026-06-21
-updated: 2026-08-15
+updated: 2026-09-04
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -71,6 +71,8 @@ All sizes are Tailwind text utilities. Line heights are Tailwind leading utiliti
 | Role | Tailwind class | Size | Weight | Line height | Used for |
 |---|---|---|---|---|---|
 | Page title | `text-base font-semibold` | 16px | 600 | 1.5 | TopBar product name |
+| Hero headline (added 2026-09-04) | `text-3xl font-bold` | 30px | 700 | 1.2 (`leading-tight`) | The welcome's landing-page-style headline only — see Component Aesthetics — Hero Figure & the entry-point pattern. Not used elsewhere; a conversation's own title stays at Conversation title, below. |
+| Hero figure (added 2026-09-04) | `text-4xl font-bold` | 36px | 700 | 1.1 | A single leading number (dataviz "Hero Figure"), proportional (not tabular) figures. Exactly one per view. |
 | Conversation title | `text-2xl font-semibold` | 24px | 600 | 1.3 (`leading-tight`) | First user message in each conversation |
 | User message | `text-base font-medium` | 16px | 500 | 1.5 | Subsequent user messages |
 | Section heading | `text-sm font-medium` | 14px | 500 | 1.4 | Card headers, panel titles |
@@ -216,6 +218,68 @@ font:          text-xs
 padding:       4px 12px (py-1 px-3)
 ```
 
+### Entry-point components (added 2026-09-04)
+
+Added for the "About this platform" welcome (`changes/2026-09-04-welcome-visual-data-points.md`)
+— the product's one landing-page-style surface. Follow the `dataviz` skill's form and mark
+rules; documented here so a future entry-point-style surface reuses them rather than
+reinventing the look. **Scoped to entry points, not a general replacement for the plain
+AI-turn prose treatment** every other message keeps.
+
+**Eyebrow label**
+```
+text:          gray-500, text-[10px] font-medium uppercase tracking-widest
+usage:         one per hero, directly above the Hero headline — same token as the
+               existing Task Panel section label ("Tasks"), reused for consistency
+```
+
+**Hero Figure**
+```
+value:         text-4xl font-bold text-gray-100 (Hero figure type scale, above) —
+               never an accent colour; a hero figure is a headline metric, not a
+               categorical data point (dataviz: "text never wears the data colour")
+label:         text-xs text-gray-500, below the value, sentence case, no trailing colon
+count:         exactly one per view
+```
+
+**Stat Tile**
+```
+value:         text-xl font-semibold text-gray-100
+label:         text-xs text-gray-500, below the value
+layout:        supporting tiles sit beside or below the Hero Figure, smaller and
+               lower-emphasis than it — never equal visual weight to the hero
+```
+
+**Category Share Bar**
+```
+type:          horizontal stacked bar (categorical, part-to-whole) — dataviz form
+               rules: 3 tracked Role Categories, ≤4 series, so every segment is
+               direct-labelled, no separate legend box required
+height:        12px (h-3) track, ≤24px per dataviz's bar-thickness cap
+segment ends:  4px rounded on the bar's outer left/right ends only; square where
+               segments meet
+segment gap:   2px gap in the surface colour (gray-800) between touching segments —
+               the gap separates them, never a stroke
+colour:        the existing Accent palette (Designer indigo-500 · Product Manager
+               purple-500 · Engineer emerald-500) — the same three hues the trend
+               chart already uses for the same categories; never a new hue
+labels:        role name + share, placed above or beside each segment (inside only
+               if the text fits with padding on both sides — see dataviz's label
+               rule); values also available via the Reasoning Panel / provenance
+```
+
+**Shortcut Card**
+```
+background:    gray-800/60, hover gray-800
+border:        1px solid gray-700, hover gray-500 (transition-colors duration-150)
+border-radius: 8px (rounded-lg)
+padding:       10px 14px (py-2.5 px-3.5)
+text:          text-sm text-gray-200, question text left-aligned
+trailing icon: a small arrow, gray-500, hover gray-300
+usage:         one per story-catalogue entry in the welcome's call-to-action list;
+               replaces a plain list item with a clickable, hoverable row
+```
+
 ### Reasoning Panel toggle — "View thinking / Hide thinking"
 
 The toggle is the entry point to the Reasoning Panel. It appears inside every AI turn,
@@ -324,6 +388,18 @@ text:          text-xs font-medium, gray-100
 border-radius: 9999px (rounded-full)
 padding:       4px 10px (py-1 px-2.5)
 remove icon:   × inline after label, gray-400, hover gray-200
+```
+
+**Suggested-question chip (consumer, added 2026-09-06 — `changes/2026-09-03-chat-resilience-and-instant-answers.md`).**
+Interactive variant of the filter chip — a tappable pill that submits a curated
+instant-answer question. Not removable; no × icon.
+```
+background:     gray-800/60, hover gray-800
+border:        1px solid gray-700, hover gray-500 (transition-colors duration-150)
+text:          text-xs, gray-300, hover gray-100
+border-radius: 9999px (rounded-full)
+padding:       6px 12px (py-1.5 px-3)
+disabled:      opacity-40 (while a request is streaming)
 ```
 
 ### Status badge / pill (operator surfaces)

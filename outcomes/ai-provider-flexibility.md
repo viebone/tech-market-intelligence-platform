@@ -39,3 +39,24 @@ When a reader looks at any feature's code, they should immediately see which AI 
 - Automatic provider selection based on cost, latency, or load (routing is always explicit, never magic)
 - Provider fallback / retry logic across providers (if a provider fails, it fails — no silent rerouting)
 - Cost comparison tooling
+
+> **Amended 2026-09-03 (`changes/2026-09-03-chat-resilience-and-instant-answers.md`).**
+> One narrow, explicit form of fallback is now **in** scope for `/api/chat`: an
+> **ordered tier list, declared and named at the call site**, where each tier is a
+> concrete `(model, project/key)` pair and the request advances to the next tier
+> only on a hard availability signal (`429 RESOURCE_EXHAUSTED`, or repeated
+> `503 UNAVAILABLE` after that tier's own retries). This stays within "routing is
+> always explicit, never magic": the list is fixed in code, visible to any reader,
+> and contains no cost/latency optimisation — it is availability failover along a
+> declared order, not a router choosing the cheapest or fastest option per call.
+> The "if a provider fails, it fails" rule still holds *within* a tier and once the
+> list is exhausted. This carve-out is specific to chat's free→paid resilience
+> need; it is not a general licence for cross-provider rerouting elsewhere.
+>
+> **Walked back 2026-09-06 (same change).** The free tier is removed from chat, so
+> there is no tier list any more — `/api/chat` names exactly one `(model,
+> project/key)` at the call site, like every other feature. The 2026-09-03
+> carve-out is moot: the base outcome ("if a provider fails, it fails — no silent
+> rerouting") now applies to chat unchanged. Within-call retry of a transient
+> `503`/`429` on that single model stays (same as the classification and
+> requirements paths already do) — that is retry, not rerouting.

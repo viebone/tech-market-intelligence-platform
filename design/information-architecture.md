@@ -1,9 +1,9 @@
 ---
 id: information-architecture
-version: 2.2
+version: 2.3
 status: active
 created: 2026-06-11
-updated: 2026-08-14
+updated: 2026-09-04
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
@@ -100,15 +100,35 @@ The task panel contains a vertical list of tasks the user has initiated or can i
 Each item maps to a named task with a specific question or goal. Items are ordered by
 recency of use; pinned items appear at the top.
 
+#### Task Panel structure
+
+Updated 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`. The Task Panel is
+not a flat, hand-maintained list — it has three parts, front to back:
+
+1. **A pinned welcome** — "About this platform" — always first, always the default selection
+   on first load. It orients a new visitor and links to every task currently in the story
+   catalogue (see part 2).
+2. **The story catalogue** — one task per entry in `design/market-health/data-stories.md`.
+   Grows as entries are added there; order follows the catalogue's own document order. Adding
+   a story adds a row to the table below; it does not change this structure.
+3. **Pinned feature tasks** — tasks tied to a specific working-space experience rather than a
+   predefined question, such as "Tech market hiring status". Currently last; more may be
+   pinned as new outcomes are prioritised by the PM.
+
 #### Current task list (v1)
 
-| Task | Display name | What it shows in working space | What it shows in output panel |
-|---|---|---|---|
-| market-health | **Tech market hiring status** | Conversation starting with the job openings trend chart and written summary embedded in the opening AI message | A reference entry for each output in the conversation. Opening entry: "Job openings trend — chart". Each subsequent AI response that produces output adds an entry. |
+| Task | Panel part | Display name | What it shows in working space | What it shows in output panel |
+|---|---|---|---|---|
+| about-this-platform | Pinned welcome | **About this platform** | Platform orientation: what this is, the current data inventory, and a live shortcut for every task currently in the story catalogue | A reference entry for the welcome |
+| market-data-briefing | Story catalogue | **What we know about the market** | A concise, plain-language briefing based on the platform's current market data | A reference entry for the market overview |
+| market-health | Pinned feature | **Tech market hiring status** | Conversation starting with the job openings trend chart and written summary embedded in the opening AI message | A reference entry for each output in the conversation. Opening entry: "Job openings trend — chart". Each subsequent AI response that produces output adds an entry. |
 
-Additional tasks are added as new outcomes are prioritised by the PM.
+Additional story-catalogue tasks are added as new stories are catalogued in
+`design/market-health/data-stories.md`; additional pinned feature tasks are added as new
+outcomes are prioritised by the PM. Neither requires changing the Task Panel structure above.
 
-**Tech market hiring status** is the default first item. It is selected on first load.
+**About this platform** is always first and selected on first load. Story-catalogue tasks
+follow it, in catalogue order; pinned feature tasks come after those.
 
 #### Task types
 
@@ -128,6 +148,9 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | Term | Definition | Where it appears |
 |---|---|---|
 | **Task** | A named goal or question the user is working on. Appears as an item in the Task Panel. | Task Panel |
+| **Welcome** (added 2026-09-04) | The pinned, always-first Task Panel item ("About this platform"). Orients a new visitor and links to every task currently in the story catalogue. Not itself a story-catalogue member. | Task Panel, Working Space |
+| **Data Story** (added 2026-09-04) | A predefined question with a fixed answer structure, resolved from the platform's own data with no model call. Documented in `design/{feature}/data-stories.md`. Each one is a Task Panel item. | Task Panel, Working Space |
+| **Story Catalogue** (added 2026-09-04) | The ordered, growing set of Data Stories for a feature. Adding an entry adds a Task Panel item; it never requires changing the Welcome or the Task Panel's structure. | Task Panel |
 | **Working Space** | The conversation interface for the active task. | Layout label |
 | **Output Panel** | The panel showing outputs and settings for the active task. | Layout label |
 | **Trend Chart** | A multi-line chart showing monthly job opening counts by role category over a selected time range. | Working Space, Output Panel |
@@ -168,13 +191,25 @@ terms. Experience specs must not introduce synonyms or alternate names.
    the working space scrolls to that output in the conversation → the user reviews it in
    context without losing their position in a long conversation.
 
+5. **Market overview** — User selects "What we know about the market" from the story catalogue
+   → reads a concise business briefing → opens the reasoning panel only when they want
+   source or calculation detail → selects the hiring-status task for the trend chart.
+
+6. **First-time orientation** (added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`)
+   — User opens the product → "About this platform" loads by default → reads what the
+   platform is and what data currently exists → taps a shortcut for one of the current
+   story-catalogue tasks (or opens "Tech market hiring status" directly) → continues from
+   there. Identical regardless of how many stories the catalogue currently holds.
+
 ---
 
 ## Entry Points
 
-- **Default** — User opens the product. "Tech market hiring status" is selected in the Task
-  Panel. The trend chart and trend reading load in the working space as the opening AI message.
-  The output panel shows one reference entry: the opening trend chart.
+- **Default** — User opens the product. "About this platform" is selected in the Task Panel
+  (corrected 2026-09-04 — this previously named "Tech market hiring status", stale since the
+  2026-09-04 briefing-task and welcome changes). The welcome — platform orientation, current
+  data inventory, and shortcuts into the current story catalogue — loads in the working space
+  as the opening AI message. The output panel shows one reference entry: the welcome.
 - **Returning user** — Same as default. The working space restores the previous conversation
   for the selected task. The output panel shows a reference entry for every output produced
   in that conversation.

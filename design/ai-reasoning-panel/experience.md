@@ -4,6 +4,7 @@ outcome: ai-reasoning-transparency
 directive: high
 status: ready
 created: 2026-06-25
+updated: 2026-09-03
 ---
 
 # AI Reasoning Panel — Experience Spec
@@ -178,6 +179,20 @@ The section is never hidden.
 The toggle still appears. The panel shows whatever reasoning trace is available.
 If the trace is empty, it shows: "Reasoning trace unavailable for this response."
 in `text-xs gray-600 italic`.
+
+**Answer produced without an AI model (instant / pre-authored answer):**
+Some answers are built directly from a data query with no language model composing them
+(see `design/market-health/experience.md` — instant answers to common questions). The panel
+still appears with all three sections: Input (the question), Sources & Tools (the data
+query that ran, with its counts and time window), Reasoning (the deterministic steps that
+turned that data into the answer). The Input section states plainly that no AI model was
+used — the same "absence is information" principle as the "No external tools used"
+placeholder. The generation-time segment still shows.
+
+**Answer composed by a fallback model:**
+When the primary model was unavailable and a secondary model composed the answer, the Input
+section names which model produced it. Nothing else changes — the user can always tell what
+produced their answer.
 
 **User is on a slow connection and panel content is loading:**
 Section labels render immediately. Content within each section shows a skeleton pulse

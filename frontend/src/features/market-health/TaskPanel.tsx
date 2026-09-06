@@ -1,18 +1,40 @@
+// Catalogue-driven Task Panel (added 2026-09-04 — changes/2026-09-04-about-this-platform-welcome.md).
+// Structure: a pinned welcome, then one item per story-catalogue entry, then pinned feature
+// tasks. Only the pinned tasks are hardcoded here; the catalogue section comes from the
+// `stories` prop (GET /api/market-health/stories) so a new backend story needs no change here.
+
+export interface StoryMeta {
+  id: string;
+  display_name: string;
+  question: string;
+  example_phrasings?: string[];
+}
+
 export interface Task {
   id: string;
   label: string;
 }
 
-export const TASKS: Task[] = [
-  { id: "market-health", label: "Tech market hiring status" },
-];
+export const WELCOME_TASK_ID = "about-this-platform";
+export const HIRING_STATUS_TASK_ID = "market-health";
+
+const WELCOME_TASK: Task = { id: WELCOME_TASK_ID, label: "About this platform" };
+const HIRING_STATUS_TASK: Task = { id: HIRING_STATUS_TASK_ID, label: "Tech market hiring status" };
 
 interface TaskPanelProps {
   activeTaskId: string;
   onSelect: (id: string) => void;
+  /** Current story catalogue (GET /api/market-health/stories). May be empty while loading. */
+  stories: StoryMeta[];
 }
 
-export function TaskPanel({ activeTaskId, onSelect }: TaskPanelProps) {
+export function TaskPanel({ activeTaskId, onSelect, stories }: TaskPanelProps) {
+  const tasks: Task[] = [
+    WELCOME_TASK,
+    ...stories.map((story) => ({ id: story.id, label: story.display_name })),
+    HIRING_STATUS_TASK,
+  ];
+
   return (
     <aside className="w-60 shrink-0 flex flex-col border-r border-gray-800 bg-gray-900 overflow-y-auto">
       <div className="px-3 pt-4 pb-2">
@@ -20,7 +42,7 @@ export function TaskPanel({ activeTaskId, onSelect }: TaskPanelProps) {
           Tasks
         </p>
         <nav className="flex flex-col gap-0.5">
-          {TASKS.map((task) => {
+          {tasks.map((task) => {
             const isActive = task.id === activeTaskId;
             return (
               <button

@@ -305,6 +305,17 @@ CREATE INDEX IF NOT EXISTS idx_batch_jobs_submitted_at ON batch_jobs (submitted_
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_phase TEXT NOT NULL DEFAULT 'ok';
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS batch_collected INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS batch_submitted_id INTEGER REFERENCES batch_jobs(id);
+
+-- Chat paid-tier daily request cap (changes/2026-09-03-chat-resilience-and-instant-answers.md,
+-- Step 0). One row per UTC day; incremented once per call that actually reaches the paid
+-- chat tier (Stage 1, 2, and 3 each count independently, same as ingestion_runs' request
+-- counters). Checked before the paid tier is even offered as a fallback option — reaching the
+-- cap makes chat behave as if the paid tier were also unavailable (the free tier, and the
+-- existing data-story/welcome zero-LLM paths, still work), never a spend runaway.
+CREATE TABLE IF NOT EXISTS chat_paid_usage (
+    usage_date  DATE PRIMARY KEY,
+    requests    INTEGER NOT NULL DEFAULT 0
+);
 """
 
 

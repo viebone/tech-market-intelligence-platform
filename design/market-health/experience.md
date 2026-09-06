@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-08-09
+updated: 2026-09-04
 ---
 
 # Market Health — Experience Spec
@@ -12,6 +12,123 @@ updated: 2026-08-09
 ## Outcome this serves
 
 See: `outcomes/understand-market-health-before-searching.md`
+
+## Data stories
+
+The curated instant-answer layer is documented separately in
+`design/market-health/data-stories.md`. A data story is a predefined question with a fixed
+answer structure and live platform-owned data, resolved with no model call. The **story
+catalogue** is open-ended and expected to grow — each new story is a catalogue entry with its
+own Task Panel item, added without changing this experience spec. "What we know about the
+market" (answering "What do we currently know about the tech job market?") is the catalogue's
+first example, not its ceiling; future entries can cover narrower questions the same way (see
+`design/market-health/data-stories.md` — Future catalogue direction).
+
+Task Panel order, front to back:
+
+1. **"About this platform"** — a pinned welcome/orientation task, always first, always the
+   default selection on first load. Not itself a member of the story catalogue — see Opening
+   Welcome, below.
+2. **The story catalogue**, in the order `design/market-health/data-stories.md` defines. Grows
+   over time; this spec does not enumerate its members.
+3. **"Tech market hiring status"** — pinned last, the trend-chart conversation.
+
+Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`.
+
+---
+
+## Opening Welcome
+
+**"About this platform"** is the first task in the Task Panel and is selected by default on
+first load. Its job is orientation, not analysis: a first-time visitor should leave knowing
+what the platform is, roughly what data backs it, and what kinds of questions it can already
+answer instantly. It is structured like a data story — fixed layout, live owned-data figures,
+no model call — but it is not itself a catalogue entry: it is the pinned front door that
+points *into* the catalogue and the conversation, and it must keep working exactly as
+specified no matter how many stories the catalogue holds.
+
+### Structure (revised 2026-09-04 — `changes/2026-09-04-welcome-visual-data-points.md`)
+
+Landing-page anatomy — hero, proof, call to action — not a paragraph. This is deliberately
+distinct from every other AI-turn message in the product, because this one thing is the
+entry point; no other data story adopts this treatment. Section order and roles are fixed;
+the content within them is live or catalogue-driven, not hand-written per story.
+
+1. **Hero** — a small eyebrow label, one bold headline naming the platform's purpose, and one
+   supporting subhead sentence. Fixed copy, identical on every visit, never lists individual
+   stories or features by name.
+2. **Proof** — the live data, read at a glance rather than parsed from a sentence:
+   - One **Hero Figure**: total job openings tracked. The single number this view leads with.
+   - Two supporting **Stat Tiles**: companies tracked, and collection start date.
+   - A **Category Share Bar**: every currently tracked Role Category with its share of
+     classified postings, directly labelled. Replaces the old single "largest category"
+     sentence with the real breakdown.
+   - One fixed coverage-limit sentence and one fixed sentence naming which signals exist
+     (skills, pay where disclosed, location where normalized).
+   This section describes the platform's *data*, not its catalogue of questions — it does not
+   change shape as stories are added or removed.
+3. **Call to action** — a **live-rendered list of shortcuts, one per entry currently in the
+   story catalogue**, each rendered as a Shortcut Card (see `design/visual-design.md`)
+   showing that story's question, not a plain list item (see Interactions). Generated from
+   `design/market-health/data-stories.md`'s catalogue: adding, removing, or reordering a story
+   changes this list automatically, with no experience-spec or copy change required. Below the
+   cards, one fixed, generic sentence points to open-ended conversation, followed by one fixed
+   sentence naming what is out of scope today. Neither closing sentence names a specific story.
+
+### Content
+
+**Hero** (fixed):
+> TECH MARKET INTELLIGENCE
+>
+> # Read the tech hiring market before you make a move.
+>
+> We track job openings, skills, and pay across company career pages — so you see where
+> demand is heading, not guess.
+
+**Proof** (live — see Data Contract below for the exact aggregates):
+> **{N}** job openings tracked · **{M}** companies · tracking since **{month year}**
+>
+> {Category Share Bar: one segment per Role Category, e.g. Engineer / Product Manager /
+> Designer, each labelled with its name and share.}
+>
+> This is a growing sample of the market, not every job out there — it reflects the companies
+> and roles we follow today. For most of these we also have the skills employers mention, and
+> pay figures where they're shared.
+
+**Call to action** (structure fixed, card content is the live catalogue):
+> Get an instant answer
+> {one Shortcut Card per current catalogue entry — for example, today's only entry, "What do
+> we currently know about the tech job market?"}
+>
+> You can also ask your own question about demand, skills, pay, or specific roles once you're
+> in a conversation. We don't cover layoffs, company reviews, or application tracking.
+
+### Data contract
+
+Resolved by the pinned welcome (`design/market-health/data-stories.md` documents it alongside
+the catalogue entries it draws from, even though it is not itself an entry). Owned-data only,
+no LLM.
+
+| Fact | Source | Qualifier |
+|---|---|---|
+| Total job openings (Hero Figure) | `count(distinct raw_postings.id)` | Unique postings captured, not total jobs in the market |
+| Companies (Stat Tile) | `count(distinct raw_postings.company)` | Non-null normalized company values only |
+| Collection start (Stat Tile) | `min(raw_postings.fetched_at)` | Observation window, not historical market coverage |
+| Role breakdown (Category Share Bar) — revised 2026-09-04, was a single "headline fact" | Every currently tracked Role Category with `count(distinct rp.id)` of its classified postings | Whatever the taxonomy currently defines — not hardcoded to today's three; each segment states its own count, not just a rank |
+| Signals available | Fixed statement — skills, pay (where disclosed), location (where normalized) | Presence only; no counts in this section |
+| "What you can ask" cards | `design/market-health/data-stories.md` catalogue — each entry's `question` | One card per current entry; the section is omitted if the catalogue is ever empty |
+
+### Honesty rules
+
+Same as `design/market-health/data-stories.md`: every figure is current as of the response's
+query time and carries a coverage qualifier; a figure with insufficient data says so rather
+than guessing; nothing here is inferred from external sources.
+
+### Relationship to the other tasks
+
+"About this platform" does not replace any catalogue story or "Tech market hiring status" — it
+is a pinned index that points into both. It stays first and default regardless of how many
+stories exist. See Data stories, above, for full Task Panel ordering.
 
 ---
 
@@ -36,6 +153,30 @@ appearing on load. Requirements Signal introduces a genuinely new *kind* of answ
 a new data dimension: a **synthesis question** ("should I learn to code as a UX designer?")
 asks for a judgment, not a lookup — see User Flow step 7b and Edge Cases, below, for how
 that's handled honestly.
+
+### What we want to achieve — instant answers, and never a dead end (added 2026-09-03)
+
+Two goals, neither of which changes the design of this experience — the page is still a
+conversation and every answer is still grounded in the platform's own data:
+
+1. **The most common questions should answer instantly.** Questions that get asked
+   constantly — "which roles are growing?", "what do Backend Engineers earn?", "what skills
+   do Product Designer postings ask for?" — should return an answer built directly from the
+   platform's current data, without waiting on the assistant to compose it. The answer obeys
+   every honesty rule in this spec (time window stated, proportions never absolutes,
+   disclosed-vs-estimated salary never blended). This is a curated set that should keep
+   growing over time, so more and more questions answer instantly.
+
+2. **A brief assistant outage should never be a dead end.** When the assistant genuinely
+   can't compose an answer for a moment, the user sees a calm "try again shortly" message
+   and can still get instant answers to the common questions — not a bare error with nowhere
+   to go.
+
+Each story is surfaced as a left-navigation task, and its visible answer stays concise and
+business-oriented. Detailed source and calculation information remains available through the
+existing transparency surface. See `changes/2026-09-03-chat-resilience-and-instant-answers.md`.
+The task selected by default on first load is now **"About this platform"** (revised
+2026-09-04 — previously "What we know about the market"; see Opening Welcome, below).
 
 ---
 
@@ -70,7 +211,8 @@ Show me the current trend in tech job openings by role category — Designer, Pr
 and Engineer — month over month.
 
 Display total openings per month for each category as a line chart.
-Provide three time range views the user can switch between: This Year, Past 5 Years, All Time.
+Provide four time range views the user can switch between: 6 Months, This Year, Past 5 Years,
+All Time.
 
 Then write a brief summary of what the data shows: the overall direction (rising, flat,
 or declining), the magnitude of change, and any notable differences between the three role
@@ -90,9 +232,13 @@ The user interprets and decides what to do with it.
    first the trend chart, then the written summary directly below it.
 3. The user reads the chart. The direction is visible before reading any text.
 4. The user reads the written summary. It confirms what the chart shows in plain language.
-5. The user optionally switches the time range (This Year / Past 5 Years / All Time).
-   The chart updates. The summary regenerates for the new window.
-6. The user types a follow-up question in the chat input — anything from a specific comparison
+5. The user optionally switches the time range (6 Months / This Year / Past 5 Years / All Time)
+  and/or the granularity (Week / Month — added 2026-08-22,
+   `changes/2026-08-22-chart-granularity.md`; see Chart Specification for which
+   granularities are available at which range). The chart updates. The summary
+   regenerates for the new window and bucket size.
+6. The user types a follow-up question in the chat input (or picks one of the offered common
+   questions) — anything from a specific comparison
    ("Is User Experience Designer or Product Designer more in demand right now?"), to a
    narrower demand slice ("Are Staff-level Engineering roles growing?", "Are IC or management
    roles more common right now?", "How does demand for Backend Engineers differ between the US
@@ -143,6 +289,11 @@ The user interprets and decides what to do with it.
    unlikely to be the highest-leverage thing to learn next — design systems fluency would
    affect more of your applications"). If the sample is too small to support a confident
    judgment, the AI says so and gives the data alone rather than a shaky recommendation.
+7c. **An instant answer to a common question is held to exactly the same bar.** It analyses
+   the platform's own data for that specific question, states the time window, and obeys the
+   Compensation and Requirements honesty rules (7a, 7b) — the numbers are always current as
+   of when it's asked, never stored or stale. The only thing different is that no AI model
+   composed it, and the drill-down says so.
 8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
@@ -155,7 +306,7 @@ The user interprets and decides what to do with it.
 
 1. **Trend chart** — large. Three lines: Designer, Product Manager, Engineer, each in a
    distinct colour. A time range selector above the chart, right-aligned:
-   `This Year · Past 5 Years · All Time`. Default: This Year.
+  `6 Months · This Year · Past 5 Years · All Time`. Default: 6 Months.
    Hover: vertical cursor snaps to the nearest month; tooltip shows the count and M-o-M Δ
    for each visible line.
    No verdict label, no colour-coded health state. Numbers and shape only.
@@ -170,6 +321,10 @@ The user interprets and decides what to do with it.
    A "view prompt" affordance is anchored to this block.
 
 **Chat input** — fixed, full width, pinned to the bottom. Placeholder: "Ask about the market…".
+The offered common questions and the transient "assistant briefly unavailable" message both
+sit within this existing conversational layout — quiet, not competing with the conversation,
+in the product's established tone. Exact placement and styling are for the frontend and
+visual-design work, not decided here.
 
 **Thinking process accordion** — every AI message carries a secondary disclosure control below
 its header: a small chevron link labelled "How this was generated". Collapsed by default.
@@ -185,7 +340,9 @@ When expanded, it shows:
   compensation signal count (and, when a compensation question was asked, how many of those
   postings had disclosed vs. inferred salary data), requirements signal count (and, when a
   synthesis question was asked, the sample size the judgment was built on — see User Flow
-  7b), layoff event count, and the model used
+  7b), layoff event count, and the model used. For an instant answer this says plainly that
+  no model was used; if the assistant fell back to a secondary model, it names that model —
+  the user can always tell what produced their answer.
 - **Sources** — for the opening briefing, the data source description — now potentially more
   than one, since postings are ingested from several company job boards rather than a single
   provider. When more than one source contributed to what's shown, each is named (e.g.
@@ -217,34 +374,56 @@ language or sentiment framing beyond what the numbers directly support.
 |---|---|
 | Chart type | Line chart, continuous. No bar fill. |
 | **Chart title** | "Tech hiring demand" — top-left, `text-sm font-semibold text-gray-100` |
-| **Chart subtitle** | "Monthly job openings by role category" — below title, `text-xs text-gray-400` |
-| **Time range tabs** | Top-right of the title row, right-aligned. `This Year · Past 5 Years · All Time`. |
+| **Chart subtitle** | Dynamic per granularity — "Daily job openings by role category" / "Weekly job openings by role category" / "Monthly job openings by role category" — below title, `text-xs text-gray-400` |
+| **Time range filter** | Top-right of the title row, right-aligned dropdown. Options: `6 Months · This Year · Past 5 Years · All Time`. |
+| **Granularity filter** (added 2026-08-22 — `changes/2026-08-22-chart-granularity.md`) | Directly below the time range filter, same right alignment. Dropdown options: `Week · Month`. Independent control from Time Range. Default: Week. |
 | **Legend** | Below the title row, above the chart. Coloured line swatch + role label per category. |
 | **Y axis label** | "Openings" — rotated 90°, left of the Y axis tick values. `text-[10px] fill-gray-500`. |
-| **X axis label** | "Month" — centred below the X axis tick marks. `text-[10px] fill-gray-500`. |
-| X axis ticks | Month names for This Year (Jan, Feb…). Year for Past 5 Years and All Time. Primary axis identifier — the label is supplemental. |
+| **X axis label** | Dynamic per granularity — "Day" / "Week" / "Month" — centred below the X axis tick marks. `text-[10px] fill-gray-500`. |
+| X axis ticks | Week granularity: week-start date labels (e.g. "Aug 3"). Month granularity: month names (Jan, Feb…) for 6 Months/This Year, year for Past 5 Years/All Time. Primary axis identifier — the label is supplemental. When the plot area does not scroll and there are more buckets than fit legibly, tick labels are thinned to an evenly spaced subset (never overlapping); the underlying line still uses every bucket. Long ranges (Past 5 Years / All Time) always show at least one tick per year regardless of granularity (updated 2026-09-04). |
 | Y axis ticks | Absolute count, formatted (e.g. 5k, 10k). |
 | Lines | Designer, Product Manager, Engineer |
-| Default time range | This Year (Jan–current month) |
-| Available ranges | This Year · Past 5 Years · All Time |
-| Hover | Vertical cursor + tooltip with count + M-o-M Δ per line |
+| Default time range | 6 Months |
+| Available ranges | 6 Months · This Year · Past 5 Years · All Time |
+| **Default granularity** (added 2026-08-22) | **Week** — shows the shape of the live data without monthly sparsity. Fixed and predictable, not adaptive to data volume. |
+| **Available granularities** | Week · Month. Both are available for every range in this slice. |
+| **Horizontal scroll** (added 2026-08-22) | The plot area (X axis + lines) scrolls horizontally once the number of buckets exceeds what fits legibly at a minimum ~24px per bucket; the Y axis, title, subtitle, and legend never scroll. |
+| Hover | Vertical cursor + tooltip with count + period-over-period Δ per line (day-over-day, week-over-week, or month-over-month, matching the active granularity — generalizes the previous "M-o-M Δ only" behaviour) |
 | Loading state | Skeleton lines pulse in place. Chart frame does not shift. |
-| No-data state | If a category has no data for a range, its line is hidden; legend shows "No data." |
+| No-data state | If a category has no data for a range, its line is hidden; legend shows "No data." A sparse-but-real line (e.g. only the most recent few buckets populated, the rest of the window empty because live data collection started recently) is not a no-data state — it's shown as-is, honestly reflecting how much real history actually exists. Never padded, interpolated, or hidden to look more complete than it is. |
+| Flat / single-bucket data | A genuinely flat series (every bucket the same value) renders as a straight horizontal line, not a blank chart. When only one complete bucket is in range, its values render as labelled points (no line) with a caption naming the period and stating that a trend line needs at least two. The Y axis always shows a readable scale even when the value range is zero-width. |
+| Complete periods only | The in-progress week or month is never plotted — see Written Summary Specification. The last point on the chart is always a period that has fully elapsed. |
+| Baseline exclusion | The first collection day never appears as a bucket on the chart. The X axis begins at the first full bucket after it. This is why "6 Months" can legitimately show only a few weeks of line — the window before live collection started has no data and is not drawn (updated 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`). |
 
 ---
 
 ## Written Summary Specification
 
-Generated with the opening prompt. Regenerates when the time range changes.
+Generated with the opening prompt. Regenerates when the time range **or granularity**
+changes (added 2026-08-22 — `changes/2026-08-22-chart-granularity.md`).
 
 **Rules:**
+- Always identifies the selected time range and granularity in the first sentence (for
+  example, "In the weekly view for the past 6 months...").
 - Always names the direction: rising, flat, or declining.
 - States magnitude where data supports it (% change or absolute count).
+- Only **complete** periods are shown or compared — a week whose final day has passed, a
+  month before the current one. The in-progress week or month is not plotted at all: a
+  4-day September drawn at full scale next to a 31-day August reads as an ~80% collapse that
+  never happened. With fewer than two complete post-baseline buckets, the summary says the
+  series is too short to state a trend yet (added 2026-09-04 —
+  `changes/2026-09-04-chart-baseline-and-render-fixes.md`).
 - Names divergence between categories if present (e.g., one category outperforming the others).
 - Names a recent reversal if relevant (e.g., a decline that is slowing).
 - Never uses verdict labels (Cautious, Strong, Weak, etc.).
 - Never recommends an action.
 - 3–4 sentences maximum.
+- Trend counts begin the day **after** the first collection day. That first day is a one-time
+  bulk load of everything the sources had open when the platform started crawling — it is the
+  platform's baseline, reflects collection setup rather than market activity, and must never be
+  described as a hiring surge. The baseline is identified by date (the earliest day the
+  platform observed any posting), not by which ingestion run inserted a row (updated
+  2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`).
 
 **Example outputs:**
 
@@ -266,8 +445,11 @@ concentrated in the first half of the year — the last three months have been f
 
 | User action | System response |
 |---|---|
-| Open Market Health | Opening message generates: trend chart (This Year default), then written summary. |
-| Switch time range | Chart updates. Written summary regenerates for the new window. |
+| Open Market Health | "About this platform" is selected by default; its welcome resolves instantly (no model call). |
+| Open Market Health, then select "Tech market hiring status" | Opening message generates: trend chart (6 Months default, Week granularity default), then written summary. |
+| Tap a catalogue shortcut in "About this platform" (added 2026-09-04) | Task Panel selects that story's own task, exactly as if the user had clicked it directly — the same instant, no-model answer that task always gives. Works the same for any number of catalogue entries. |
+| Switch time range | Chart updates. If the current granularity isn't available at the new range, granularity falls back to that range's coarsest option. Written summary regenerates for the new window. |
+| Switch granularity (added 2026-08-22) | Chart updates — X axis re-buckets, horizontal scroll engages/disengages as needed. Written summary regenerates for the new bucket size. Time range selection is unaffected. |
 | Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
 | Ask a question in chat, answerable from the platform's data | AI analyses the platform's data specifically for that question (not a fixed canned summary), states the answer's time window, and the accordion shows what was queried. |
 | Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began) | AI says plainly that the platform doesn't have that data, then answers from a real, citable external source (article, report, named study) — never from unverified recall. Response and accordion both make clear it's an external source, not platform data. |
@@ -275,6 +457,8 @@ concentrated in the first half of the year — the last three months have been f
 | Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
 | Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. |
 | Ask a synthesis question that asks for a judgment (e.g. "Should I learn to code as a UX Designer?") | AI answers in two clearly separated parts: the underlying data first, then its judgment built on that data — never blended into one undifferentiated statement. If the sample is too small to support a confident judgment, gives the data alone and says so. |
+| Pick an offered common question | It's asked as if typed. A curated question returns an instant answer from current platform data, held to the same time-window and honesty rules as any answer. |
+| Assistant is briefly unavailable (transient outage) | The AI turn shows a calm "try again shortly" message and the common questions stay available. Not a red error state; retrying a moment later normally works. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 
@@ -282,11 +466,29 @@ concentrated in the first half of the year — the last three months have been f
 
 ## Edge Cases
 
+- **"About this platform" before any postings have been collected (added 2026-09-04, revised
+  2026-09-04 for the hero/proof/CTA structure):** The Hero renders as normal — it doesn't
+  depend on data. Proof states plainly that collection hasn't produced results yet: the Hero
+  Figure and Stat Tiles show a calm "not collected yet" state rather than `0`, and the
+  Category Share Bar is omitted rather than rendered empty. The call to action still lists the
+  catalogue's Shortcut Cards (they're about what questions exist, not about current results),
+  but each linked story is responsible for its own no-data state once opened — the welcome
+  does not pre-judge whether a story can currently answer.
+- **The story catalogue is empty:** The call to action omits its Shortcut Cards entirely
+  rather than rendering an empty section; the generic "ask your own question" sentence still
+  shows.
 - **Insufficient data for a time range:** Show what exists. X axis compresses to fit. A note
   below the chart: "Data available from [earliest date]." Summary reflects the available window.
 - **No data at all:** Replace chart with a plain message. Summary does not generate.
 - **Summary generation fails:** Show: "Ask a question below to explore the trend data."
-- **Chat query genuinely unanswerable:** Neither the platform's data nor a real external source
+- **The assistant is briefly unavailable (transient outage):** The AI turn shows a calm,
+  non-alarming message — can't answer right now, try again in a moment — and the common
+  questions stay available (they return answers straight from the platform's data and don't
+  need the assistant). Never a dead-end error with no way forward. Explicitly *transient*
+  wording ("right now" / "try again shortly"), not "failed".
+- **Instant answer whose data slice is empty or too small:** It states that plainly — "No
+  tracked postings match this yet", or the raw counts with "too few to read a trend from" —
+  exactly as a composed answer would. It never invents a number to fill a template.
   applies (e.g. a question entirely outside the tech job market). Say so plainly and suggest
   1–2 related questions the platform can actually help with.
 - **Question reaches outside the platform's data (e.g. a time period before data collection
@@ -352,6 +554,8 @@ concentrated in the first half of the year — the last three months have been f
 | Confidence comprehension | Post-task question, after a compensation answer: "Was this figure based on disclosed salary data, an estimate, or a mix?" | ≥ 85% correct |
 | Requirements question rate | Analytics — % of sessions that include at least one skills/requirements or synthesis question | Track, no target yet |
 | Data-vs-judgment comprehension | Post-task question, after a synthesis answer: "Which part was factual data, and which part was the AI's opinion?" | ≥ 85% correct |
+| Instant-answer coverage | Analytics — % of follow-up questions answered by the curated no-model path | Track; expected to rise as the catalogue grows |
+| Degraded-state recovery | Analytics — % of "assistant unavailable" turns followed by a successful answer (retry or common question) in the same session | ≥ 90% |
 
 ---
 
@@ -386,6 +590,20 @@ concentrated in the first half of the year — the last three months have been f
   extraction data shows which mentioned skills don't map to any tracked value and recur
   often enough to justify adding — same "Raw Title" discipline already used for
   sub-specializations, not a one-time decision.
+- The curated instant-answer catalogue (added 2026-09-03) starts small and is meant to grow
+  continuously — which questions to add next should be driven by what users actually ask
+  most, not guessed up front. Same review discipline as the skills list above.
+- How the common questions are offered and how the transient "unavailable" message reads —
+  placement, wording, styling — is deliberately left to the frontend and visual-design work,
+  within the existing conversational design.
+
+**Added (2026-09-03):** Two goals stated, no design change: (1) a curated, growing set of
+common questions should answer instantly from current platform data with no AI model call;
+(2) a brief assistant outage should show a calm "try again shortly" state with the common
+questions still available, never a dead-end error. Every answer is still data-grounded and
+held to the same honesty rules (User Flow 7c); the drill-down is honest about what produced
+it. Opening chart, summary, and prompt untouched. How these surface is left to the frontend
+and visual-design work. See `changes/2026-09-03-chat-resilience-and-instant-answers.md`.
 
 **Resolved (2026-08-11):** `design/market-health/job-classification.md` underwent a full
 taxonomy redesign (`changes/2026-08-11-classification-taxonomy-redesign.md`) — the old

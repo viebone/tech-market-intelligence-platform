@@ -1,9 +1,10 @@
 import { useRef, useState, useCallback } from "react";
 
-export type TimeRange = "this_year" | "past_5_years" | "all_time";
+export type TimeRange = "six_months" | "this_year" | "past_5_years" | "all_time";
+export type Granularity = "week" | "month";
 
 export interface OpeningDataPoint {
-  month: string;         // "YYYY-MM"
+  period: string;        // "YYYY-MM-DD" for week, "YYYY-MM" for month
   designer: number;
   product_manager: number;
   engineer: number;
@@ -13,15 +14,23 @@ interface JobOpeningsChartProps {
   data: OpeningDataPoint[];
   range: TimeRange;
   onRangeChange: (r: TimeRange) => void;
+  granularity: Granularity;
+  onGranularityChange: (g: Granularity) => void;
   isLoading?: boolean;
 }
 
 // ─── visual config ────────────────────────────────────────────────────────────
 
 const RANGES: { value: TimeRange; label: string }[] = [
+  { value: "six_months",    label: "6 Months" },
   { value: "this_year",    label: "This Year" },
   { value: "past_5_years", label: "Past 5 Years" },
   { value: "all_time",     label: "All Time" },
+];
+
+const GRANULARITIES: { value: Granularity; label: string }[] = [
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
 ];
 
 const SERIES = [
@@ -35,30 +44,38 @@ const SVG_H = 280;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function formatMonth(month: string): string {
-  const [y, m] = month.split("-");
-  const d = new Date(Number(y), Number(m) - 1);
-  return d.toLocaleString("default", { month: "short", year: "2-digit" });
+// A month period is "YYYY-MM"; append a day so `Date` can parse it
+// (`new Date("2026-08T00:00:00")` is Invalid Date).
+function periodToDate(period: string): Date {
+  const iso = period.length === 7 ? `${period}-01` : period;
+  return new Date(`${iso}T00:00:00`);
 }
 
-function formatMonthShort(month: string): string {
-  const [y, m] = month.split("-");
-  const d = new Date(Number(y), Number(m) - 1);
-  return d.toLocaleString("default", { month: "short" });
+function formatPeriod(period: string, granularity: Granularity): string {
+  return periodToDate(period).toLocaleString("default", granularity === "week"
+    ? { month: "short", day: "numeric", year: "2-digit" }
+    : { month: "short", year: "2-digit" });
 }
 
-function getYear(month: string): string {
-  return month.slice(0, 4);
+function formatPeriodShort(period: string, granularity: Granularity): string {
+  return periodToDate(period).toLocaleString("default", granularity === "week"
+    ? { month: "short", day: "numeric" }
+    : { month: "short" });
+}
+
+function getYear(period: string): string {
+  return period.slice(0, 4);
 }
 
 function niceTicks(min: number, max: number, count = 4): number[] {
   const range = max - min;
+  if (!(range > 0)) return [Math.round(min)];
   const step = Math.pow(10, Math.floor(Math.log10(range / count)));
   const niceStep = [1, 2, 2.5, 5, 10].map(f => f * step).find(s => range / s <= count + 1) ?? step;
   const start = Math.ceil(min / niceStep) * niceStep;
   const ticks: number[] = [];
   for (let v = start; v <= max + niceStep * 0.01; v += niceStep) ticks.push(Math.round(v));
-  return ticks;
+  return Array.from(new Set(ticks));
 }
 
 function formatCount(n: number): string {
@@ -67,7 +84,7 @@ function formatCount(n: number): string {
 
 // ─── component ────────────────────────────────────────────────────────────────
 
-export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobOpeningsChartProps) {
+export function JobOpeningsChart({ data, range, onRangeChange, granularity, onGranularityChange, isLoading }: JobOpeningsChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
@@ -91,8 +108,16 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
   const dataMin = allValues.length ? Math.min(...allValues) : 0;
   const dataMax = allValues.length ? Math.max(...allValues) : 1000;
   const yPad = (dataMax - dataMin) * 0.08;
-  const yMin = Math.max(0, dataMin - yPad);
-  const yMax = dataMax + yPad;
+  let yMin = Math.max(0, dataMin - yPad);
+  let yMax = dataMax + yPad;
+  // Flat series or a single bucket: the value span is zero. Give the axis a
+  // readable range so lines render instead of collapsing to NaN.
+  if (yMax - yMin < 1) {
+    const mid = (yMax + yMin) / 2;
+    yMin = Math.max(0, Math.floor(mid - 1));
+    yMax = Math.ceil(mid + 1);
+    if (yMax === yMin) yMax = yMin + 1;
+  }
 
   function toX(i: number) {
     if (data.length <= 1) return PAD.left + drawW / 2;
@@ -106,15 +131,32 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
 
   function xLabels(): { idx: number; label: string }[] {
     if (data.length === 0) return [];
-    if (range === "this_year") {
-      return data.map((d, i) => ({ idx: i, label: formatMonthShort(d.month) }));
+    if (range === "six_months" || range === "this_year") {
+      // Thin to a handful of evenly spaced labels so dense weekly views don't
+      // overlap into mush. The line itself still uses every bucket.
+      const MAX_LABELS = 8;
+      if (data.length <= MAX_LABELS) {
+        return data.map((d, i) => ({ idx: i, label: formatPeriodShort(d.period, granularity) }));
+      }
+      const stride = Math.ceil(data.length / MAX_LABELS);
+      const labels: { idx: number; label: string }[] = [];
+      for (let i = 0; i < data.length; i += stride) {
+        labels.push({ idx: i, label: formatPeriodShort(data[i].period, granularity) });
+      }
+      const lastIdx = data.length - 1;
+      if (labels[labels.length - 1].idx !== lastIdx) {
+        labels.push({ idx: lastIdx, label: formatPeriodShort(data[lastIdx].period, granularity) });
+      }
+      return labels;
     }
-    // For longer ranges: show Jan of each year only
+    // Longer ranges: one label per calendar year, at that year's first bucket.
+    // (Don't test for a period ending in "-01" — Monday-anchored week keys
+    // almost never do, which left long weekly views with no labels at all.)
     const seen = new Set<string>();
     const labels: { idx: number; label: string }[] = [];
     data.forEach((d, i) => {
-      const year = getYear(d.month);
-      if (d.month.endsWith("-01") && !seen.has(year)) {
+      const year = getYear(d.period);
+      if (!seen.has(year)) {
         seen.add(year);
         labels.push({ idx: i, label: year });
       }
@@ -166,22 +208,37 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">Tech hiring demand</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Monthly job openings by role category</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {granularity === "week" ? "Weekly" : "Monthly"} job openings by role category
+          </p>
         </div>
-        <div className="flex items-center gap-1 bg-gray-800 rounded-md p-0.5 shrink-0">
-          {RANGES.map(r => (
-            <button
-              key={r.value}
-              onClick={() => onRangeChange(r.value)}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                range === r.value
-                  ? "bg-gray-600 text-white"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+          <div className="flex items-center gap-2 shrink-0">
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span>Range</span>
+              <select
+                value={range}
+                onChange={(event) => onRangeChange(event.target.value as TimeRange)}
+                className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-gray-500"
+                aria-label="Time range"
+              >
+                {RANGES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span>View</span>
+              <select
+                value={granularity}
+                onChange={(event) => onGranularityChange(event.target.value as Granularity)}
+                className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-gray-500"
+                aria-label="Chart granularity"
+              >
+                {GRANULARITIES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
         </div>
       </div>
 
@@ -208,6 +265,15 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
                 />
               ))}
             </div>
+          </div>
+        )}
+
+        {!isLoading && data.length === 1 && (
+          <div className="absolute inset-x-0 bottom-14 flex justify-center z-10 px-6">
+            <p className="text-xs text-gray-400 bg-gray-900/80 rounded-md px-3 py-1.5 text-center">
+              One complete {granularity === "week" ? "week" : "month"} of data so far
+              ({formatPeriod(data[0].period, granularity)}). The trend line needs at least two.
+            </p>
           </div>
         )}
 
@@ -242,7 +308,7 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
             className="fill-gray-500"
             style={{ fontSize: 10 }}
           >
-            Month
+            {granularity === "week" ? "Week" : "Month"}
           </text>
 
           {/* Y grid lines + labels */}
@@ -292,6 +358,18 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
             />
           ))}
 
+          {/* Single bucket: a line has nothing to draw — mark the point. */}
+          {data.length === 1 && SERIES.map(s => (
+            <circle
+              key={`point-${s.key}`}
+              cx={toX(0)}
+              cy={toY(data[0][s.key] as number)}
+              r="3.5"
+              fill={s.color}
+              opacity={isLoading ? 0.3 : 1}
+            />
+          ))}
+
           {/* Hover cursor */}
           {hoverIdx !== null && (
             <>
@@ -329,7 +407,7 @@ export function JobOpeningsChart({ data, range, onRangeChange, isLoading }: JobO
             }}
           >
             <p className="text-xs text-gray-400 mb-1.5 font-medium">
-              {formatMonth(hovered.month)}
+                {formatPeriod(hovered.period, granularity)}
             </p>
             {SERIES.map(s => (
               <div key={s.key} className="flex items-center justify-between gap-4">

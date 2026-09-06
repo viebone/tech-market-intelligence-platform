@@ -29,20 +29,25 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+import curated_answers
 from llm import providers
+from llm.chat_fallback import ChatModelUnavailable, call_with_retry, stream_with_retry
 from pydantic import BaseModel
 
 from ai_interaction_settings import (
+    CHAT_PAID_DAILY_REQUEST_CAP,
     MAX_USER_MESSAGE_CHARS,
     SYNTHESIS_HISTORY_WINDOW_MESSAGES,
     TOOL_STAGE_HISTORY_MESSAGES,
 )
+from db import get_connection
 from market_health import _resolve_signal, _filter_demand, _filter_compensation, _serialise
 from market_query import query_compensation_data, query_market_data, query_requirements_data
 from mock_data import LAYOFF_SIGNALS
@@ -52,14 +57,53 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Provider and model are declared here — explicit at the call site per outcome ai-provider-flexibility.
-# Changed from gemini-2.5-flash 2026-08-29: GEMINI_API_KEY was repointed to a free-tier Gemini
-# project so /api/chat cannot incur spend (outcome llm-spend-is-bounded-and-isolated,
-# changes/2026-08-29-chat-free-tier-key-isolation.md). That project no longer offers gemini-2.5-flash.
-# Pinned to gemini-3.6-flash rather than the gemini-flash-latest alias: on this free-tier project the
-# alias endpoint consistently times out (throttled/queued), while the pinned model it resolves to
-# responds fine. Revisit the alias (matching requirements.py) if that throttling clears.
+# Provider and model — explicit at the call site per outcome ai-provider-flexibility.
+# REVISED 2026-09-06 (changes/2026-09-03-chat-resilience-and-instant-answers.md): the free
+# tier is removed from chat. Its gemini-3.6-flash quota is 20 requests/day (~6 chat turns)
+# and it is slower and less predictable than paid; "free-first" also wasted ~8s/request
+# retrying a spent tier. Chat now uses ONE model: gemini-3.6-flash on the dedicated,
+# isolated, spend-capped paid project (GEMINI_API_KEY_CHAT_PAID). GEMINI_API_KEY (the old
+# free key) is no longer read here.
 _CHAT_MODEL = "gemini-3.6-flash"
+
+_DEGRADED_MESSAGE = (
+    "The assistant is briefly unavailable — please try again in a moment. "
+    "Meanwhile, the suggested questions answer instantly, and “About this platform” "
+    "and “What we know about the market” in the task panel never use AI."
+)
+
+
+def _chat_paid_requests_today() -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT requests FROM chat_paid_usage WHERE usage_date = (now() AT TIME ZONE 'UTC')::date"
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def _record_chat_paid_request() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO chat_paid_usage (usage_date, requests)
+            VALUES ((now() AT TIME ZONE 'UTC')::date, 1)
+            ON CONFLICT (usage_date) DO UPDATE SET requests = chat_paid_usage.requests + 1
+            """
+        )
+
+
+def _model_available() -> bool:
+    """The paid model is usable only if its key is set AND today's request count is
+    under the cap. Otherwise the model stages are skipped entirely — chat degrades to
+    the curated instant-answer path / the 'briefly unavailable' message."""
+    if not os.environ.get("GEMINI_API_KEY_CHAT_PAID"):
+        return False
+    return _chat_paid_requests_today() < CHAT_PAID_DAILY_REQUEST_CAP
+
+
+def _chat_provider():
+    """The single chat model tier — gemini-3.6-flash on the dedicated paid project."""
+    return providers.gemini(_CHAT_MODEL, api_key=os.environ["GEMINI_API_KEY_CHAT_PAID"])
 
 
 # ---------------------------------------------------------------------------
@@ -144,20 +188,25 @@ did not actually return."""
 
 async def _query_platform_data(recent_messages: list[ChatMessage]):
     """
-    Stage 1 (always tried first): let the model query real data for this
-    specific question, not a fixed pre-computed blob. `recent_messages` is a
-    bounded window (TOOL_STAGE_HISTORY_MESSAGES), not the full conversation —
-    enough to resolve a short follow-up, not enough to grow cost with
-    conversation length. Returns the model's text (possibly prefixed
-    "NEEDS_EXTERNAL: ...") and the real tool calls made, for the reasoning trace.
+    Stage 1 (runs when the curated catalogue didn't match): let the model query
+    real data for this specific question, not a fixed pre-computed blob.
+    `recent_messages` is a bounded window (TOOL_STAGE_HISTORY_MESSAGES), not the
+    full conversation — enough to resolve a short follow-up, not enough to grow
+    cost with conversation length. Returns the model's text (possibly prefixed
+    "NEEDS_EXTERNAL: ...") and the real tool calls made (for the reasoning trace).
+    Raises ChatModelUnavailable if the paid model can't be reached after retries.
     """
-    provider = providers.gemini(_CHAT_MODEL)
     today = datetime.now(timezone.utc).date().isoformat()
-    response = await provider.complete_with_tools(
-        prompt=_render_transcript(recent_messages),
-        system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
-        tools=[query_market_data, query_compensation_data, query_requirements_data],
-    )
+
+    async def _call(provider):
+        return await provider.complete_with_tools(
+            prompt=_render_transcript(recent_messages),
+            system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
+            tools=[query_market_data, query_compensation_data, query_requirements_data],
+        )
+
+    response = await call_with_retry(_chat_provider(), _call)
+    _record_chat_paid_request()
     return response.text, response.tool_calls
 
 
@@ -182,13 +231,18 @@ def _needs_external(stage1_text: str) -> tuple[bool, str]:
 
 async def _search_external_sources(recent_messages: list[ChatMessage], gap_description: str):
     """Stage 2: real, cited external sources for what stage 1 couldn't answer."""
-    provider = providers.gemini(_CHAT_MODEL)
     prompt = (
         f'The platform\'s own job market data could not answer this: "{gap_description}"\n'
         f"Recent conversation:\n{_render_transcript(recent_messages)}\n\n"
         "Find real, citable external sources to help answer the last message."
     )
-    return await provider.complete_with_search_grounding(prompt=prompt, system=_SEARCH_STAGE_SYSTEM)
+
+    async def _call(provider):
+        return await provider.complete_with_search_grounding(prompt=prompt, system=_SEARCH_STAGE_SYSTEM)
+
+    grounded = await call_with_retry(_chat_provider(), _call)
+    _record_chat_paid_request()
+    return grounded
 
 
 # ---------------------------------------------------------------------------
@@ -349,40 +403,101 @@ def _sdk_finish(finish_reason: str = "stop") -> str:
 # Streaming generator
 # ---------------------------------------------------------------------------
 
+def _curated_trace(question: str, tool_calls: list) -> ReasoningTrace:
+    """Trace for a curated instant answer — the real query it ran, and an explicit
+    'no model' step (Principle 4, full inspectability)."""
+    trace = _build_reasoning_trace(question, tool_calls, used_external=False,
+                                   grounded_queries=[], grounded_sources=[])
+    # _build_reasoning_trace always ends with a "Synthesised the final answer…"
+    # step — no synthesis happens on the curated path, so replace it.
+    if trace.reasoning_steps:
+        trace.reasoning_steps.pop()
+    trace.reasoning_steps.append(ReasoningStep(
+        sequence=len(trace.reasoning_steps) + 1,
+        content="Filled a pre-built answer template from that query's results. No language model was used.",
+    ))
+    return trace
+
+
 async def _stream_response(
     messages: list[ChatMessage],
 ) -> AsyncIterator[str]:
     """
     Streams the AI response in Vercel AI SDK data-stream format.
 
-    Event order:
-      1. reasoning_trace data part  — first, before any tokens
-      2. text parts                 — one per chunk, from the stage 3 synthesis call
-      3. finish_message data part   — includes generation_time_ms
-      4. finish delta               — tells useChat the stream is done
+    Event order: reasoning_trace data part → text parts → finish_message → finish delta.
 
-    Provider and model are declared via _CHAT_MODEL above.
+    Path selection:
+      1. Curated instant answer (curated_answers.match) — no model call, sub-second.
+      2. Otherwise the model stages (Stage 1 tools → optional Stage 2 search → Stage 3
+         synthesis stream) on the single paid tier (_chat_provider). 10–30s.
+      3. If the paid model is unavailable / its daily cap is spent — the calm
+         degraded message. Never a hang or a bare error.
+    See changes/2026-09-03-chat-resilience-and-instant-answers.md.
     """
     start_time = time.time()
     question = next((m.content for m in reversed(messages) if m.role == "user"), "")
+
+    def _finish() -> str:
+        ms = int((time.time() - start_time) * 1000)
+        return _sdk_data({"type": "finish_message", "finishReason": "stop", "generation_time_ms": ms})
+
+    # ── Path 1: curated instant answer (no model call) ────────────────────────
+    curated = curated_answers.match(question)
+    if curated is not None:
+        try:
+            answer_text, tool_calls = curated.builder()
+            yield _sdk_data({
+                "type": "reasoning_trace",
+                "trace": dataclasses.asdict(_curated_trace(question, tool_calls)),
+            })
+            yield _sdk_text(answer_text)
+            yield _finish()
+            yield _sdk_finish()
+            return
+        except Exception as exc:
+            # A curated builder failing (e.g. a DB blip) is not fatal — fall
+            # through to the model path rather than erroring the whole request.
+            logger.warning("Curated answer '%s' failed, falling through to the model: %s", curated.id, exc)
+
+    # ── Path 3 (pre-check): the model isn't available at all ──────────────────
+    if not _model_available():
+        logger.warning("Chat model unavailable (key missing or daily cap reached) and no curated match.")
+        yield _sdk_data({
+            "type": "reasoning_trace",
+            "trace": dataclasses.asdict(_build_reasoning_trace(question, [], False, [], [])),
+        })
+        yield _sdk_text(_DEGRADED_MESSAGE)
+        yield _finish()
+        yield _sdk_finish()
+        return
+
+    # ── Path 2: the model stages ─────────────────────────────────────────────
     # Bounded windows, not full history — see backend/AI_INTERACTION_SETTINGS.md.
     tool_stage_messages = _recent(messages, TOOL_STAGE_HISTORY_MESSAGES)
     synthesis_messages = _recent(messages, SYNTHESIS_HISTORY_WINDOW_MESSAGES)
 
     try:
         stage1_text, tool_calls = await _query_platform_data(tool_stage_messages)
+    except ChatModelUnavailable as exc:
+        logger.error("Stage 1 unavailable after retries: %s", exc)
+        yield _sdk_data({
+            "type": "reasoning_trace",
+            "trace": dataclasses.asdict(_build_reasoning_trace(question, [], False, [], [])),
+        })
+        yield _sdk_text(_DEGRADED_MESSAGE)
+        yield _finish()
+        yield _sdk_finish()
+        return
     except Exception as exc:
         logger.error("Stage 1 (query_market_data) failed: %s", exc)
         stage1_text, tool_calls = "(platform data query failed)", []
 
     used_external, gap = _needs_external(stage1_text)
 
-    # Anti-fabrication guard: if the model neither called the tool nor
-    # admitted it needed external help, its text is untrusted — found in
-    # testing that a confused model (e.g. a context-dependent follow-up with
-    # no history) will sometimes answer with fabricated numbers instead of
-    # abstaining, despite the system prompt instructing it not to. Never let
-    # that text reach the synthesis stage as if it were real.
+    # Anti-fabrication guard: if the model neither called the tool nor admitted it
+    # needed external help, its text is untrusted — a confused model will sometimes
+    # answer with fabricated numbers instead of abstaining. Never let that reach synthesis.
     if not tool_calls and not used_external:
         logger.warning("Stage 1 produced ungrounded text with no tool call and no NEEDS_EXTERNAL marker; discarding it.")
         stage1_text = "(no real platform data was retrieved for this question)"
@@ -402,38 +517,30 @@ async def _stream_response(
             grounded_text = "(external search failed)"
 
     trace = _build_reasoning_trace(question, tool_calls, used_external, grounded_queries, grounded_sources)
+    yield _sdk_data({"type": "reasoning_trace", "trace": dataclasses.asdict(trace)})
 
-    # 1. Reasoning trace — emitted before the final synthesis call starts
-    yield _sdk_data({
-        "type": "reasoning_trace",
-        "trace": dataclasses.asdict(trace),
-    })
-
-    # 2. Stream the final synthesis through the provider abstraction
+    # Stage 3 — stream the final synthesis
     synthesis_system = _build_synthesis_system(stage1_text, tool_calls, grounded_text, grounded_sources)
-    provider = providers.gemini(_CHAT_MODEL)
-    try:
-        async for chunk in provider.stream(
-            messages=[{"role": m.role, "content": m.content} for m in synthesis_messages],
-            system=synthesis_system,
-        ):
-            yield _sdk_text(chunk)
+    synthesis_payload = [{"role": m.role, "content": m.content} for m in synthesis_messages]
 
+    def _stream_call(provider):
+        return provider.stream(messages=synthesis_payload, system=synthesis_system)
+
+    recorded_synthesis = False
+    try:
+        async for chunk in stream_with_retry(_chat_provider(), _stream_call):
+            if not recorded_synthesis:
+                recorded_synthesis = True
+                _record_chat_paid_request()
+            yield _sdk_text(chunk)
+    except ChatModelUnavailable as exc:
+        logger.error("Synthesis stage unavailable after retries: %s", exc)
+        yield _sdk_text("\n\n" + _DEGRADED_MESSAGE)
     except Exception as exc:
         logger.error("LLM provider error (%s): %s", _CHAT_MODEL, exc)
-        msg = str(exc).lower()
-        if any(w in msg for w in ("connection", "network", "timeout", "unreachable")):
-            yield _sdk_text("\n\n[The AI service is currently unreachable. Please try again shortly.]")
-        else:
-            yield _sdk_text("\n\n[The AI service returned an error. Please try again.]")
+        yield _sdk_text("\n\n[The AI service returned an error. Please try again.]")
 
-    # 3. Finish data event with wall-clock generation time
-    generation_time_ms = int((time.time() - start_time) * 1000)
-    yield _sdk_data({
-        "type": "finish_message",
-        "finishReason": "stop",
-        "generation_time_ms": generation_time_ms,
-    })
+    yield _finish()
 
     # 4. Finish delta — signals stream end to useChat
     yield _sdk_finish()
