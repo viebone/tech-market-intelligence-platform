@@ -130,6 +130,10 @@ export function ConversationThread({
                 <WelcomeMessage welcome={welcomeResult} onSelectShortcut={onSelectShortcut} />
               </AITurn>
             ) : null}
+            {/* Instant-answer chips reachable from the default landing view too —
+                tapping one opens the hiring-status conversation (MarketHealthPage
+                switches the task). changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md */}
+            <SuggestedQuestions onAsk={onAskSuggestion} disabled={isLoading} />
           </div>
         ) : activeTaskId === HIRING_STATUS_TASK_ID ? (
           <>

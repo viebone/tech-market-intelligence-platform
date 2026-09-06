@@ -405,10 +405,16 @@ under a second. The frontend surfaces them so the fast path is one tap:
 | `SuggestedQuestions` | Fetches `GET /api/market-health/chat-suggestions` once on mount. Renders each `question` as a chip (the existing Shortcut-Card-lite / button token — no new visual pattern). Clicking a chip submits that exact question through the same `useChat` `append` path as typing it — the backend then matches it to the curated catalogue and returns the instant answer. | `frontend/src/features/market-health/SuggestedQuestions.tsx` |
 
 - **Placement**: inside the conversation area, below the opening hiring-status briefing and
-  above the first follow-up turn (so it's visible before the user types), and again in the
-  degraded-service turn's body (the "briefly unavailable" message is followed by the chips).
-  No new layout zone — it lives in the existing `ConversationThread`, consistent with the
-  2026-09-03 IA review (no new node/zone).
+  above the first follow-up turn (so it's visible before the user types); **and** below the
+  "About this platform" welcome, so the instant-answer path is reachable from the default
+  first-load view (added 2026-09-06 —
+  `changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md`). No new layout zone — it
+  lives in the existing `ConversationThread`, consistent with the 2026-09-03 IA review.
+- **The chat input is always visible (every task), but the conversation only renders on the
+  hiring-status task.** So `MarketHealthPage` wraps both `handleSubmit` (typed) and the chip
+  handler (`append`) to first `setActiveTaskId(HIRING_STATUS_TASK_ID)` — asking a question
+  from "About this platform" or a story task switches to the conversation instead of streaming
+  the answer into a view that isn't showing it.
 - **Behaviour**: a chip click is identical to typing that question — same request, same
   streamed response, same Reasoning Panel. A curated hit streams instantly and its trace says
   "No language model was used"; if the catalogue ever changes and a chip no longer matches, it
