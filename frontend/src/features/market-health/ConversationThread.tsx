@@ -74,11 +74,9 @@ export function ConversationThread({
     // including the document itself if it's even marginally scrollable, to
     // align endRef with the top of *its* viewport. That's what was scrolling
     // the whole page (not just this container) — see
-    // changes/2026-08-17-chat-scroll-white-gap.md. "nearest" only scrolls the
-    // minimum needed to bring the target into view, within whichever
-    // container actually needs it.
+    // changes/2026-08-17-chat-scroll-white-gap.md.
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages.length, isLoading, activeDemoSim?.phase]);
+  }, [messages.length, isLoading, activeDemoSim?.phase, activeTaskId]);
 
   const pairs: Array<{ user: Message; assistant: Message | null }> = [];
   for (let i = 0; i < messages.length; i++) {
@@ -100,25 +98,33 @@ export function ConversationThread({
     }
   }
 
+  const dots = (
+    <div className="flex items-center gap-1" role="status" aria-label="Loading response">
+      <span className="sr-only">Loading…</span>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce"
+          style={{ animationDelay: `${i * 150}ms` }}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-[1200px] mx-auto px-6 py-8 space-y-8">
 
-        {activeTaskId === WELCOME_TASK_ID ? (
+        {/* ── Opening turn for the active task ──────────────────────────────
+            Each task is its own conversation (useChat id = activeTaskId). The
+            opening turn is the task's seed; the conversation below it is that
+            task's own history — the chat input always queries the active task.
+            See changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md. */}
+
+        {activeTaskId === WELCOME_TASK_ID && (
           <div id="turn-about-this-platform">
             {welcomeLoading ? (
-              <AITurn trace={null} generationTimeMs={null} isStreaming={true}>
-                <div className="flex items-center gap-1" role="status" aria-label="Loading response">
-                  <span className="sr-only">Loading welcome</span>
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300"
-                      style={{ animationDelay: `${i * 150}ms` }}
-                    />
-                  ))}
-                </div>
-              </AITurn>
+              <AITurn trace={null} generationTimeMs={null} isStreaming={true}>{dots}</AITurn>
             ) : welcomeError ? (
               <AITurn trace={null} generationTimeMs={null}>
                 <p className="text-sm text-gray-400">
@@ -130,12 +136,10 @@ export function ConversationThread({
                 <WelcomeMessage welcome={welcomeResult} onSelectShortcut={onSelectShortcut} />
               </AITurn>
             ) : null}
-            {/* Instant-answer chips reachable from the default landing view too —
-                tapping one opens the hiring-status conversation (MarketHealthPage
-                switches the task). changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md */}
-            <SuggestedQuestions onAsk={onAskSuggestion} disabled={isLoading} />
           </div>
-        ) : activeTaskId === HIRING_STATUS_TASK_ID ? (
+        )}
+
+        {activeTaskId === HIRING_STATUS_TASK_ID && (
           <>
             <UserTurn prompt={OPENING_PROMPT} isFirst={true} />
             <div id="turn-opening">
@@ -147,101 +151,13 @@ export function ConversationThread({
                 {children}
               </AITurn>
             </div>
-
-            {/* Curated instant-answer chips — the fast path, one tap. Added
-                2026-09-06, changes/2026-09-03-chat-resilience-and-instant-answers.md. */}
-            <SuggestedQuestions onAsk={onAskSuggestion} disabled={isLoading} />
-
-            {/* Real follow-up turns from useChat */}
-            {pairs.map(({ user, assistant }) => {
-              const traceEntry = assistant ? traces.get(assistant.id) : undefined;
-              const isStreamingThis =
-                isLoading && assistant?.id === lastAssistantId;
-
-              return (
-                <div key={user.id} className="space-y-8">
-                  <UserTurn prompt={user.content} />
-                  {assistant ? (
-                    <div id={`turn-${assistant.id}`}>
-                      <AITurn
-                        trace={traceEntry?.trace ?? null}
-                        generationTimeMs={traceEntry?.generationTimeMs ?? null}
-                        isStreaming={isStreamingThis}
-                      >
-                        <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
-                          {assistant.content}
-                        </p>
-                      </AITurn>
-                    </div>
-                  ) : isLoading ? (
-                    <AITurn>
-                      <div
-                        className="flex items-center gap-1"
-                        role="status"
-                        aria-label="Loading response"
-                      >
-                        <span className="sr-only">Loading…</span>
-                        {[0, 1, 2].map((i) => (
-                          <span
-                            key={i}
-                            className="inline-block w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce"
-                            style={{ animationDelay: `${i * 150}ms` }}
-                          />
-                        ))}
-                      </div>
-                    </AITurn>
-                  ) : null}
-                </div>
-              );
-            })}
-
-            {/* Demo simulation turn — driven by user submitting the chat input */}
-            {activeDemoSim && (
-              <div className="space-y-8">
-                <UserTurn prompt={activeDemoSim.userPrompt} />
-                {activeDemoSim.phase === "thinking" ? (
-                  <AITurn trace={null} generationTimeMs={null} isStreaming={true}>
-                    <div
-                      className="flex items-center gap-1"
-                      role="status"
-                      aria-label="Loading response"
-                    >
-                      <span className="sr-only">Loading…</span>
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="inline-block w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 150}ms` }}
-                        />
-                      ))}
-                    </div>
-                  </AITurn>
-                ) : (
-                  <AITurn
-                    trace={activeDemoSim.trace}
-                    generationTimeMs={activeDemoSim.generationTimeMs}
-                  >
-                    {activeDemoSim.content}
-                  </AITurn>
-                )}
-              </div>
-            )}
           </>
-        ) : selectedStoryId ? (
+        )}
+
+        {selectedStoryId && (
           <div id={`turn-${selectedStoryId}`}>
             {storyLoading ? (
-              <AITurn trace={null} generationTimeMs={null} isStreaming={true}>
-                <div className="flex items-center gap-1" role="status" aria-label="Loading response">
-                  <span className="sr-only">Loading story</span>
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300"
-                      style={{ animationDelay: `${i * 150}ms` }}
-                    />
-                  ))}
-                </div>
-              </AITurn>
+              <AITurn trace={null} generationTimeMs={null} isStreaming={true}>{dots}</AITurn>
             ) : storyError ? (
               <AITurn trace={null} generationTimeMs={null}>
                 <p className="text-sm text-gray-400">
@@ -254,7 +170,56 @@ export function ConversationThread({
               </AITurn>
             ) : null}
           </div>
-        ) : null}
+        )}
+
+        {/* ── Instant-answer chips — every task ──────────────────────────── */}
+        <SuggestedQuestions onAsk={onAskSuggestion} disabled={isLoading} />
+
+        {/* ── This task's conversation — every task ─────────────────────────
+            useChat's per-task message list. A question and its answer live in
+            whichever task the user asked them from. */}
+        {pairs.map(({ user, assistant }, index) => {
+          const traceEntry = assistant ? traces.get(assistant.id) : undefined;
+          const isStreamingThis = isLoading && assistant?.id === lastAssistantId;
+          // The hiring-status task shows its own OPENING_PROMPT title above; on
+          // the other tasks the first question is the conversation's opening.
+          const isFirst = index === 0 && activeTaskId !== HIRING_STATUS_TASK_ID;
+
+          return (
+            <div key={user.id} className="space-y-8">
+              <UserTurn prompt={user.content} isFirst={isFirst} />
+              {assistant ? (
+                <div id={`turn-${assistant.id}`}>
+                  <AITurn
+                    trace={traceEntry?.trace ?? null}
+                    generationTimeMs={traceEntry?.generationTimeMs ?? null}
+                    isStreaming={isStreamingThis}
+                  >
+                    <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                      {assistant.content}
+                    </p>
+                  </AITurn>
+                </div>
+              ) : isLoading ? (
+                <AITurn>{dots}</AITurn>
+              ) : null}
+            </div>
+          );
+        })}
+
+        {/* Demo simulation turn — driven by user submitting the chat input */}
+        {activeDemoSim && (
+          <div className="space-y-8">
+            <UserTurn prompt={activeDemoSim.userPrompt} />
+            {activeDemoSim.phase === "thinking" ? (
+              <AITurn trace={null} generationTimeMs={null} isStreaming={true}>{dots}</AITurn>
+            ) : (
+              <AITurn trace={activeDemoSim.trace} generationTimeMs={activeDemoSim.generationTimeMs}>
+                {activeDemoSim.content}
+              </AITurn>
+            )}
+          </div>
+        )}
 
         <div ref={endRef} />
       </div>

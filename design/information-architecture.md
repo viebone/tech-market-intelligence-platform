@@ -76,6 +76,13 @@ space and the output panel update to reflect that task.
 The working space and the output panel are always in sync around the same selected item.
 They are two views of the same task — not independent sections.
 
+**Each task carries its own conversation** (clarified 2026-09-06 —
+`changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md`). The chat input at the
+bottom of the working space queries the *active* task; the question and its answer join that
+task's thread, below the task's opening content. Switching tasks switches the whole
+conversation. This is what "Follow-up … extends the conversation thread for the active task"
+(Content Taxonomy) has always meant.
+
 ### Reasoning Panel — universal inline primitive
 
 Every AI-generated message in the working space carries a **Reasoning Panel** — a collapsed

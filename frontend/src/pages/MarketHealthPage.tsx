@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useChat } from "ai/react";
 import type { Message, JSONValue } from "ai";
 
 import { TimeRange, Granularity, OpeningDataPoint } from "../features/market-health/JobOpeningsChart";
 import { TopBar } from "../features/market-health/TopBar";
-import { TaskPanel, StoryMeta, WELCOME_TASK_ID, HIRING_STATUS_TASK_ID } from "../features/market-health/TaskPanel";
+import { TaskPanel, StoryMeta, WELCOME_TASK_ID } from "../features/market-health/TaskPanel";
 import { ConversationThread } from "../features/market-health/ConversationThread";
 import { MarketBriefingMessage, OPENING_PROMPT } from "../features/market-health/MarketBriefingMessage";
 import { ChatInput } from "../features/market-health/ChatInput";
@@ -212,7 +212,13 @@ export function MarketHealthPage() {
   const processedDataCount = useRef(0);
 
   // ── Chat ──────────────────────────────────────────────────────────────────
+  // Each task is its own independent conversation: `id: activeTaskId` keys the
+  // useChat store (messages, streamed data, loading) per task, so switching
+  // tasks switches the conversation and the chat input always queries the
+  // task you're looking at. See
+  // changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md.
   const { messages, input, handleInputChange, handleSubmit, isLoading, data, append } = useChat({
+    id: activeTaskId,
     api: "/api/chat",
     streamProtocol: "data",
     body: { context: { role: "all", level: "all", location: "all" } },
@@ -228,19 +234,15 @@ export function MarketHealthPage() {
     },
   });
 
-  // The follow-up conversation only renders on the hiring-status task
-  // (ConversationThread). The chat input is always visible, so asking a
-  // question from any task must switch there first, or the answer streams
-  // into a view that isn't showing it. See
-  // changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md.
-  function submitChat(e: FormEvent<HTMLFormElement>) {
-    setActiveTaskId(HIRING_STATUS_TASK_ID);
-    handleSubmit(e);
-  }
   function askQuestion(question: string) {
-    setActiveTaskId(HIRING_STATUS_TASK_ID);
     append({ role: "user", content: question });
   }
+
+  // `data` is per-task (keyed by useChat id); reset the processed cursor when
+  // the task changes so the effect below reprocesses the new task's stream.
+  useEffect(() => {
+    processedDataCount.current = 0;
+  }, [activeTaskId]);
 
   useEffect(() => {
     if (!data) {
@@ -311,7 +313,7 @@ export function MarketHealthPage() {
           <ChatInput
             input={input}
             onChange={handleInputChange}
-            onSubmit={submitChat}
+            onSubmit={handleSubmit}
             isLoading={isLoading}
           />
         </div>
