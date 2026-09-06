@@ -126,9 +126,12 @@ npm run dev
   (`ai_interaction_settings.py`, 100/day) tracked in the `chat_paid_usage` table —
   when the cap is hit, chat degrades to the curated instant-answer path
   (`curated_answers.py`, no model call) / a calm "briefly unavailable" message.
-  **Local `backend/.env`: set + verified 2026-09-06.** ⚠️ **Not yet set on the
-  Railway `api` service** — must be set there before/with the deploy. GCP project
-  id / prepaid balance: _operator to record here_.
+  **Set + verified 2026-09-06** — local `backend/.env` and the Railway `api`
+  service (confirmed live: a non-curated prod chat runs paid-model tool calls; a
+  curated prod chat returns in ~0.3s with a "no language model was used" trace).
+  GCP project id / prepaid balance: _operator to record here_ (still a placeholder
+  — the key works, but the balance / auto-recharge-OFF state is operator-confirmed
+  only, per `changes/2026-09-03-chat-resilience-and-instant-answers.md` Step 11).
 - `GEMINI_API_KEY` — the old **free-tier** chat key
   (`gen-lang-client-0003173949`). **No longer used by `/api/chat`** (removed
   2026-09-06 — its `gemini-3.6-flash` quota is only 20 requests/day, ~6 chat

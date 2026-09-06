@@ -4,7 +4,7 @@ date: 2026-09-03
 trigger-type: bug
 change-type: bug-fix, ux-change, api-change, new-feature
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Chat resilience — curated instant answers + tiered free→paid model fallback
@@ -261,11 +261,11 @@ exception, and the suggested-question set makes the fast path one tap.
   wired and ready behind it.
   ✅ Full free→paid fallback chain proven locally 2026-09-06 (simulated free-tier
   `429` → retries → advance → paid tier streams the answer).
-  ⚠️ **Still open**: (a) set `GEMINI_API_KEY_CHAT_PAID` on the Railway `api`
-  service — production chat has no fallback until then; (b) confirm the project's
-  prepaid balance is loaded and auto-recharge is OFF; (c) record the GCP project
-  id / tier in `DEPLOYMENT.md` and product `CLAUDE.md` (placeholder left in
-  CLAUDE.md). Note (b)/(c) can't be verified from here — operator to confirm.
+  ✅ (a) `GEMINI_API_KEY_CHAT_PAID` set on the Railway `api` service by the operator
+  (2026-09-06) — confirmed by prod behaviour (see Step 17). ⚠️ still operator-only:
+  (b) confirm the project's prepaid balance is loaded and auto-recharge is OFF;
+  (c) record the GCP project id / tier in `DEPLOYMENT.md` and product `CLAUDE.md`
+  (placeholders left in both). Not code — tracked in Step 11's residual list.
 - [x] **Step 9 (slice 1 only — resilience) — `/implement-backend`.** ✅ 2026-09-04.
   `backend/src/llm/chat_fallback.py` (provider-agnostic `ChatTier`,
   `call_with_fallback`, `stream_with_fallback`, `is_transient_llm_error`);
@@ -277,8 +277,10 @@ exception, and the suggested-question set makes the fast path one tap.
 - [x] **Step 9a — First story backend slice.** ✅ 2026-09-04. Added the
   `market-data-briefing` catalogue entry, live aggregate renderer, and
   `GET /api/market-health/stories` plus `POST /api/market-health/stories/{story_id}`.
-- [ ] **Step 10 — `/implement-frontend`.** Suggested-question set + degraded-state
-  UI against the working backend.
+- [x] **Step 10 — `/implement-frontend`.** ✅ 2026-09-06. Superseded by Steps 16
+  (chips) and 7 (degraded state needs no component — streams through the existing
+  `AITurn` text path). `SuggestedQuestions.tsx` wired into `ConversationThread`
+  below every task's opening turn; chip click = `append` as if typed.
 
 ### Steps added 2026-09-06 (paid-only pivot + slice 2)
 
@@ -319,9 +321,19 @@ exception, and the suggested-question set makes the fast path one tap.
   - `GET /api/market-health/chat-suggestions` returns the 6 questions.
   - Pay builder's implausible-range guard fires (engineer disclosed data spans
     USD 230–555,000 → "too inconsistent to state as one band").
-  **Still open**: (a) set `GEMINI_API_KEY_CHAT_PAID` on the Railway `api` service;
-  (b) commit + push `main` (auto-deploys `api` + `web`); (c) confirm live in prod;
-  (d) observe the daily cap trip cleanly in real use.
+  **Closed 2026-09-06.** (a) `GEMINI_API_KEY_CHAT_PAID` set on the Railway `api`
+  service by the operator. (b) committed + pushed (`41a8205`…`8d4c04e`, `13427e8`).
+  (c) **confirmed live in prod** 2026-09-06:
+  - Curated question (`POST /api/chat` "What do engineers earn?") → **0.3s**,
+    trace `reasoning_steps` says "No language model was used", `generation_time_ms: 45`,
+    the implausible-range guard fires on the engineer pay data.
+  - Non-curated question ("backend vs frontend engineers?") → the paid model runs
+    7 real `query_*` tool calls and streams an answer — proves the paid key is set
+    and working on `api`.
+  - `GET /api/market-health/chat-suggestions` → the 6 questions.
+  (d) daily-cap-trips-cleanly is a passive observation left to real use — the
+  mechanism (`chat_paid_usage` + `_model_available()`) is unit-covered and the
+  degraded path is proven; not a completion blocker.
 - [x] **Step 10a — First story frontend slice.** ✅ 2026-09-04. Added the suggested-story
   prompt, data-story assistant turn, live fetch, section-level empty states, and provenance
   through the existing reasoning panel.
@@ -333,10 +345,17 @@ exception, and the suggested-question set makes the fast path one tap.
   - Paid key authenticates and returns a completion directly (2026-09-06).
   - **Full fallback chain proven** (2026-09-06): a simulated free-tier `429` → 2 retries →
     advance → the paid tier streams a real answer. `tiers that produced output: ['paid']`.
-  **Still open**: (a) `GEMINI_API_KEY_CHAT_PAID` on the Railway `api` service + a redeploy
-  of this branch to production; (b) observing the `chat_paid_usage` daily cap actually stop
-  paid calls at 100/day in real use. Curated-answer-with-no-Gemini is slice 2, still open.
-  Do not mark the CR `complete` until (a) and slice 2 are done.
+  **Closed 2026-09-06.** (a) `GEMINI_API_KEY_CHAT_PAID` is set on the Railway `api`
+  service — verified by prod behaviour (non-curated chat runs paid-model tool calls;
+  curated chat returns in 0.3s with a no-model trace). Slice 2 (curated engine +
+  suggested-question chips) is implemented and live. Completion gate met.
+  (b) the 100/day cap stopping paid calls in real use remains a passive observation —
+  the enforcement code is unit-covered; not held open as a blocker.
+
+**Residual operator bookkeeping (not code, tracked for the record):**
+- Confirm the chat Gemini project's prepaid balance is loaded and auto-recharge is OFF.
+- Record that project's GCP id / prepaid balance in `DEPLOYMENT.md` and product
+  `CLAUDE.md` (both currently carry a "_operator to record here_" placeholder).
 
 ## Decision Log
 - 2026-09-03: Triaged against `understand-market-health-before-searching` (chat is

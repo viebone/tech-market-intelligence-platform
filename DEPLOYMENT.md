@@ -39,53 +39,60 @@ the real, share-able entry point to the whole product now, not just `localhost:5
 ## Gemini projects & LLM billing
 
 Set up 2026-08-29 — see `outcomes/llm-spend-is-bounded-and-isolated.md` and
-`changes/2026-08-29-chat-free-tier-key-isolation.md`. **Google Cloud billing is
-per project, not per API key.** The three Gemini keys are split across two
-projects, deliberately, by billing tier:
+`changes/2026-08-29-chat-free-tier-key-isolation.md`. **Revised 2026-09-06** —
+chat moved to a dedicated paid project, free tier dropped
+(`changes/2026-09-03-chat-resilience-and-instant-answers.md`). **Google Cloud
+billing is per project, not per API key.** Four Gemini keys across three projects,
+by billing tier and workload:
 
 | Env var | Google Cloud project | Billing tier | Used by (Railway service) | Model |
 |---|---|---|---|---|
-| `GEMINI_API_KEY` | `gen-lang-client-0003173949` | **Free** — structurally cannot spend | `api` (`/api/chat`, reasoning trace) | `gemini-3.6-flash` |
+| `GEMINI_API_KEY_CHAT_PAID` | _dedicated chat project — operator to record id_ | **Prepay** — its own balance | `api` (`/api/chat`, reasoning trace) | `gemini-3.6-flash` |
+| `GEMINI_API_KEY` | `gen-lang-client-0003173949` | **Free** | _nothing_ — removed from `/api/chat` 2026-09-06; left in the env, unread | `gemini-3.6-flash` |
 | `GEMINI_API_KEY_CLASSIFICATION` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (classification) | `gemini-2.5-flash` |
 | `GEMINI_API_KEY_REQUIREMENTS` | `gen-lang-client-0963554051` | **Tier 1 · Prepay** | `job-sync` (requirements extraction) | `gemini-3.6-flash` (pinned 2026-08-30, commit `ddb68b3`) |
 
 Rationale:
 
-- **Chat runs on the free project so it cannot incur spend** while the pipeline
-  is on a prepaid plan. Cost: the free project no longer offers `gemini-2.5-flash`
-  (`404` "no longer available to new users", live-confirmed 2026-08-29), so chat
-  runs `gemini-3.6-flash` — pinned rather than the `gemini-flash-latest` alias,
-  which was consistently timing out on this free project when tested 2026-08-29
-  (free-tier throttling on a popular alias; the pinned model it resolves to
-  responds fine). Per the owner, chat's exact model doesn't matter as long as
-  it's free.
-- **Both paid jobs workloads share one prepaid project** so total pipeline spend
-  draws down a single balance.
+- **Chat runs on its own dedicated paid project** (revised 2026-09-06). The free
+  tier was dropped because it could not be fast: `gemini-3.6-flash` free quota is
+  20 requests/day (~6 chat turns), with higher, less predictable latency and ~8s
+  wasted per request retrying it once spent. Chat is now bounded instead by
+  `CHAT_PAID_DAILY_REQUEST_CAP` (`ai_interaction_settings.py`, 100/day, tracked in
+  `chat_paid_usage`); past the cap it degrades to the curated instant-answer path
+  (`curated_answers.py`, no model call) / a calm "briefly unavailable" message.
+  The dedicated project keeps a chat spike from draining the pipeline balance and
+  vice versa.
+- **Both jobs-pipeline workloads share one prepaid project** so total pipeline
+  spend draws down a single balance.
 - `gen-lang-client-0963554051` is grandfathered for `gemini-2.5-flash`;
   `gen-lang-client-0003173949` (created 2026-08-10) is not.
 
-**Operator responsibilities on `gen-lang-client-0963554051`:**
+**Operator responsibilities on `gen-lang-client-0963554051` (pipeline) and the
+dedicated chat project:**
 
-- **Auto-recharge must stay OFF** — this is what makes the prepaid balance a hard
-  ceiling. If it's on, the "can't overspend" guarantee is void.
-- Keep only a small balance loaded (target: ~$5/month of headroom) until the
-  follow-on spend-ledger change adds an in-app monthly cap.
+- **Auto-recharge must stay OFF on both** — this is what makes each prepaid
+  balance a hard ceiling. If it's on, the "can't overspend" guarantee is void.
+- Keep only a small balance loaded on each (target: ~$5/month of headroom) until
+  the follow-on spend-ledger change adds an in-app monthly cap.
 - Optional: cloud-console budget alerts at $2 / $3 / $4.
+- **Record the dedicated chat project's GCP id and balance** in the table above
+  and in product `CLAUDE.md` (both carry a placeholder) — outstanding as of
+  2026-09-06.
 
 Until that follow-on change lands, the code's existing per-workload request-count
 budgets (`DAILY_REQUEST_BUDGET`, `REQUIREMENTS_DAILY_REQUEST_BUDGET`) are the
 operative spend cap — conservative (pennies/day) and **must not be raised** yet.
 
-**Free-tier rate limits apply to chat.** Because `/api/chat` now runs on the
-free-tier project, it is subject to Gemini's free-tier RPM/RPD limits for
-`gemini-3.6-flash`. Each chat turn makes 2–6 Gemini calls (tool stage, optional
-grounding, synthesis), so a burst of rapid questions can trip a `429`, which
-surfaces to the user as `"[The AI service returned an error. Please try again.]"`.
-Normal single-user interactive pacing does not hit this; confirmed 2026-08-29
-(three back-to-back scripted requests tripped it, a retry ~75s later succeeded).
-If it becomes a real user-facing problem, the options are a short client-side
-retry/backoff or moving chat to the prepaid project (reverses this change's
-intent — would need its own change request).
+**Chat resilience (revised 2026-09-06).** `/api/chat` now runs on the dedicated
+paid project, so the old free-tier `429`-on-burst problem is gone. Each model call
+retries a transient `503`/`429`/timeout twice (1s then 2s) before giving up
+(`llm/chat_fallback.py`). Common questions are answered by the curated engine with
+**no model call** in ~0.3s (`curated_answers.py`); only free-form misses hit the
+model, at 10–30s (inherent to `gemini-3.6-flash` doing live-data tool-calling).
+When the daily cap is spent or the model is unavailable after retries, chat streams
+a calm "briefly unavailable — here's what I can answer instantly" message, never a
+dead-end error string.
 
 ---
 
@@ -241,7 +248,7 @@ The consumer-facing FastAPI backend (`backend/src/main.py`) — `/api/market-hea
 | Start command | `cd src && uvicorn main:app --host 0.0.0.0 --port $PORT` (from `railway.api.json`) |
 | Restart policy | `ALWAYS` — long-running web service |
 | Auto-deploy | On — a push to `main` deploys `api` (and `admin`, and rebuilds `job-sync`'s image, though `job-sync` itself only *runs* on its cron schedule) |
-| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY` (the **free-tier** Gemini project `gen-lang-client-0003173949` — a different key *and different project* from `job-sync`'s prepaid keys; see "Gemini projects & LLM billing" above and `AI_INTERACTION_SETTINGS.md`), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need) |
+| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY_CHAT_PAID` (the **dedicated paid** chat Gemini project — the only key `/api/chat` reads since 2026-09-06; set + verified live that date), `GEMINI_API_KEY` (the old **free-tier** project `gen-lang-client-0003173949` — no longer read by any code, left set, safe to remove), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need). See "Gemini projects & LLM billing" above and `AI_INTERACTION_SETTINGS.md`. |
 | Domain | Railway-generated (`generate-domain`) |
 
 Deployed cleanly on the **first attempt** — every gotcha below had already been learned
