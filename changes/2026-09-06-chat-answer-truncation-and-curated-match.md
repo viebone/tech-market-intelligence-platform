@@ -217,8 +217,13 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
         `complete_with_search_grounding` kept as dormant-or-remove decision for implement.
       - `backend/specs/ai-reasoning-panel/api.md`: chat traces carry no external entries;
         truncated answers marked in the final reasoning step + no clean `finishReason: "stop"`.
-- [ ] Step 4: `/new-frontend-spec` — update `frontend/specs/market-health/architecture.md`
-      and review `frontend/specs/ai-reasoning-panel/architecture.md`.
+- [x] Step 4: `/new-frontend-spec` (2026-09-06) — `frontend/specs/market-health/architecture.md`
+      gets a "Reviewed 2026-09-06" note: **no frontend change needed** (web-search removal is
+      server-side; the "cut off" marker is plain appended text on the existing
+      `whitespace-pre-wrap` path; reasoning-panel truncated step rides the generic
+      `reasoning_steps` rendering; `SuggestedQuestions` untouched).
+      `frontend/specs/ai-reasoning-panel/architecture.md` — reviewed, no change (the
+      `source_type` union and "no external tools" placeholder are already generic).
 - [ ] Step 5: `/implement-backend` —
       - `llm/base.py`: `stream()`/`complete()` gain `max_output_tokens: int | None`; add the
         normalised stream stop-reason type (sibling of `BatchState`).

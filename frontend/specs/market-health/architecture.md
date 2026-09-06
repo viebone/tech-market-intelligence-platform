@@ -303,6 +303,30 @@ decision) presumably a host-level rewrite in production — neither depends on k
 backend's allowed-origins list, which is enforced entirely server-side. No API Contract
 assumption here relied on, or conflicted with, the old hardcoded-localhost-only behavior.
 
+**Reviewed 2026-09-06** (change: fluent DB-only chat + provider-neutral streaming,
+`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`) — confirmed **no frontend
+change needed**, checked against the real component tree, not assumed:
+
+1. **Web-search removal is server-side.** Chat becoming DB-only removes the Stage 2 grounding
+   call inside `chat.py`. The SSE contract (`reasoning_trace` → text → `finish_message`) and
+   the `/api/chat` request shape are unchanged. `sources_and_tools` simply never carries an
+   external entry now — the reasoning panel already renders that list generically
+   (`ai-reasoning-panel` frontend spec, `source_type: 'data_source' | 'tool'`), and "no
+   external tools" is an existing rendered state, not a new one.
+2. **The "cut off — ask me to continue" marker is plain appended text.** When Stage 3's
+   answer is `truncated`, the backend appends a short sentence to the streamed text (or
+   streams a continuation). Follow-up answers render as `whitespace-pre-wrap` plain text
+   (see the 2026-08-09 review, finding 2) — an appended sentence needs no new component and
+   no markdown capability.
+3. **The reasoning panel's truncated-answer step** rides the same generic `reasoning_steps`
+   rendering — one more plain-language step, no shape change.
+4. **`SuggestedQuestions` unchanged.** Widening the curated matcher is entirely inside
+   `curated_answers.py`; the chip list (`GET /api/market-health/chat-suggestions`) and the
+   chip-click = `append` path are untouched.
+
+Same pattern as the 2026-07-22 / 08-03 / 08-04 reviews — a backend behaviour change fully
+absorbed by existing generic frontend infrastructure.
+
 ---
 
 ## Tech Decisions
