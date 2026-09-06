@@ -4,7 +4,7 @@ date: 2026-09-06
 trigger-type: bug
 change-type: bug-fix, ux-change, api-change
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: A fluent chat conversation, answered only from platform data
@@ -248,15 +248,31 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
       - `backend/tests/test_curated_match.py` (new — repo had no test infra): 4 assert tests,
         run directly or via pytest. All pass.
       - Docs: `backend/AI_INTERACTION_SETTINGS.md`, product `CLAUDE.md`.
-      **Local verification (backend on the prod DB):** curated rephrasing → 2.6s, no model;
-      "compare backend vs frontend" → complete multi-part answer, `finishReason: stop`
-      (previously truncated at 1024); "should I learn Rust?" → used `raw_skill`, answered
-      "13 of 2,259 postings (~0.58%)" + judgment, no web content; "market in 2019?" → "I do
-      not have data for 2019… I can answer…", no fabrication.
+      Two follow-up fixes in the same pass: (a) `_MIN_MSG_COVERAGE` — a matched phrasing must
+      also cover ≥50% of the message's content words, so "engineer skill" no longer captures
+      a long comparison question; (b) `raw_skill` EXISTS referenced `pr.posting_id` but the
+      languages sub-query has no `posting_requirements` join → `UndefinedTable`; changed to
+      `rp.id`. Both verified.
+      **Local verification (backend on the prod DB):** curated rephrasing → curated path,
+      no model; "compare backend vs frontend" → complete multi-part answer,
+      `finishReason: stop` (previously truncated at 1024); "compare security vs ML engineers"
+      → routed to the model, real per-specialization data (not the generic curated list);
+      "should I learn Rust?" → `raw_skill`-filtered "84 of 2,259 Engineer postings" + a
+      data-then-judgment answer; "market in 2019?" → "I do not have data for 2019… I can
+      answer…", no fabrication.
 - [x] Step 6: `/implement-frontend` — none needed (Step 4).
-- [ ] Step 7: Commit + push (done in this pass); verify the same four scenarios against
-      production after the `api` deploy.
-- [ ] Step 8: Mark `complete` when Step 7 passes in prod and specs match the code.
+- [x] Step 7: **Verified in production** 2026-09-06 (deploy `bcf1a398`, commit `7c5f73f`):
+      - "What skills are more in demand for product managers?" → curated instant path,
+        "No language model was used" (the reported bug — fixed).
+      - "Compare demand and required skills for security engineers versus ML engineers" →
+        routed to the model with real per-specialization data, not the generic curated list.
+      - "Should I learn Rust as an engineer?" → `query_requirements_data({'raw_skill': ['Rust'],
+        'role_category': ['Engineer']})` → "Found 84 matching postings" → a data-then-judgment
+        answer, `finishReason: stop`, no web content.
+      - "What was the tech job market like in 2019?" → "The platform does not have historical
+        job market data from 2019…" + answerable-question suggestions. No fabrication.
+      - Long multi-part answers complete (`finishReason: stop`) instead of truncating at 1024.
+- [x] Step 8: **Complete** — every box checked; specs match the shipped code.
 
 ## Decision Log
 
