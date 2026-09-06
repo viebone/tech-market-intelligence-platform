@@ -1,3 +1,7 @@
+import type { ReactNode } from "react";
+
+import { RankedBarList, type RankedBarRow } from "./RankedBarList";
+
 export interface DataStorySection {
   id: string;
   title: string;
@@ -28,90 +32,139 @@ function section(story: DataStoryResult, id: string): DataStorySection | undefin
   return story.sections.find((item) => item.id === id);
 }
 
-function numberFrom(sectionValue: DataStorySection | undefined, key: string): number | null {
-  const value = sectionValue?.content[key];
-  return typeof value === "number" ? value : null;
-}
-
 function listFrom(sectionValue: DataStorySection | undefined, key: string): Array<Record<string, unknown>> {
   const value = sectionValue?.content[key];
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+function str(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function num(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+const HIDDEN_ROLE_LABELS = new Set(["other", "unknown", ""]);
+
+/** A block heading + its honesty qualifier, wrapping either a chart or its "not enough data" line. */
+function Block({
+  heading,
+  section: sec,
+  hasData,
+  children,
+}: {
+  heading: string;
+  section: DataStorySection | undefined;
+  hasData: boolean;
+  children: ReactNode;
+}) {
+  const insufficient = sec?.status === "insufficient_data" || !hasData;
+  return (
+    <section className="border-t border-gray-800 pt-4">
+      <h3 className="text-sm font-semibold text-gray-200">{heading}</h3>
+      <div className="mt-3">
+        {insufficient ? (
+          <p className="text-sm text-gray-400">
+            {sec?.message ?? "Not enough data yet."}
+          </p>
+        ) : (
+          children
+        )}
+      </div>
+      {sec?.qualifier ? (
+        <p className="mt-2 text-xs text-gray-500">{sec.qualifier}</p>
+      ) : null}
+    </section>
+  );
+}
+
 export function DataStoryMessage({ story }: { story: DataStoryResult }) {
-  const coverage = section(story, "coverage-window");
-  const dataset = section(story, "dataset-size");
-  const companies = section(story, "companies-and-sources");
   const roles = section(story, "roles-offered");
   const skills = section(story, "employer-mentioned-skills");
-  const totalPostings = numberFrom(dataset, "unique_postings");
-  const companyCount = numberFrom(companies, "unique_companies");
-  const roleRows = listFrom(roles, "role_categories");
-  const skillRows = listFrom(skills, "skills");
-  const topRole = roleRows[0];
-  const topSkill = skillRows[0];
-  const firstCapturedAt = coverage?.content.first_captured_at;
+  const pay = section(story, "compensation-coverage");
+  const geo = section(story, "geographic-coverage");
+
+  // 2. The roles being hired — specialization is the meaningful "role", not the fragmented raw title.
+  const roleRows: RankedBarRow[] = listFrom(roles, "top_specializations")
+    .map((row) => ({ label: str(row.specialization), value: num(row.posting_count) }))
+    .filter((row) => !HIDDEN_ROLE_LABELS.has(row.label.toLowerCase()))
+    .slice(0, 7);
+
+  // 3. What employers ask for — one row per skill group, must-have mentions emphasised.
+  const skillAgg = new Map<string, { value: number; mustHave: boolean }>();
+  for (const row of listFrom(skills, "skills")) {
+    const group = str(row.skill_group);
+    if (!group) continue;
+    const prev = skillAgg.get(group) ?? { value: 0, mustHave: false };
+    skillAgg.set(group, {
+      value: prev.value + num(row.posting_count),
+      mustHave: prev.mustHave || str(row.requirement_level) === "must_have",
+    });
+  }
+  const skillRows: RankedBarRow[] = [...skillAgg.entries()]
+    .map(([label, { value, mustHave }]) => ({ label, value, emphasis: mustHave }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+
+  // 4. Pay transparency — share of postings that state a salary (structured + parsed).
+  const payRows = listFrom(pay, "coverage_by_confidence");
+  const disclosed = payRows
+    .filter((row) => str(row.confidence) === "structured" || str(row.confidence) === "parsed")
+    .reduce((sum, row) => sum + num(row.posting_count), 0);
+  const payTotal = payRows.reduce((sum, row) => sum + num(row.posting_count), 0);
+  const disclosedPct = payTotal > 0 ? (disclosed / payTotal) * 100 : 0;
+  const pctLabel = disclosedPct > 0 && disclosedPct < 1 ? "<1%" : `${Math.round(disclosedPct)}%`;
+
+  // 5. Where the roles are — top cities among the minority that carry a normalised location.
+  const cityRows: RankedBarRow[] = listFrom(geo, "cities")
+    .map((row) => ({ label: str(row.city), value: num(row.posting_count) }))
+    .filter((row) => row.label !== "")
+    .slice(0, 7);
 
   return (
     <article className="space-y-5" aria-label={story.question}>
       <div>
         <h2 className="text-lg font-semibold text-gray-100">What we know about the market</h2>
-        <p className="mt-1 text-xs text-gray-500">
-          Updated {new Date(story.as_of).toLocaleString()}
+        <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
+      </div>
+
+      {/* 1. Framing line — no inventory figures; the welcome already carries those. */}
+      <p className="text-sm leading-relaxed text-gray-300">
+        Past the headcount, this is what the tech postings the platform tracks are actually
+        asking for — the roles on offer, the skills employers name, how often pay is disclosed,
+        and where the work sits.
+      </p>
+
+      <Block heading="The roles being hired" section={roles} hasData={roleRows.length > 0}>
+        <RankedBarList rows={roleRows} />
+      </Block>
+
+      <Block heading="What employers ask for" section={skills} hasData={skillRows.length > 0}>
+        <RankedBarList rows={skillRows} limit={8} />
+        <p className="mt-2 text-xs text-gray-500">Solid bars are must-have mentions.</p>
+      </Block>
+
+      <Block heading="Pay transparency" section={pay} hasData={payTotal > 0}>
+        <div className="flex items-baseline gap-2">
+          <span className="text-3xl font-bold text-gray-100">{pctLabel}</span>
+          <span className="text-sm text-gray-400">of postings state a salary range</span>
+        </div>
+        <span className="mt-3 block h-2 w-full overflow-hidden rounded-full bg-gray-800">
+          <span
+            className="block h-full rounded-full bg-indigo-500"
+            style={{ width: `${Math.max(disclosedPct, 1)}%` }}
+          />
+        </span>
+        <p className="mt-2 text-sm text-gray-400">
+          The other {payTotal > 0 ? `${Math.round(100 - disclosedPct)}%` : "majority"} don't
+          disclose compensation.
         </p>
-      </div>
+      </Block>
 
-      <div className="space-y-4 text-sm leading-relaxed text-gray-300">
-        <section>
-          <h3 className="text-sm font-semibold text-gray-200">Market snapshot</h3>
-          <p className="mt-2">
-            {totalPostings === null
-              ? "We are still building a picture of the market from the roles we track."
-              : `We have a live view built from ${totalPostings.toLocaleString()} jobs collected so far.`}
-            {companyCount !== null
-              ? ` Those jobs come from ${companyCount.toLocaleString()} companies.`
-              : " Company coverage is still taking shape."}
-          </p>
-        </section>
-
-        <section className="border-t border-gray-800 pt-4">
-          <h3 className="text-sm font-semibold text-gray-200">What stands out</h3>
-          <ul className="mt-2 space-y-2">
-            {topRole ? (
-              <li>
-                <span className="text-gray-100">{String(topRole.role_category)}</span> is the
-                largest role group in the jobs we have collected so far.
-              </li>
-            ) : null}
-            {topSkill ? (
-              <li>
-                The most commonly mentioned skill group is
-                <span className="text-gray-100"> {String(topSkill.skill_group)}</span>.
-              </li>
-            ) : null}
-            {topRole === undefined && topSkill === undefined ? (
-              <li>We need more classified job information before meaningful patterns emerge.</li>
-            ) : null}
-          </ul>
-        </section>
-
-        <section className="border-t border-gray-800 pt-4">
-          <h3 className="text-sm font-semibold text-gray-200">How to read this</h3>
-          <p className="mt-2">
-            {firstCapturedAt
-              ? `This view covers jobs collected since ${new Date(String(firstCapturedAt)).toLocaleDateString()}. `
-              : "This view is based on the data collected so far. "}
-            It reflects the companies and roles we currently track, so it is a useful market
-            signal rather than a complete picture of every tech job available.
-          </p>
-        </section>
-      </div>
-
-      <div className="border-t border-gray-800 pt-4">
-        <p className="text-xs text-gray-500">
-          Data updates as new job information becomes available.
-        </p>
-      </div>
+      <Block heading="Where the roles are" section={geo} hasData={cityRows.length > 0}>
+        <RankedBarList rows={cityRows} />
+      </Block>
     </article>
   );
 }

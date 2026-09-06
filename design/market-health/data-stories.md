@@ -69,25 +69,42 @@ prompt.
 
 ### Audience job
 
-Give a professional a fast, honest orientation to the platform's current evidence before
-they ask a narrower market question or commit to a job search.
+Show a professional **what the platform's data says about the tech job market right now** —
+the actual roles, skills, pay transparency, and locations — before they ask a narrower
+question or commit to a search.
 
 ### Visible answer shape
 
-The answer uses this order. The headings and explanation style are fixed; the values are live.
-The visible version is intentionally concise and uses plain, business-oriented language.
+Revised 2026-09-06 (`changes/2026-09-06-market-story-visual-and-dedup.md`) — **chart-first,
+and de-duplicated from the "About this platform" welcome.**
 
-It opens with one short market read, followed by no more than three supporting facts and one
-coverage note. It does not expose source adapter names, database fields, query names, model
-names, or extraction mechanics in the visible story. Those remain available in the Reasoning
-Panel.
+The welcome (`design/market-health/experience.md` — Opening Welcome) already shows the
+*inventory*: how many job openings, how many companies, since when, the role-category split,
+the largest role group. **This story shows none of that again.** It moves past the inventory
+to the market's shape, and every block is a chart, not a paragraph.
 
-1. **Market read** - one or two sentences describing the broad picture in the roles and
-   companies the platform currently tracks.
-2. **What stands out** - up to three simple facts, chosen from job volume, role mix, skills,
-   compensation coverage, or geography.
-3. **Coverage note** - when collection began and the main limitation on what the platform can
-   currently say.
+Fixed order; values live; headings fixed. No source adapter names, database fields, query
+names, model names, or extraction mechanics in the visible story — those stay in the
+Reasoning Panel.
+
+1. **Framing line** — one sentence naming what's being summarised (e.g. "What the ~N tracked
+   Engineer, Product, and Design postings are hiring for"). Numbers appear only as context
+   here, never as the point.
+2. **The roles being hired** — the top specializations (normalised roles such as "Machine
+   Learning Engineer", "Security Engineer", "Solutions Engineer"), as a **Ranked bar list**
+   (`design/visual-design.md`). New information: the welcome only shows the three category
+   buckets; this shows the actual roles. Specialization is used rather than raw job title —
+   raw titles are too fragmented to rank meaningfully (`unknown`/`other` stay excluded, not
+   relabelled).
+3. **What employers ask for** — top skill groups, Ranked bar list, must-have rows emphasised.
+4. **Pay transparency** — one figure + a bar: the share of postings that state a salary
+   (structured + parsed), with "the rest don't disclose" stated plainly.
+5. **Where the roles are** — top locations (country or city), Ranked bar list, carrying the
+   "only N postings have a normalised location" caveat.
+6. Optional, low priority — the job boards the data comes from, one line.
+
+Every block keeps its honesty qualifier (sample size, coverage caveat). A block with too
+little data shows its "not enough data yet" line, not an empty chart.
 
 ### Data contract
 

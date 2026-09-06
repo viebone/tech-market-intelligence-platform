@@ -366,14 +366,34 @@ content, not as a separate page.
 
 ### First story: market data briefing
 
-The first story is the dedicated Task Panel item **"What we know about the market"**, placed
-above **"Tech market hiring status"** and selected by default. Selecting it loads the canonical story id and replaces
-the working-space content with the briefing. The question remains the story's canonical
-question: **"What do we currently know about the tech job market?"**
+The first story is the Task Panel item **"What we know about the market"** (in the story
+catalogue, below the pinned welcome). Selecting it loads the canonical story id and renders
+`DataStoryMessage` from `POST /api/market-health/stories/market-data-briefing`.
 
-The visible response renders a short market read, up to three supporting facts, and one
-coverage note. Values are dynamic and written in plain, business-oriented language. Detailed
-source and calculation information remains available in the existing Reasoning Panel.
+**Chart-first, de-duplicated from the welcome (rewritten 2026-09-06 —
+`changes/2026-09-06-market-story-visual-and-dedup.md`).** `DataStoryMessage` renders, in
+order:
+
+1. a one-line framing sentence (numbers as context only);
+2. **the roles being hired** — `roles-offered.top_specializations`, as a **Ranked bar list**
+   (`design/visual-design.md`) — specialization, not the fragmented `top_titles`;
+   `unknown`/`other` excluded;
+3. **what employers ask for** — `employer-mentioned-skills.skills`, Ranked bar list, must-have
+   rows in the full-opacity hue;
+4. **pay transparency** — one figure + a bar from `compensation-coverage.coverage_by_confidence`
+   (share of postings stating a salary);
+5. **where the roles are** — `geographic-coverage` (country or city), Ranked bar list, with
+   the normalised-location caveat.
+
+It shows **none** of the inventory the welcome shows (total postings, companies, collection
+start, role-category split) — see `design/market-health/data-stories.md` — Visible answer
+shape. Each block keeps its section `qualifier`; a section that is `insufficient_data` or has
+an empty list renders its "not enough data yet" line, never an empty bar. Provenance stays in
+the Reasoning Panel ("No language model was used", the owned-data aggregates).
+
+The `RankedBarList` component (`frontend/src/features/market-health/RankedBarList.tsx`) is
+generic — `{ label, value }[]` + an optional `emphasised` predicate — and reusable by future
+stories.
 
 ### Catalogue and response state
 

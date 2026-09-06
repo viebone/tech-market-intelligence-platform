@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.2
+version: 1.3
 status: active
 created: 2026-06-21
-updated: 2026-09-04
+updated: 2026-09-06
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -278,6 +278,28 @@ text:          text-sm text-gray-200, question text left-aligned
 trailing icon: a small arrow, gray-500, hover gray-300
 usage:         one per story-catalogue entry in the welcome's call-to-action list;
                replaces a plain list item with a clickable, hoverable row
+```
+
+### Ranked bar list (added 2026-09-06 — `changes/2026-09-06-market-story-visual-and-dedup.md`)
+
+A short, ranked "top N" comparison — top job titles, most-requested skills, top
+locations. The magnitude form from the `dataviz` method (compare low → high → one
+hue, not categorical colour). Used in data stories, not entry points.
+
+```
+row:           label (left, text-sm text-gray-300, truncate) then the bar then the
+               value (text-xs tabular-nums text-gray-400, right)
+bar:           a track (gray-800, rounded, h-1.5) with a fill (indigo-500 at ~70%
+               opacity — one hue for the whole list, magnitude by length only);
+               fill width = value / max(values) in the list
+rows:          5–8; gap-2 between rows; never a scrollbar — cap the list, don't scroll it
+emphasis:      an optional first-class subset (e.g. skills marked "must-have") may use
+               the full-opacity hue while the rest stay at ~70% — a second, ordered
+               encoding, not a new colour
+labels:        every row is directly labelled with its value (a short list, so this is
+               not the "number on every point" anti-pattern); no axis
+zero/empty:    a list with no data renders its section's "not enough data yet" line,
+               never an empty track
 ```
 
 ### Reasoning Panel toggle — "View thinking / Hide thinking"

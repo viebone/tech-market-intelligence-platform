@@ -24,6 +24,14 @@ market" (answering "What do we currently know about the tech job market?") is th
 first example, not its ceiling; future entries can cover narrower questions the same way (see
 `design/market-health/data-stories.md` — Future catalogue direction).
 
+A story is **chart-first** and shows only what the "About this platform" welcome does not —
+the welcome carries the data *inventory* (how much data, how many companies, since when, the
+role-category split); a story carries the *substance* (the actual roles, skills, pay
+transparency, locations). No figure appears in both. See
+`design/market-health/data-stories.md` — Visible answer shape, and `design/visual-design.md`
+— Ranked bar list (revised 2026-09-06 —
+`changes/2026-09-06-market-story-visual-and-dedup.md`).
+
 Task Panel order, front to back:
 
 1. **"About this platform"** — a pinned welcome/orientation task, always first, always the
