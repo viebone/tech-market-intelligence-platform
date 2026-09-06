@@ -139,10 +139,37 @@ the uncertainty.
 Return strictly a JSON array, one object per input posting, each with an "id" field copied \
 from the input plus the five fields above. No prose, no markdown fences."""
 
+# Description-assisted unknown-recovery pass (2026-09-06 —
+# changes/2026-09-06-unknown-reclassification.md). Same closed sets and output shape as
+# SYSTEM_INSTRUCTION; the only change is that the model now also has the job description and
+# must use it to resolve the ambiguity the title alone left.
+RECOVERY_SYSTEM_INSTRUCTION = SYSTEM_INSTRUCTION + """
+
+You are re-examining a posting that a title-only pass could not classify — it came back \
+role_category "unknown". You now also have the job description. Use it to resolve the \
+ambiguity: choose Designer / Product Manager / Engineer if the description makes the role \
+clear, "other" if the description shows it is not one of the three tracked tech occupations, \
+and keep "unknown" ONLY if the description still genuinely does not disambiguate which of the \
+three it is."""
+
+# Provenance marker written to classifications.model for a row this pass produced — also the
+# idempotency key (a re-run skips 'unknown' rows already carrying this value).
+CLASSIFICATION_RECOVERY_MODEL = "gemini-2.5-flash+description"
+
 
 def _build_prompt(postings: list[dict]) -> str:
     lines = [f'{{"id": "{p["id"]}", "title": {json.dumps(p["title"])}}}' for p in postings]
     return "Classify these postings:\n[" + ",\n".join(lines) + "]"
+
+
+def build_unknown_recovery_prompt(posting: dict) -> str:
+    """One {id, title, description} posting -> a single-posting classification prompt for the
+    description-assisted recovery pass. See reclassify_unknowns.py."""
+    return "Classify this posting:\n[" + json.dumps({
+        "id": posting["id"],
+        "title": posting["title"],
+        "description": posting.get("description", ""),
+    }) + "]"
 
 
 def _parse_response(text: str) -> list[dict]:

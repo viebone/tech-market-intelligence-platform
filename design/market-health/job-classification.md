@@ -369,6 +369,20 @@ eventually be filtered by confidence for particularly sensitive analyses, and so
 reviewer has a place to start (low-confidence classifications are the ones worth spot-checking
 first) rather than needing to review the full dataset uniformly.
 
+**`unknown`-recovery fallback (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
+The main path above is title-only by design. When that leaves a posting `role_category:
+"unknown"` — "the title alone can't tell" — a second pass may re-classify it using the
+posting's **job description** in addition to the title. This is the "fallback" the Unknown
+vs. Other section anticipates for a high `unknown` rate. It is:
+- **only for `unknown`** — never re-opens a posting already resolved to a real category or to
+  `other`;
+- **still bound to the same closed sets** — it can resolve an `unknown` into Designer /
+  Product Manager / Engineer / `other`, or leave it `unknown` if the description still
+  doesn't disambiguate. A description-assisted `unknown` is a real, kept outcome, same as a
+  title-only one;
+- **not part of the daily pipeline** in this revision — run as a one-time reprocessing pass
+  (technical mechanism and the Gemini Batch API details in `backend/specs/market-health/api.md`).
+
 **Taxonomy versioning:** every classification is tagged with a `taxonomy_version`. If this
 taxonomy is later revised — a category added, a level split — historical classifications keep
 the version that produced them, so it is always possible to tell which labels came from which

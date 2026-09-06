@@ -919,6 +919,38 @@ anticipates (Data Models — Classification, above), not a violation of it.
   revision fixes. The requirements-reprocessing delete step should only target postings whose
   classification row already carries `taxonomy_version: "2026-08-11"`.
 
+**`unknown`-recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
+A one-time reprocessing pass, separate from taxonomy reprocessing, that re-classifies every
+posting currently `role_category = 'unknown'` using **title + a job-description snippet**
+(the title-only main path left these ambiguous by definition — see
+`design/market-health/job-classification.md` — `unknown`-recovery fallback).
+
+- **Inputs.** Title, plus a cleaned description snippet extracted from `raw_postings.raw_response`
+  per source (`greenhouse.content` / `lever.descriptionPlain` / `ashby.descriptionPlain`, HTML
+  stripped, whitespace-collapsed, truncated) — the same per-source extraction requirements
+  extraction already uses. The classification system instruction is the standard one, with an
+  added line telling the model it now has the description and should resolve the ambiguity the
+  title left, keeping `unknown` only if the description also can't disambiguate.
+- **Mechanism.** The **Gemini Batch API** (`GeminiBatchAdapter` via `providers.batch("gemini",
+  …)`), on `GEMINI_API_KEY_CLASSIFICATION` (the classification prepaid project) — a one-time
+  bulk job (~136 short items today), Batch API pricing, off the interactive per-day request
+  quota. Run by a standalone script (`backend/src/reclassify_unknowns.py`), same "run now,
+  safe to re-run" pattern as `reprocess_taxonomy.py`, not wired into `ingest.py`. It does
+  **not** use the shared `batch_jobs` table — that and `ingest.py`'s single-active-job guard
+  are scoped to the requirements lane; the script tracks its own job ref and polls to
+  completion.
+- **Writes.** `UPDATE` the existing `classifications` row in place (same UNIQUE(posting_id)
+  reason as taxonomy reprocessing): new `role_category`/`specialization`/`level`/`track`/
+  `classification_confidence`, `classified_at` bumped, `model` marked as the description-
+  assisted path, `taxonomy_version` unchanged (still current). A row that comes back
+  `unknown` or `other` is also written, so the pass is idempotent — a re-run only re-attempts
+  rows still `unknown` that this pass has not already marked with its own `model` value.
+- **Outcome.** An `unknown` the description resolves becomes Designer / Product Manager /
+  Engineer (and gains a specialization/level/track). One it doesn't becomes `other` (not a
+  tracked role) or stays `unknown` (genuinely ambiguous). None are forced.
+- **Not in the daily pipeline.** If the ongoing `unknown` rate later warrants a standing
+  description fallback, that is a separate change.
+
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their
 `classifications` row, keeping only `role_category` in `{"Designer", "Product Manager",
