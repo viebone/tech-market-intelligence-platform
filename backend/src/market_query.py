@@ -425,9 +425,11 @@ def query_requirements_data(
         where.append("pr.education_required = ANY(%s)")
         params.append(education_requireds)
     if raw_skill_patterns:
+        # Reference rp.id, not pr — every sub-query below joins raw_postings, but
+        # not all of them join posting_requirements (e.g. the languages query).
         where.append(
             "EXISTS (SELECT 1 FROM posting_skills psrs "
-            "WHERE psrs.posting_id = pr.posting_id AND psrs.raw_skill ILIKE ANY(%s))"
+            "WHERE psrs.posting_id = rp.id AND psrs.raw_skill ILIKE ANY(%s))"
         )
         params.append(raw_skill_patterns)
     where_sql = " AND ".join(where)
