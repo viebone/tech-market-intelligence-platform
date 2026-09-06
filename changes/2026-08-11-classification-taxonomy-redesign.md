@@ -4,7 +4,7 @@ date: 2026-08-11
 trigger-type: stakeholder-request
 change-type: api-change, technical-refactor
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Classification + Requirements Taxonomy Redesign
@@ -221,6 +221,11 @@ answers become more trustworthy.
       reprocessing hasn't yet been triggered by classification catching up) will clear over
       the following days as `reprocess_taxonomy.py` and/or the deployed daily cron continue
       running — per the user's plan, deployment/rebuild is being handled separately.
+      **Closed 2026-09-06**: all 6,694 classifications are now on `taxonomy_version:
+      "2026-08-11"` (verified: `SELECT taxonomy_version, count(*) FROM classifications
+      GROUP BY 1` → one row). The classification backlog for this redesign is fully cleared.
+      Requirements re-extraction for postings with no `posting_requirements` row is tracked
+      by its own CR (`2026-09-01-requirements-backlog-batch-catchup.md`), not this one.
 - [x] Step 6: `/implement-frontend` — Step 4's one real finding (`MarketHealthPage.tsx:111`'s
       stale `seniority` field name) was small enough to implement directly as part of Step 5's
       pass rather than needing a separate invocation — done, see Step 5 notes. No other
