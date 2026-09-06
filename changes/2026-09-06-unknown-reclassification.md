@@ -4,7 +4,7 @@ date: 2026-09-06
 trigger-type: stakeholder-request
 change-type: api-change, technical-refactor
 outcome: understand-market-health-before-searching
-status: triaged
+status: complete
 ---
 
 # Change Request: Description-assisted recovery pass for classification `unknown` fields
@@ -107,8 +107,18 @@ ones that are resolvable makes the demand read more complete.
       `prep_postings` / `build_batch_requests` / `collect_batch_results`.
 - [x] Step 3: Diagnostic pass — confirmed it is not the taxonomy (see the box at the top);
       1,574 gap postings, 103 zero-skill postings.
-- [ ] Step 4: Run both against production data; report the before/after.
-- [ ] Step 5: Commit + push (manual scripts, no deploy needed; they ship with the repo).
+- [x] Step 4: Ran both against production data (2026-09-06).
+      **Classification recovery** — 1,574 gap postings, description-assisted `gemini-3.6-flash`
+      Batch, 1,574 updates applied, 0 unparseable/failed:
+      - `role_category`: **0 still `unknown`** (was the whole reason 136 were flagged) —
+        1,079 gained a tracked category (Engineer 943, PM 93, Designer 43), 495 → `other`
+        (description shows a non-tracked role).
+      - fields still `unknown` after seeing the description: `level` 279 (was ~1,026 —
+        747 resolved), `specialization` 1, `track` 4. The residual `level` rows genuinely
+        don't state seniority anywhere — kept `unknown`, not forced.
+      **Requirements re-extraction** — 103 zero-skill postings re-extracted: 49 now have at
+      least one skill, 54 still have none (those postings genuinely list no concrete skills).
+- [x] Step 5: Committed + pushed (`7f0cfef`, `8d4c04e` — scripts; no deploy needed).
 
 ## Decision Log
 
