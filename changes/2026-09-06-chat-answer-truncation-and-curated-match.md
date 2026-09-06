@@ -154,13 +154,52 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
 
 ## Execution Plan
 
-- [ ] Step 1: Read `design/market-health/experience.md`, `design/ai-reasoning-panel/experience.md`,
-      `backend/specs/market-health/api.md`, both frontend specs, and the IA reasoning-model
-      section — full chain for the chat surface. Root cause of the two bugs is already
-      established; this step is about the DB-only rewrite's blast radius.
-- [ ] Step 2: `/new-experience` — update `design/market-health/experience.md` and
-      `design/ai-reasoning-panel/experience.md` per the table. Then sweep `data-stories.md`,
-      `provenance-panel.md`, `information-architecture.md` for external-source references.
+- [x] Step 1: Read the full chain for the chat surface (2026-09-06). External-source
+      touchpoints identified:
+      - `design/market-health/experience.md` — User Flow step 6 (example "What was demand
+        like in 2019?"), **step 7** (the core: "answers from real external sources it can
+        point to… never blended"), step 7b (synthesis — KEEP, this is the "should I learn X"
+        path), accordion "Sources" ("what… was searched externally"), Interactions row "Ask a
+        question… that reaches outside the platform's data", Edge Cases "Question reaches
+        outside the platform's data" / "Answer blends platform data and an external source" /
+        part of "A claim would need a source". Also a stale accordion line ("if the assistant
+        fell back to a secondary model, it names that model" — the tier list was removed
+        2026-09-06) and a garbled Edge Case near line 500-502.
+      - `design/ai-reasoning-panel/experience.md` (`directive: high`) — "Answer composed by a
+        fallback model" edge case is stale; "No external tools used" placeholder stays (now
+        always true for chat).
+      - `backend/specs/market-health/api.md` — "Conversational data sourcing" step **2**
+        (Google Search grounding) and step 3's "which parts came from which"; the
+        anti-fabrication guard keys on the `NEEDS_EXTERNAL` marker; "Chat model tier" names a
+        "Stage 2 search grounding"; trace section mentions "any Google Search grounding call".
+        Tech Decisions line ~1318 (Google Search grounding capability) and ~1649 (two call
+        modes: function tool vs. search grounding).
+      - `backend/src/chat.py` — `_search_external_sources`, `_SEARCH_STAGE_SYSTEM`,
+        `_needs_external`, `_query_platform_data`'s `NEEDS_EXTERNAL` prompt, Stage 2 block in
+        `_stream_response`, `_build_synthesis_system`'s external-source sections.
+      - `backend/src/llm/gemini.py` — `stream()` `max_output_tokens=1024`, no thinking config;
+        `complete_with_search_grounding`.
+      - `backend/src/llm/base.py` — `stream()` returns bare `AsyncIterator[str]`;
+        `complete_with_search_grounding` in the protocol; `GroundedResponse`/`GroundingSource`.
+      - `backend/src/market_query.py` — `query_requirements_data` returns `raw_skills` but has
+        no `raw_skill` *filter*.
+      - `backend/src/curated_answers.py` — `match()` substring-only.
+- [x] Step 2: `/new-experience` (2026-09-06) —
+      - `design/market-health/experience.md`: User Flow 7 rewritten (data-only, no external);
+        7b tightened (judgment reasons *from* the data); "What we want to achieve" reframed as
+        4 goals (instant + natural phrasing / data-only / always finishes / never a dead end);
+        accordion Sources + Context sections de-external-ised; stale "secondary model" line
+        removed; Interactions row rewritten + a truncation row added; Edge Cases — garbled
+        bullet split and fixed, external-source bullets replaced with "we don't track that"
+        redirect + a new "incomplete model answer" bullet; a "Revised 2026-09-06" note added.
+      - `design/ai-reasoning-panel/experience.md`: "Answer composed by a fallback model" edge
+        case removed (stale); "Answer was cut short" edge case added; `updated` bumped.
+      - `design/market-health/provenance-panel.md`: intro line — no external service to
+        disclose for chat.
+      - `design/information-architecture.md`: "Source" taxonomy entry — chat consults only
+        owned-data queries, not the open web.
+      - `design/market-health/data-stories.md`: reviewed — its two "no external search"
+        lines already state the DB-only rule; no change.
 - [ ] Step 3a: Update `outcomes/ai-provider-flexibility.md` (manual edit) — amendment note:
       the provider contract normalises the streaming stop reason and carries a provider-neutral
       output bound.

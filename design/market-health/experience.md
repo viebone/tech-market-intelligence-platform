@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-09-04
+updated: 2026-09-06
 ---
 
 # Market Health — Experience Spec
@@ -162,10 +162,10 @@ a new data dimension: a **synthesis question** ("should I learn to code as a UX 
 asks for a judgment, not a lookup — see User Flow step 7b and Edge Cases, below, for how
 that's handled honestly.
 
-### What we want to achieve — instant answers, and never a dead end (added 2026-09-03)
+### What we want to achieve — a fluent, data-only conversation (added 2026-09-03, expanded 2026-09-06)
 
-Two goals, neither of which changes the design of this experience — the page is still a
-conversation and every answer is still grounded in the platform's own data:
+Goals that don't change the design of this experience — the page is still a conversation and
+every answer is still grounded in the platform's own data:
 
 1. **The most common questions should answer instantly.** Questions that get asked
    constantly — "which roles are growing?", "what do Backend Engineers earn?", "what skills
@@ -173,9 +173,21 @@ conversation and every answer is still grounded in the platform's own data:
    platform's current data, without waiting on the assistant to compose it. The answer obeys
    every honesty rule in this spec (time window stated, proportions never absolutes,
    disclosed-vs-estimated salary never blended). This is a curated set that should keep
-   growing over time, so more and more questions answer instantly.
+   growing over time, so more and more questions answer instantly. **The instant path must
+   recognise a question asked in ordinary words** — "what skills are in demand for PMs?"
+   should hit the same instant answer as "what skills do product manager roles ask for?",
+   not fall through to the slow path on a rephrasing.
 
-2. **A brief assistant outage should never be a dead end.** When the assistant genuinely
+2. **Every answer comes only from the platform's data.** No web search, no model general
+   knowledge, no blending. A question the data can't reach gets a plain "we don't track
+   that" and a pointer to what it can answer — never an outside answer. This is a product
+   rule; it holds whichever AI model is in use, and swapping the model must not weaken it.
+
+3. **A composed answer always finishes.** A model answer is never shown cut off mid-sentence
+   as though it were complete — it either runs to a natural end or ends with a plain note
+   that it was cut short and can be continued.
+
+4. **A brief assistant outage should never be a dead end.** When the assistant genuinely
    can't compose an answer for a moment, the user sees a calm "try again shortly" message
    and can still get instant answers to the common questions — not a bare error with nowhere
    to go.
@@ -261,15 +273,19 @@ The user interprets and decides what to do with it.
 7. The AI answers by actually analysing the platform's own data for that specific question —
    not repeating a fixed canned summary. It states the answer's time window plainly, grounded
    in when live data collection actually began (e.g. "since we started tracking on 20 July
-   2026, Product Designer postings have outnumbered User Experience Designer postings"). If the
-   question reaches outside what the platform's data can answer — a time period before
-   collection began, or something the dataset was never going to contain — the AI says so
-   plainly, then answers from real external sources it can point to (an article, a report, a
-   named study), never from unverified recall. An answer is never presented without saying
-   whether it came from the platform's own data or an external source — the two are never
-   blended without saying which is which. The detailed *how* — what was queried, what was
-   searched — belongs in the drill-down (see Thinking process accordion, below), not
-   necessarily spelled out in the visible answer; the *source* always is.
+   2026, Product Designer postings have outnumbered User Experience Designer postings").
+   **Every answer is built only from the platform's own data.** The assistant does not consult
+   the open web and does not answer from a model's general knowledge — not to fill a gap, not
+   for "broader context," not for a question the data almost covers. If a question reaches
+   outside what the data holds — a period before collection began, a company or place the
+   dataset doesn't include, a topic job postings can't speak to — the AI says so plainly,
+   names the nearest thing the data *can* address, and offers one or two questions it can
+   actually answer. It never substitutes an outside answer for the missing one; an honest
+   "we don't track that" beats a plausible answer from elsewhere. This is a rule about the
+   product, not about a particular model — it holds whichever AI composes the answer. The
+   detailed *how* — which queries ran, over what window — belongs in the drill-down (see
+   Thinking process accordion, below); the visible answer stays concise and conversational,
+   a few sentences or a short list, never a multi-section report.
 7a. **Compensation Signal answers carry an additional, non-negotiable honesty requirement**:
    not every posting discloses salary, and the postings that do aren't equally reliable —
    some come from a structured field the source itself provides, others are inferred from
@@ -295,8 +311,11 @@ The user interprets and decides what to do with it.
    than must-have — design systems and prototyping are far more commonly required") — then,
    clearly separated, the AI's judgment built on that data (e.g. "Given that, coding is
    unlikely to be the highest-leverage thing to learn next — design systems fluency would
-   affect more of your applications"). If the sample is too small to support a confident
-   judgment, the AI says so and gives the data alone rather than a shaky recommendation.
+   affect more of your applications"). The judgment is reasoning over the platform's own
+   numbers, not outside advice — "should I learn Rust?" is answered by looking at how often
+   Rust-family skills appear in the tracked postings and at what requirement level, then
+   reasoning from that. If the sample is too small to support a confident judgment, the AI
+   says so and gives the data alone rather than a shaky recommendation.
 7c. **An instant answer to a common question is held to exactly the same bar.** It analyses
    the platform's own data for that specific question, states the time window, and obeys the
    Compensation and Requirements honesty rules (7a, 7b) — the numbers are always current as
@@ -349,19 +368,17 @@ When expanded, it shows:
   postings had disclosed vs. inferred salary data), requirements signal count (and, when a
   synthesis question was asked, the sample size the judgment was built on — see User Flow
   7b), layoff event count, and the model used. For an instant answer this says plainly that
-  no model was used; if the assistant fell back to a secondary model, it names that model —
-  the user can always tell what produced their answer.
+  no model was used — the user can always tell what produced their answer.
 - **Sources** — for the opening briefing, the data source description — now potentially more
   than one, since postings are ingested from several company job boards rather than a single
   provider. When more than one source contributed to what's shown, each is named (e.g.
   "Company job boards hosted on Greenhouse, Lever, and Ashby"), not collapsed into a generic
   "job board data" label — the user can tell a Greenhouse-sourced count from a Lever-sourced one
   if they ask, even though the chart and summary blend all sources together by default. For a
-  follow-up chat turn, this is where the *how* lives: what the platform's data was queried or
-  analysed for (and the data's time window), what — if anything — was searched externally, and
-  why. The visible answer always states which source class it came from (platform data vs.
-  external); this section is where the specific queries and searches behind that are
-  inspectable, for the user who wants to verify rather than just trust. Never shows a source
+  follow-up chat turn, this is where the *how* lives: which owned-data queries ran, over what
+  time window, and why. Every chat answer is built from the platform's own data only — there
+  is no external search to disclose — so this section is a complete account of what produced
+  the answer, for the user who wants to verify rather than just trust. Never shows a source
   that wasn't actually consulted for that response. This is the same commitment
   `design/ai-reasoning-panel/experience.md` already makes product-wide (its "Sources & Tools"
   section) — a follow-up turn's Sources entry here is that same disclosure, applied to this
@@ -461,7 +478,8 @@ concentrated in the first half of the year — the last three months have been f
 | Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
 | Ask a question in chat (typed or via a suggested-question chip) from any task | **Each task is its own conversation.** The question and its answer appear in the current task's thread, below that task's opening content (its welcome, its story answer, or its chart + summary). Switching tasks switches the conversation; the chat input always queries the task you are looking at. It never redirects you elsewhere (added 2026-09-06 — `changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md`). |
 | Ask a question in chat, answerable from the platform's data | AI analyses the platform's data specifically for that question (not a fixed canned summary), states the answer's time window, and the accordion shows what was queried. |
-| Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began) | AI says plainly that the platform doesn't have that data, then answers from a real, citable external source (article, report, named study) — never from unverified recall. Response and accordion both make clear it's an external source, not platform data. |
+| Ask a question in chat that reaches outside the platform's data (e.g. a period before data collection began, a company or city not tracked) | AI says plainly that the platform doesn't have that data, names the nearest thing the data *can* speak to, and suggests 1–2 questions it can actually answer. Never an outside answer, a web search, or a general-knowledge fill-in. |
+| A composed answer is cut off before it finishes (length limit, dropped stream) | The turn never ends on a sentence that just stops. The answer continues to a natural end, or ends with a plain note that it was cut short and can be continued. A partial answer is never presented as the whole answer. |
 | Ask a compensation question in chat (e.g. "What should I expect to earn as a Senior Backend Engineer?") | AI answers using disclosed-salary postings first, states how many postings the figure is based on, and — if a lower-confidence, inferred-from-text estimate is included at all — labels it explicitly as an estimate rather than blending it into the headline range. States plainly if no postings in that slice disclose compensation. |
 | Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
 | Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. |
@@ -498,21 +516,24 @@ concentrated in the first half of the year — the last three months have been f
 - **Instant answer whose data slice is empty or too small:** It states that plainly — "No
   tracked postings match this yet", or the raw counts with "too few to read a trend from" —
   exactly as a composed answer would. It never invents a number to fill a template.
-  applies (e.g. a question entirely outside the tech job market). Say so plainly and suggest
-  1–2 related questions the platform can actually help with.
-- **Question reaches outside the platform's data (e.g. a time period before data collection
-  began):** Say so plainly first — never silently substitute an external answer for a data
-  question without flagging the gap. Then, if a real external source can address it, answer
-  from that source with the source named. If no real source can be found, say so rather than
-  guessing.
-- **Answer blends platform data and an external source:** Both are used in the same response
-  (e.g. "our data shows demand rising since July; a 2025 industry report found similar broader
-  trends — [source]"). The response and the accordion both distinguish the two — never
-  presented as a single undifferentiated source.
-- **A claim would need a source the platform doesn't have:** The AI states plainly that it
-  doesn't have that data or a source for it, rather than inventing a plausible-sounding one.
-  Never cite a source — platform data or external — that wasn't actually consulted for that
+- **Question is entirely outside the tech job market (e.g. general life advice, an unrelated
+  topic):** Say so plainly and suggest 1–2 related questions the platform can actually help
+  with. Do not attempt an answer from outside the data.
+- **Question reaches outside the platform's data (e.g. a period before data collection began,
+  a company or place the dataset doesn't cover):** Say so plainly — the platform doesn't
+  track that. Name the closest thing the data *can* address and suggest 1–2 answerable
+  questions. Never fill the gap from the open web or from a model's general knowledge; an
+  honest "we don't track that" beats a plausible answer from elsewhere.
+- **A claim would need data the platform doesn't have:** The AI states plainly that it
+  doesn't have that data, rather than inventing a plausible-sounding figure or citing
+  something it didn't actually query. Never cite a source that wasn't consulted for that
   response.
+- **A composed model answer comes back incomplete (a length limit, a dropped stream):** The
+  user is never left with a sentence that just stops. The answer either continues to a
+  natural end, or ends with a plain marker that it was cut short and an invitation to ask for
+  the rest. A half-answer is never presented as if it were the whole answer, and its
+  drill-down reflects that it was truncated. This holds regardless of which AI model is in
+  use — completeness is a product guarantee, not a model setting.
 - **Coverage is a curated set of companies, not the whole market:** Postings come from a
   maintained list of companies whose job boards are hosted on Greenhouse, Lever, or Ashby — not
   a survey of every employer. This is a real, honest limit, not a bug: large organisations
@@ -613,6 +634,20 @@ questions still available, never a dead-end error. Every answer is still data-gr
 held to the same honesty rules (User Flow 7c); the drill-down is honest about what produced
 it. Opening chart, summary, and prompt untouched. How these surface is left to the frontend
 and visual-design work. See `changes/2026-09-03-chat-resilience-and-instant-answers.md`.
+
+**Revised (2026-09-06 — `changes/2026-09-06-chat-answer-truncation-and-curated-match.md`):**
+The conversation is now explicitly **data-only and fluent**. The external web-search path is
+removed — every chat answer is composed only from the platform's own data (User Flow 7,
+"What we want to achieve" #2). A question the data can't reach gets a plain "we don't track
+that" plus a pointer to what it can answer, never an outside answer; the corresponding
+"answers from external sources" / "blends platform and external" language and Edge Cases are
+gone. "Should I learn X" judgment questions (User Flow 7b) are unchanged in shape but
+explicitly answered *from* the data. New guarantees: a composed answer is never shown cut off
+mid-sentence as if complete (new Edge Case + "What we want to achieve" #3), and the instant
+path recognises ordinary rephrasings, not just near-exact wording (#1). All of these are
+product rules that hold regardless of which AI model is in use. Stale "fell back to a
+secondary model" accordion line removed (the tier list was dropped 2026-09-06). Opening
+chart, summary, and prompt untouched.
 
 **Resolved (2026-08-11):** `design/market-health/job-classification.md` underwent a full
 taxonomy redesign (`changes/2026-08-11-classification-taxonomy-redesign.md`) — the old

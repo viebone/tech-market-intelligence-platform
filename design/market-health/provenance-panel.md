@@ -13,7 +13,9 @@ updated: 2026-08-03
 
 Documents the `ProvenancePanel` component: a collapsible "How this was generated" section
 that appears at the top of every `AITurn`. It surfaces how the system produced an answer —
-what filters were active, what data was loaded, and what external services were called.
+what filters were active, what owned-data queries ran, and which model (if any) composed the
+answer. Chat answers are built only from the platform's own data (no web search) — see
+`design/market-health/experience.md` — so there is no external-service call to disclose.
 
 Implements UX Principle 4 (Progressive Transparency with Full Inspectability) from
 `design/foundations.md`.

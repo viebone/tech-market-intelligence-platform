@@ -172,7 +172,7 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Exception** | A signal or event that crosses a threshold and requires the user's attention. | Future: Alert Centre |
 | **Reasoning Panel** | The expandable inline section beneath any AI message. Shows inputs, tools accessed, data sources, and reasoning steps. Collapsed by default; expanded on demand. Never absent. | Every AI message in Working Space |
 | **Reasoning Step** | A single logical step in the AI's thinking process, shown inside the Reasoning Panel. | Reasoning Panel |
-| **Source** | An external data source or tool the AI consulted, shown inside the Reasoning Panel. | Reasoning Panel |
+| **Source** | A data source or tool the AI consulted to produce an answer, shown inside the Reasoning Panel. For Market Health chat this is always one of the platform's own owned-data queries — the assistant does not consult the open web. | Reasoning Panel |
 | **Follow-up** | A user message sent in the Working Space after the initial Task Result has loaded. Extends the conversation thread for the active task. | Working Space |
 
 ---
