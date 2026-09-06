@@ -251,6 +251,30 @@ a later addition, not a redesign.
   (a `job-sync` run stamping `gemini-3.6-flash`) is confirmed — run 50 was on
   the old alias code; run 51 is the first on `ddb68b3`+.
 
+  **Status check 2026-09-06 (`batch_jobs` + `ingestion_runs` inspected directly):**
+  - The autonomous cycle **is** working. Job 2 (09-03, 500) collected by run 52-ish;
+    job 3 (09-04, 500) collected by run 53 (`batch_collected: 485`). `gemini-3.6-flash`
+    is being stamped (carry-over confirmed).
+  - Tracked-role backlog (Designer/PM/Engineer postings with no `posting_requirements`
+    row — the metric this CR's "~1,597" referred to) is now **697**, down from ~1,597.
+    On track, slightly slower than the 3–4-cycle estimate. (The raw "no requirements
+    row" count is 4,024, but 3,327 of those are `other`/`unknown` and are out of scope
+    by design — extraction only runs for tracked roles.)
+  - **Transient stall:** run 54 (09-06) threw collecting job 4 (submitted 09-05) →
+    `requirements_phase: batch_collect_failed`, job 4 still `submitted`. Because the
+    in-flight guard (`get_active_job()`) then blocks `_maybe_submit_batch()`, run 54
+    also submitted no new job. Job 4 was polled by hand 09-06 17:50 — it **succeeded
+    provider-side**, `fetch()` returns all 267 result groups cleanly, so the collect
+    path is healthy; run 54's failure looks transient (network blip / batch not ready
+    at the ~24h mark). **Decision (stakeholder, 2026-09-06): wait for run 55
+    (09-07 06:00 UTC) to self-heal** — it should collect job 4 and submit job 5. If
+    run 55 also fails to collect/submit, that is a real bug → new CR. `reconcile()`
+    fails job 4 to the failures table at +72h (09-08 06:07) if still stuck — the
+    outcome to avoid.
+  - **Design smell noted for a possible follow-up CR:** one transient collect error
+    blocks batch submission for up to 72h (≈3 cycles), because submission is gated on
+    "no active job" even when that job is already `succeeded` provider-side.
+
 ## Documentation & code-quality bar (explicit acceptance criteria)
 
 The stakeholder called out "very well documented and cleanly coded" as a
