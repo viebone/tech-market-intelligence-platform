@@ -60,3 +60,19 @@ When a reader looks at any feature's code, they should immediately see which AI 
 > rerouting") now applies to chat unchanged. Within-call retry of a transient
 > `503`/`429` on that single model stays (same as the classification and
 > requirements paths already do) — that is retry, not rerouting.
+>
+> **Extended 2026-09-06 (`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`).**
+> "The frontend contract (stream format, response shape) is unchanged regardless of which
+> provider is active" now also covers the **behavioural** contract of a streamed answer. The
+> `LLMProvider` streaming interface normalises two things every adapter must map onto, the
+> same way `BatchProvider` already normalises job state onto four `BatchState` values:
+> - a **provider-neutral output bound** (`max_output_tokens`) the caller passes and every
+>   adapter honours — the value is an application-layer decision, never hard-coded in an
+>   adapter;
+> - a **normalised stream stop reason** (`complete` / `truncated` / `filtered` / `error`) —
+>   no provider's raw finish enum crosses the boundary; the feature acts only on the neutral
+>   value.
+> This is what lets a product rule like "a chat answer always finishes, and is only ever
+> built from platform data" hold identically after swapping the model. Managing a model's
+> internal reasoning tokens so they don't starve visible output is an adapter quality bar,
+> not a caller concern.

@@ -133,6 +133,22 @@ without crashing — it shows what's available.
 during context assembly — not alphabetical, not by type. This is what makes the trace
 honest rather than reconstructed.
 
+**`/api/chat` traces carry no external-source entries (added 2026-09-06 —
+`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`).** The chat assistant is
+DB-only — the web-search stage is removed — so a chat turn's `sources_and_tools` is always
+the platform's own owned-data queries (`query_market_data` / `query_compensation_data` /
+`query_requirements_data`), and no reasoning step mentions a web search. The "No external
+tools used" placeholder (`design/ai-reasoning-panel/experience.md`) is now always the state
+for chat.
+
+**Truncated answers are marked, not hidden (added 2026-09-06).** Stage 3 streaming reports a
+provider-neutral stop reason (`complete` / `truncated` / `filtered` / `error` — see
+`backend/specs/market-health/api.md` — Provider-neutral streaming contract). When it is
+`truncated`, the trace's final `reasoning_step` states the answer was cut short before it
+finished (not "Synthesised the final answer"), and the `done` event's `finish_message` does
+**not** carry a clean `finishReason: "stop"` for that turn — a partial answer is never
+presented as a completed one. `is_complete` still follows its existing three-section rule.
+
 ---
 
 ## External Dependencies

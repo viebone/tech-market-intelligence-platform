@@ -430,11 +430,13 @@ after the baseline date.
 
 ### POST /api/chat
 
-**Purpose**: Accepts the user's conversation history and streams a Gemini response. Unlike
-before, the model is not handed one fixed pre-computed data blob — it can query the platform's
-real dataset directly for the specific question asked, and fall back to real, cited external
-sources for anything the dataset doesn't cover. See Business Logic — Conversational data
-sourcing. Wire format and streaming contract are unchanged — see
+**Purpose**: Accepts the user's conversation history and streams a model-composed response.
+The model is not handed one fixed pre-computed data blob — it queries the platform's real
+dataset directly for the specific question asked. **The answer is built only from that owned
+data** — no web search, no model general knowledge; a question the data can't reach gets a
+plain "we don't track that" plus a pointer to what it can answer (revised 2026-09-06 —
+`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`). See Business Logic —
+Conversational data sourcing. Wire format and streaming contract are unchanged — see
 `backend/specs/ai-reasoning-panel/api.md` for the full stream event sequence
 (`reasoning_trace` → tokens → `finish_message`). This spec changes what feeds that trace, not
 its shape.
@@ -1011,11 +1013,20 @@ In v1, implications are static strings keyed to verdict + filter combination, st
 
 **Conversational data sourcing (replaces the old fixed-context-injection design)**
 Per `design/market-health/experience.md`'s sourcing rule: analyse the platform's own data for
-the specific question asked, state the data's time window, and never fabricate an external
-claim. The old design — pre-fetch a fixed summary/trends blob and prepend it as static context
-— could only ever answer questions that blob happened to cover, and had no way to distinguish
-"our data" from "the model's memory," which is how the fabricated "LinkedIn job postings"
-citation bug happened. The new design gives the model two tools and a fixed decision order:
+the specific question asked, state the data's time window, and never fabricate a claim or
+reach outside the platform's data. The old design — pre-fetch a fixed summary/trends blob and
+prepend it as static context — could only ever answer questions that blob happened to cover,
+and had no way to distinguish "our data" from "the model's memory," which is how the
+fabricated "LinkedIn job postings" citation bug happened.
+
+**DB-only (revised 2026-09-06 — `changes/2026-09-06-chat-answer-truncation-and-curated-match.md`).**
+Every chat answer is composed **only** from the three owned-data query tools below. There is
+no web-search stage and no general-knowledge fallback — the earlier "Google Search grounding"
+step (step 2) is removed. A question the tools genuinely can't answer produces a plain
+not-covered result (see step 3), never an outside answer. This is a product rule from the
+experience spec; it holds whichever model is wired in.
+
+The design gives the model three tools and a fixed decision order:
 
 1. **`query_market_data` tool (always tried first).** A read-only, parameterised query
    interface over `raw_postings` joined to `classifications` — not raw SQL execution, which
@@ -1088,7 +1099,13 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    other two tools (`role_category`, `specialization`, `level`, `track`, `country`), plus,
    **new 2026-08-11**: `skill_group` (optional filter, restricted to the closed sets in
    `design/market-health/job-classification.md` — Skills), `work_arrangement`, and
-   `education_required`. Returns:
+   `education_required`; plus, **new 2026-09-06**: `raw_skill` — an optional free-text filter
+   on the specific technology/practice mention (e.g. `["Rust"]`, `["Kubernetes"]`), matched
+   case-insensitively against `posting_skills.raw_skill`, so "is Rust in demand for
+   engineers?" is one direct query rather than the model scanning every skill group's
+   `raw_skills` list. Parameterised, never string-interpolated, same as every other filter.
+   When set, the returned `skills` breakdown and `total_matching` are scoped to postings that
+   mention a matching raw skill. Returns:
    ```json
    {
      "skills": [
@@ -1120,29 +1137,34 @@ citation bug happened. The new design gives the model two tools and a fixed deci
    hasn't reached yet). This is also the field a synthesis question's "sample too small"
    check (`design/market-health/experience.md` — Edge Cases) is computed from.
 
-2. **Google Search grounding (tried only when steps 1/1a/1b can't answer the question).**
-   Triggered when none of the data tools return anything usable for a request that should be
-   inside their domain but isn't inside the data's time window, or when the question is
-   categorically outside what the dataset could ever contain (general career advice, market
-   history before this pipeline existed, industry context). Implemented as a **separate,
-   second model call** with Google Search grounding enabled, not combined with the data tools
-   in the same call — current Gemini API versions don't support mixing custom function-calling
-   tools with the search-grounding tool in one request (reverify at implementation time; API
-   capabilities change). The grounded response's citation metadata (search queries used,
-   source titles/URLs) becomes the trace's external sources — never a source that wasn't
-   actually returned by the grounded call.
+2. **No external step (revised 2026-09-06).** The "Google Search grounding" second call is
+   removed. When steps 1/1a/1b can't answer — the question falls outside `data_range`, names
+   a company/place the dataset doesn't cover, or is categorically outside what job postings
+   can speak to (general life advice, market history before this pipeline existed) — the
+   answer says so plainly, names the nearest thing the data *can* address, and suggests one
+   or two answerable questions. It does **not** search the web and does **not** answer from
+   the model's own knowledge. The data stage signals "not covered" with a plain marker (an
+   exact-string prefix the way the old `NEEDS_EXTERNAL` marker worked, e.g. `NO_DATA:`
+   followed by a one-line reason) so the synthesis stage and the anti-fabrication guard can
+   both key on it; it never means "now go elsewhere," only "compose the honest not-covered
+   reply."
 
-3. **Never silently substitute one for the other.** If steps 1/1a/1b find a partial answer
-   and step 2 is needed to fill a gap, the response says which parts came from which. If
-   nothing can answer the question, the model says so rather than guessing — this is a
-   prompt-level instruction, and was confirmed insufficient on its own through testing (see
-   the anti-fabrication guard below); a code-level check backs it up.
+3. **Always attempt the data first; abstain honestly when it can't.** The data stage's job
+   is to map the question onto the available queries (including `raw_skill` for a specific
+   technology) and answer with real numbers — not to bail early. It emits the `NO_DATA:`
+   marker only when the data genuinely holds nothing relevant, and even then names the
+   closest thing it *can* speak to. If nothing can answer the question, the model says so
+   rather than guessing — a prompt-level instruction that testing showed is insufficient on
+   its own (see the anti-fabrication guard below), so a code-level check backs it up.
    **Synthesis questions (added 2026-08-09) get an additional rule**: when the data supports
    a judgment, not just a lookup (`design/market-health/experience.md` — User Flow 7b), the
    final answer must present the data and the judgment as two clearly separated parts, never
    blended into one statement — and must decline to judge (data only) if `total_matching`
    from `query_requirements_data` is too small to support a confident conclusion (exact
    threshold is an implementation/prompt-tuning detail, not spec'd as a precise number here).
+   A synthesis question like "should I learn Rust?" is answered *from* the data — query the
+   relevant `raw_skill` / skill-group frequencies and requirement levels, then reason from
+   those — not from outside knowledge.
 
 **Curated instant-answer engine — tried before any model call (added 2026-09-06 — Steps 13/15
 of `changes/2026-09-03-chat-resilience-and-instant-answers.md`).** Before Stage 1 runs, the
@@ -1156,10 +1178,22 @@ back; the model stages are skipped entirely.
   `query_compensation_data` / `query_requirements_data` functions (the same ones the model
   stages expose as tools) and returns `(answer_text, list[ToolCall])` — the tool calls feed
   the reasoning trace, exactly as a model answer's do.
-- **Matching** is intentionally simple and conservative: normalise (lowercase, collapse
-  whitespace, strip trailing punctuation) and match if the normalised message equals, or
-  clearly contains, a `question`/`match_phrasings` string. Anything ambiguous does **not**
-  match and falls through to the model — a wrong curated answer is worse than a slow one.
+- **Matching** is conservative but not brittle (revised 2026-09-06 —
+  `changes/2026-09-06-chat-answer-truncation-and-curated-match.md`). The earlier rule —
+  normalise, then require the message to equal or literally contain a `question` /
+  `match_phrasings` string — missed ordinary rephrasings of a catalogued question
+  ("what skills are more in demand for product managers?" did not match the `pm-skills`
+  entry). The matcher must recognise a question asked in natural words, not only near-verbatim
+  wording. Approach: after normalising (lowercase, collapse whitespace, strip trailing
+  punctuation), match on **content-word overlap** against each entry's `question` +
+  `match_phrasings` — the message matches an entry when it contains that entry's distinguishing
+  terms (e.g. a role term *and* the intent term: `{product manager | pm}` + `{skill(s)}`),
+  above a confidence floor, with no competing entry scoring as high. Stopwords and filler
+  ("what", "are", "more", "for", "right now") don't count toward overlap. It stays
+  conservative — an ambiguous message, or one that matches two entries equally, falls through
+  to the model; a wrong instant answer is worse than a slow correct one. Each catalogued
+  entry keeps a widened `match_phrasings` set covering the common rewordings, and every
+  phrasing has a regression test.
 - **Honesty parity is mandatory.** A curated answer states the data's time window (from the
   query's `data_range`), uses proportions with their denominator (never absolutes), and keeps
   structured vs. parsed compensation separate — the same rules
@@ -1185,9 +1219,10 @@ back; the model stages are skipped entirely.
 
 **Chat model tier and retry — REVISED 2026-09-06: paid-only (Step 13 of
 `changes/2026-09-03-chat-resilience-and-instant-answers.md`).** A question that does **not**
-match the curated catalogue falls through to the model stages (Stage 1 data-tool query, the
-optional Stage 2 search grounding, Stage 3 synthesis stream). Each of those calls goes through
-**one** model tier — there is no free tier and no tier list:
+match the curated catalogue falls through to the model stages: **Stage 1** data-tool query,
+then **Stage 3** synthesis stream. (There is no Stage 2 — the search-grounding stage was
+removed 2026-09-06; the numbering is kept so existing references still resolve.) Each of those
+calls goes through **one** model tier — there is no free tier and no tier list:
 
 - `providers.gemini("gemini-3.6-flash", GEMINI_API_KEY_CHAT_PAID)` — chat's dedicated,
   isolated, spend-capped paid project (outcome `llm-spend-is-bounded-and-isolated`). This is
@@ -1210,12 +1245,43 @@ optional Stage 2 search grounding, Stage 3 synthesis stream). Each of those call
   cap is spent, the synthesis stage yields one calm message instead of a hang or a bare
   error: *"The assistant is briefly unavailable — please try again in a moment. Meanwhile,
   the suggested questions below answer instantly, and 'About this platform' / 'What we know
-  about the market' in the task panel never use AI."* Stage 1/2 failures degrade quietly
+  about the market' in the task panel never use AI."* A Stage 1 failure degrades quietly
   (Stage 3 still runs with whatever it has, or states plainly it has nothing).
 
 Retry is a small helper in `llm/chat_fallback.py` (provider-agnostic — operates only on
 `llm.base.LLMProvider`). It no longer does multi-tier failover; that plumbing was removed
 with the free tier.
+
+**Provider-neutral streaming contract (added 2026-09-06 —
+`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`).** A fluent conversation
+needs two guarantees that must not be expressed in provider-specific terms (outcome
+`ai-provider-flexibility`, amended 2026-09-06). The `LLMProvider` interface carries them, the
+same way `BatchProvider` already normalises job state onto four `BatchState` values:
+
+- **Output bound.** `stream()` and `complete()` accept `max_output_tokens: int | None`. The
+  caller (chat) passes the value; every adapter translates it to its SDK's own parameter.
+  The value is an application-layer constant — a conversational budget, big enough for a
+  complete short answer and a good deal more, **not** the model's absolute maximum and **not**
+  the tiny `1024` the Gemini `stream()` adapter used to hard-code (which, minus the model's
+  internal-reasoning tokens, truncated normal answers mid-sentence — the bug this CR fixes).
+  Exact number lives in `ai_interaction_settings.py`.
+- **Normalised stop reason.** The stream exposes how generation ended as one of
+  `complete` / `truncated` / `filtered` / `error`. Every adapter maps its provider's own
+  finish enum (Gemini's `finish_reason`, etc.) onto exactly these — no raw provider enum
+  crosses the boundary. Mechanism (a trailing sentinel chunk, or a small result object the
+  caller reads after the iterator drains) is an implementation choice for `llm/base.py`, not
+  fixed here.
+- **Chat acts on the neutral value.** On `truncated`, Stage 3 either issues one continuation
+  call and appends its output, or appends a plain marker — *"…(cut off — ask me to continue)"* —
+  and records a truncated step in the reasoning trace. It never emits a `finish_message` that
+  implies a clean stop when the answer was cut short. On `filtered` / `error` mid-stream, the
+  user gets the calm degraded line, not a dangling fragment.
+- **Internal-reasoning management is the adapter's job**, not chat's — each adapter owns a
+  sensible default so a model's "thinking" tokens never starve the visible answer within the
+  caller's `max_output_tokens`.
+
+Swapping `gemini-3.6-flash` for another model (or provider) changes none of the above —
+grounding, completeness, and length are enforced above the provider line.
 
 **Bounded conversation history, not the full transcript.** Each stage gets only as much
 recent conversation as it actually needs, not everything since the conversation began — see
@@ -1232,27 +1298,33 @@ when the user questioned it. Giving the tool stages a small bounded window of re
 
 **Anti-fabrication guard — a code-level check, not just a prompt instruction.** If the
 data-query stage makes zero calls to *any* of the three data tools (`query_market_data`,
-`query_compensation_data`, `query_requirements_data`) AND doesn't emit the `NEEDS_EXTERNAL`
-marker, its text is
+`query_compensation_data`, `query_requirements_data`) AND doesn't emit the `NO_DATA:` marker
+(revised 2026-09-06 — the old marker was `NEEDS_EXTERNAL`, from when an uncovered question
+routed to web search; now it just means "compose the honest not-covered reply"), its text is
 discarded outright before it can reach the synthesis stage — confirmed by testing that a
 confused model will sometimes answer with fabricated content instead of abstaining,
 regardless of what the system prompt says. The synthesis stage is also grounded directly in
 the raw tool-call return values (not just the data-query stage's prose summary of them), so a
 hallucinated narrative can't reach the user even if it somehow slipped
-past the first guard.
+past the first guard. The synthesis system prompt no longer references external sources or
+"which parts came from which" — there is only platform data — and it asks for a concise,
+conversational answer, not a multi-section report.
 
 **Reasoning trace now reflects real tool calls, not pre-computed context.**
 `backend/specs/ai-reasoning-panel/api.md` currently states trace assembly is "synchronous and
 pre-LLM... input context and sources are known before the LLM call." That premise no longer
 holds for `/api/chat`: `sources_and_tools` must now be built from whichever data tool(s) were
 actually called (`query_market_data`; `query_compensation_data`, added 2026-08-04;
-`query_requirements_data`, added 2026-08-09 — any combination)
-and any Google Search grounding call actually made during generation, in real order, not
-assembled beforehand. The trace-building code must not hardcode a single tool name/purpose
-string the way it could when only one data tool existed — it now needs to reflect whichever
-tool(s) the model actually invoked. This spec's behavior is authoritative for `/api/chat`; the
-other spec is not updated here since reconciling it fully is out of this change's scope
-(flagged in `design/market-health/experience.md`'s Open Questions).
+`query_requirements_data`, added 2026-08-09 — any combination), in real order, not assembled
+beforehand. The trace-building code must not hardcode a single tool name/purpose string the
+way it could when only one data tool existed — it now needs to reflect whichever tool(s) the
+model actually invoked. As of 2026-09-06 there are **no external-source entries** — chat is
+DB-only, so `sources_and_tools` is always owned-data queries and the reasoning steps never
+mention a web search. When Stage 3's normalised stop reason is `truncated`, the trace's final
+reasoning step says the answer was cut short, not completed (see
+`backend/specs/ai-reasoning-panel/api.md`). This spec's behavior is authoritative for
+`/api/chat`; the reasoning-panel spec is updated in the same change for the
+external-entry removal and the truncated step.
 
 **Insufficient data handling**
 If filters produce an empty dataset, the summary endpoint returns `verdict: null` and an explanation stating that no data is available for that combination. The frontend must handle a null verdict without crashing.
@@ -1315,7 +1387,7 @@ true — `ingest.py` has never been called from any request path) but in deploym
 | Dependency | Purpose |
 |---|---|
 | Google Generative AI Python SDK (`google-genai`) | Streaming Gemini responses for `/api/chat`; `query_market_data` tool-calling; posting classification; **Gemini batch API** for the requirements catch-up lane (added 2026-09-01). Used **only** inside `llm/gemini.py` — see Tech Decisions — Provider abstraction layer. |
-| Google Search grounding (via `google-genai`) | Real, citable external sources for `/api/chat` questions outside the platform's own data |
+| ~~Google Search grounding (via `google-genai`)~~ | **Removed 2026-09-06** (`changes/2026-09-06-chat-answer-truncation-and-curated-match.md`) — `/api/chat` is DB-only; a question outside the platform's data gets a plain "we don't track that", never a web-search answer. |
 | Greenhouse Job Board API (`boards-api.greenhouse.io/v1/boards/{board_token}/jobs`) | Source of live job postings for `raw_postings` (`source: "greenhouse"`). Public, unauthenticated GET, no credentials. No documented rate limit for this endpoint (confirmed against Greenhouse's own API docs, 2026-08-03) — paced conservatively regardless (Business Logic — Ingestion). |
 | Lever Postings API (`api.lever.co/v0/postings/{site}`) | Source of live job postings for `raw_postings` (`source: "lever"`). Public, unauthenticated GET, no credentials. Documents a rate limit only for its POST application-submission endpoint (2 req/sec) — this product never calls that endpoint; the GET postings endpoint has no documented limit, paced conservatively regardless. |
 | Ashby Job Board API (`api.ashbyhq.com/posting-api/job-board/{jobBoardName}`) | Source of live job postings for `raw_postings` (`source: "ashby"`). Public, unauthenticated GET, no credentials. No documented rate limit (confirmed against Ashby's own API docs, 2026-08-03); paced conservatively regardless. No filtering support at all on this endpoint — every company's full board is fetched. |
@@ -1645,12 +1717,19 @@ Gemini adapter — implementation detail of the exact method signature is left t
    explicitly while every existing caller (`chat.py`, the reasoning trace feature) is
    unaffected. Same pattern as naming provider and model explicitly at the call site — the
    credential is now also explicit when a caller needs a non-default one.
-2. **Tool-enabled calls.** Nothing in `LLMProvider` today lets a caller pass function
-   declarations (for `query_market_data`) or enable Google Search grounding. `/api/chat` needs
-   both, as two distinct call modes (Business Logic — Conversational data sourcing): one call
-   with the `query_market_data` function tool, a separate call with search grounding enabled —
-   never both tools in the same call. This is new surface on the protocol, not a change to
-   `stream()`/`complete()`'s existing behavior for callers that don't need it.
+2. **Tool-enabled calls.** `LLMProvider` needs a call mode that passes function declarations
+   (for `query_market_data` / `query_compensation_data` / `query_requirements_data`) —
+   `complete_with_tools`. **Updated 2026-09-06:** the second mode, search grounding, is
+   removed with the web-search stage. `complete_with_search_grounding` may remain on the
+   `LLMProvider` protocol as a dormant capability for a possible future non-chat feature, but
+   `/api/chat` never calls it — DB-only is a property of the chat pipeline's shape, not a
+   provider flag. Decide keep-vs-remove at `/implement-backend`.
+
+3. **Provider-neutral streaming contract (added 2026-09-06).** `stream()`/`complete()` gain
+   `max_output_tokens: int | None`, and the stream exposes a normalised stop reason
+   (`complete` / `truncated` / `filtered` / `error`) that each adapter maps its provider's own
+   finish enum onto — the sibling of `BatchState`. See Business Logic — "Provider-neutral
+   streaming contract" and `outcomes/ai-provider-flexibility.md` (amended 2026-09-06).
 
 ## Data stories
 

@@ -200,14 +200,23 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
         owned-data queries, not the open web.
       - `design/market-health/data-stories.md`: reviewed — its two "no external search"
         lines already state the DB-only rule; no change.
-- [ ] Step 3a: Update `outcomes/ai-provider-flexibility.md` (manual edit) — amendment note:
-      the provider contract normalises the streaming stop reason and carries a provider-neutral
-      output bound.
-- [ ] Step 3: `/new-backend-spec` — update `backend/specs/market-health/api.md` and
-      `backend/specs/ai-reasoning-panel/api.md`: the provider-neutral streaming contract
-      (`base.py` — `max_output_tokens`, normalised stop reason); remove Stage 2; DB-only
-      conversational sourcing incl. judgment-from-data; synthesis budget + incomplete-finish
-      handling (in provider-neutral terms); `raw_skill` filter; curated matcher rule + phrasings.
+- [x] Step 3a: `outcomes/ai-provider-flexibility.md` (2026-09-06) — "Extended 2026-09-06"
+      amendment: the streaming contract normalises the stop reason (`complete`/`truncated`/
+      `filtered`/`error`) and carries a provider-neutral `max_output_tokens`, the same
+      normalise-onto-a-fixed-set pattern `BatchProvider` uses. Lets "a chat answer always
+      finishes, built only from platform data" survive a model swap.
+- [x] Step 3: `/new-backend-spec` (2026-09-06) —
+      - `backend/specs/market-health/api.md`: DB-only note added to Conversational data
+        sourcing; step 2 (Google Search grounding) removed, step 3 rewritten (always attempt
+        data, `NO_DATA:` marker replaces `NEEDS_EXTERNAL`, judgment-from-data); new
+        "Provider-neutral streaming contract" block (max_output_tokens, normalised stop
+        reason, chat acts on `truncated`); curated matcher rewritten (content-word overlap,
+        widened phrasings + per-phrasing tests); `raw_skill` filter added to
+        `query_requirements_data`; anti-fabrication guard + reasoning-trace + `POST /api/chat`
+        purpose + Tech Decisions (protocol extensions, External Dependencies row) all updated;
+        `complete_with_search_grounding` kept as dormant-or-remove decision for implement.
+      - `backend/specs/ai-reasoning-panel/api.md`: chat traces carry no external entries;
+        truncated answers marked in the final reasoning step + no clean `finishReason: "stop"`.
 - [ ] Step 4: `/new-frontend-spec` — update `frontend/specs/market-health/architecture.md`
       and review `frontend/specs/ai-reasoning-panel/architecture.md`.
 - [ ] Step 5: `/implement-backend` —
