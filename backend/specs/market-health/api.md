@@ -919,37 +919,49 @@ anticipates (Data Models — Classification, above), not a violation of it.
   revision fixes. The requirements-reprocessing delete step should only target postings whose
   classification row already carries `taxonomy_version: "2026-08-11"`.
 
-**`unknown`-recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
+**Description-assisted recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
 A one-time reprocessing pass, separate from taxonomy reprocessing, that re-classifies every
-posting currently `role_category = 'unknown'` using **title + a job-description snippet**
-(the title-only main path left these ambiguous by definition — see
-`design/market-health/job-classification.md` — `unknown`-recovery fallback).
+posting with **any** `'unknown'` classification field — `role_category`, `specialization`,
+`level`, or `track` (1,574 postings on 2026-09-06) — using **title + a job-description
+snippet**. The title-only main path leaves these ambiguous by definition (e.g. `level` is
+`'unknown'` for "Software Engineer" — no seniority word); the description usually discloses
+them. See `design/market-health/job-classification.md` — `unknown`-recovery fallback.
 
 - **Inputs.** Title, plus a cleaned description snippet extracted from `raw_postings.raw_response`
   per source (`greenhouse.content` / `lever.descriptionPlain` / `ashby.descriptionPlain`, HTML
-  stripped, whitespace-collapsed, truncated) — the same per-source extraction requirements
-  extraction already uses. The classification system instruction is the standard one, with an
-  added line telling the model it now has the description and should resolve the ambiguity the
-  title left, keeping `unknown` only if the description also can't disambiguate.
-- **Mechanism.** The **Gemini Batch API** (`GeminiBatchAdapter` via `providers.batch("gemini",
-  …)`), on `GEMINI_API_KEY_CLASSIFICATION` (the classification prepaid project) — a one-time
-  bulk job (~136 short items today), Batch API pricing, off the interactive per-day request
-  quota. Run by a standalone script (`backend/src/reclassify_unknowns.py`), same "run now,
-  safe to re-run" pattern as `reprocess_taxonomy.py`, not wired into `ingest.py`. It does
-  **not** use the shared `batch_jobs` table — that and `ingest.py`'s single-active-job guard
-  are scoped to the requirements lane; the script tracks its own job ref and polls to
-  completion.
+  stripped, whitespace-collapsed, truncated) — the same `_extract_description` requirements
+  extraction already uses. The classification system instruction is the standard one plus a
+  line telling the model it now has the description and must re-answer all five fields, filling
+  the gaps the title left and keeping a field `'unknown'` only if the description also doesn't
+  disclose it.
+- **Model.** `gemini-3.6-flash` (`classification.RECOVERY_MODEL`), via the **Gemini Batch API**
+  (`GeminiBatchAdapter` / `providers.batch("gemini", …)`) on `GEMINI_API_KEY_CLASSIFICATION` —
+  Batch pricing (~$0.05 for 1,574 items), off the interactive per-day request quota. Run by a
+  standalone script (`backend/src/reclassify_unknowns.py`), same "run now, safe to re-run"
+  pattern as `reprocess_taxonomy.py`, not wired into `ingest.py`. It does **not** use the
+  shared `batch_jobs` table — that and `ingest.py`'s single-active-job guard are scoped to the
+  requirements lane; the script tracks its own job ref and polls to completion.
 - **Writes.** `UPDATE` the existing `classifications` row in place (same UNIQUE(posting_id)
-  reason as taxonomy reprocessing): new `role_category`/`specialization`/`level`/`track`/
-  `classification_confidence`, `classified_at` bumped, `model` marked as the description-
-  assisted path, `taxonomy_version` unchanged (still current). A row that comes back
-  `unknown` or `other` is also written, so the pass is idempotent — a re-run only re-attempts
-  rows still `unknown` that this pass has not already marked with its own `model` value.
-- **Outcome.** An `unknown` the description resolves becomes Designer / Product Manager /
-  Engineer (and gains a specialization/level/track). One it doesn't becomes `other` (not a
-  tracked role) or stays `unknown` (genuinely ambiguous). None are forced.
-- **Not in the daily pipeline.** If the ongoing `unknown` rate later warrants a standing
-  description fallback, that is a separate change.
+  reason as taxonomy reprocessing): re-answered `role_category`/`specialization`/`level`/
+  `track`/`classification_confidence`, `classified_at` bumped, `model` = a provenance +
+  idempotency marker (`RECOVERY_MODEL + "+description"`), `taxonomy_version` unchanged. Every
+  outcome is written (including still-`unknown`), so a re-run only re-attempts rows still
+  carrying a gap that this pass hasn't stamped; bumping `RECOVERY_MODEL` forces a redo with a
+  newer model.
+- **Outcome.** A field the description discloses is filled (a title-only `unknown` role
+  becomes Designer / Product Manager / Engineer with specialization/level/track; a
+  `level = 'unknown'` gains a level; etc). `role_category` becomes `other` if the description
+  shows it's not a tracked tech role. A field the description also doesn't state stays
+  `'unknown'`. None are forced.
+- **Requirements re-extraction** (`backend/src/reextract_skilless.py`, same one-time pattern):
+  the 103 postings with a `posting_requirements` row but zero `posting_skills` — a reliable
+  "extractor missed" signal — get their requirements/skills/languages rows deleted and
+  re-extracted via the Gemini Batch API on `GEMINI_API_KEY_REQUIREMENTS`. `not_mentioned`
+  education / work-arrangement and NULL years-of-experience are **not** re-targeted (usually
+  correct). Not the 4,024-posting no-requirements-row backlog — that is the
+  `requirements-backlog-batch-catchup` cron.
+- **Not in the daily pipeline.** A standing description fallback for the ongoing `unknown`
+  rate is a separate change if warranted.
 
 **Trend aggregation**
 `GET /api/market-health/openings` counts distinct `raw_postings` — joined to their

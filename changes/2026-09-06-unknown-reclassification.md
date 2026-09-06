@@ -7,7 +7,23 @@ outcome: understand-market-health-before-searching
 status: triaged
 ---
 
-# Change Request: Description-assisted recovery pass for `role_category = 'unknown'`
+# Change Request: Description-assisted recovery pass for classification `unknown` fields
+
+> **Scope broadened 2026-09-06** (stakeholder: "all unknown ... make sure this time works"):
+> from `role_category = 'unknown'` only (136) to **every posting with any `unknown`
+> classification field** — `role_category` / `specialization` / `level` / `track` — which is
+> **1,574 postings**. Model bumped from `gemini-2.5-flash` to `gemini-3.6-flash`. Also adds a
+> requirements re-extraction for the **103** extracted postings that have zero skills.
+>
+> **Taxonomy investigation (the stakeholder suspected "the internal taxonomy failing"):**
+> checked — it isn't. All 6,694 classifications are on one `taxonomy_version` (`2026-08-11`).
+> The 3,253 `other` rows sampled correctly (BDR, Customer Success, TAM, Corporate Counsel,
+> Sales — genuinely not Designer/PM/Engineer). The `unknown` fields are the **title-only
+> method hitting its documented ceiling**: `level = 'unknown'` for 1,026 rows is titles like
+> "Software Engineer" / "Data Scientist" with no seniority word — the description almost
+> always discloses it. Separate observation: `other` is ~49% of the dataset, which
+> `job-classification.md` says signals a **sourcing/targeting** problem (the ingestion query
+> is too broad) — not classification, and out of scope here.
 
 ## Signal
 
@@ -31,21 +47,41 @@ ones that are resolvable makes the demand read more complete.
 
 ## The design
 
-- **Scope:** every posting currently `role_category = 'unknown'`. Title-only re-runs are
-  pointless (same input → same `unknown`), so this pass sends the model **title + a snippet
-  of the job description** (extracted from `raw_postings.raw_response` per source, the same
-  way requirements extraction already does).
-- **Mechanism:** the **Gemini Batch API** (`GeminiBatchAdapter` via `providers.batch`), on
-  `GEMINI_API_KEY_CLASSIFICATION` (the classification prepaid project). A one-time job of
-  ~136 short items — Batch API pricing, does not consume the interactive daily request quota.
-- **A posting the description still can't disambiguate stays `unknown`** — genuinely
-  ambiguous, not a failure. A posting that turns out not to be a tracked role becomes `other`.
-- Resolved rows are `UPDATE`d in place (bump `classified_at`, `model` marks the
-  description-assisted path, `taxonomy_version` stays current). `unknown`/`other` outcomes
-  are also written so the pass is idempotent — a re-run only re-attempts rows still `unknown`
-  *and* not yet touched by this pass.
-- **Not in scope:** wiring a description fallback into the daily pipeline. If the ongoing
-  `unknown` rate warrants it later, that is a follow-up.
+### Classification recovery (`reclassify_unknowns.py`)
+
+- **Scope:** every posting where `role_category`, `specialization`, `level`, or `track` is
+  `'unknown'` — 1,574 today. Title-only re-runs are pointless (same input → same `unknown`),
+  so this pass sends the model **title + a job-description snippet** (per-source extraction
+  from `raw_postings.raw_response`, the same `_extract_description` requirements uses) and
+  asks it to re-answer all five fields.
+- **Model:** `gemini-3.6-flash` (bumped from 2.5-flash — the stakeholder questioned 2.5's
+  quality). Via the **Gemini Batch API** (`GeminiBatchAdapter` / `providers.batch`), on
+  `GEMINI_API_KEY_CLASSIFICATION` — Batch pricing (~$0.05 for 1,574), off the interactive
+  daily request quota.
+- **A field the description still can't disclose stays `unknown`** — genuinely not stated,
+  not a failure. `role_category` becomes `other` if the description shows it's not a tracked
+  tech role. Nothing forced.
+- Rows are `UPDATE`d in place (`classified_at` bumped, `model` = `gemini-3.6-flash+description`
+  as provenance + idempotency key, `taxonomy_version` unchanged). `unknown`/`other` outcomes
+  are written too, so a re-run only re-attempts rows still carrying a gap that this pass
+  hasn't already stamped. Bumping the model suffix in `classification.CLASSIFICATION_RECOVERY_MODEL`
+  forces a redo with a newer model.
+
+### Requirements re-extraction (`reextract_skilless.py`)
+
+- **Scope:** the 103 postings with a `posting_requirements` row but **zero `posting_skills`**
+  — a reliable "the extractor missed" signal. `not_mentioned` education / work-arrangement
+  and NULL years-of-experience are **not** targeted — those are usually correct.
+- Delete the requirements/skills/languages rows for those ids, re-extract via the Gemini
+  Batch API on `GEMINI_API_KEY_REQUIREMENTS`, `collect_batch_results` inserts fresh rows.
+
+### Not in scope
+
+- Wiring a description fallback into the daily pipeline (a follow-up if the ongoing `unknown`
+  rate warrants it).
+- The 4,024 postings with no requirements row at all — that is the in-progress
+  `requirements-backlog-batch-catchup` cron, left alone here.
+- The broad `other` rate / ingestion targeting — a separate sourcing question.
 
 ## Specs Affected
 
@@ -60,18 +96,19 @@ ones that are resolvable makes the demand read more complete.
 
 ## Execution Plan
 
-- [ ] Step 1: `/new-backend-spec` — document the description-assisted unknown-recovery pass in
-      `backend/specs/market-health/api.md` and the fallback in
-      `design/market-health/job-classification.md`.
-- [ ] Step 2: `/implement-backend` —
-      - `classification.py`: a `classify_with_description()` path (title + description snippet
-        → validated classification), reusing `_parse_response` / `_validate` /
-        `update_classifications`; a `build_unknown_recovery_requests()` helper.
-      - `reclassify_unknowns.py`: fetch unknowns + descriptions → submit one Batch job →
-        poll to completion → apply results → print a summary. Safe to re-run.
-- [ ] Step 3: Run it against production data; report how many `unknown` resolved, to what.
-- [ ] Step 4: Commit + push (no deploy needed — a manual script, not pipeline code; but it
-      ships with the repo).
+- [x] Step 1: `/new-backend-spec` — documented the description-assisted recovery pass in
+      `backend/specs/market-health/api.md` (Business Logic — Classification) and the fallback
+      in `design/market-health/job-classification.md` (the spec already anticipated it).
+- [x] Step 2: `/implement-backend` — `classification.py` (`RECOVERY_SYSTEM_INSTRUCTION`,
+      `build_unknown_recovery_prompt`, `RECOVERY_MODEL` + `CLASSIFICATION_RECOVERY_MODEL`
+      marker); `reclassify_unknowns.py` (any-gap fetch, batch submit/poll/apply,
+      before/after gap report); `reextract_skilless.py` (the 103 zero-skill postings).
+      Reuses existing `_parse_response` / `_validate` / `update_classifications` /
+      `prep_postings` / `build_batch_requests` / `collect_batch_results`.
+- [x] Step 3: Diagnostic pass — confirmed it is not the taxonomy (see the box at the top);
+      1,574 gap postings, 103 zero-skill postings.
+- [ ] Step 4: Run both against production data; report the before/after.
+- [ ] Step 5: Commit + push (manual scripts, no deploy needed; they ship with the repo).
 
 ## Decision Log
 

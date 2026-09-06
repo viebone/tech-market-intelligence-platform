@@ -1,20 +1,23 @@
 """
-One-time description-assisted recovery pass for `role_category = 'unknown'`.
+One-time description-assisted recovery pass for classification gaps.
 
-The main classification path is title-only by design, so `unknown` means "the title alone
-can't tell." This pass re-examines every `unknown` posting with its **job description** added
-and lets the model resolve the ones the description disambiguates. See
-`changes/2026-09-06-unknown-reclassification.md` and
-`backend/specs/market-health/api.md` — Business Logic — Classification — `unknown`-recovery pass.
+The main classification path is title-only by design, so any of role_category /
+specialization / level / track can come back "unknown" when the title alone doesn't disclose
+it (e.g. "Software Engineer" — no seniority word, so level is "unknown"). This pass
+re-examines every posting with at least one "unknown" field, adding the **job description**,
+and lets the model fill the gaps the description discloses. See
+`changes/2026-09-06-unknown-reclassification.md` and `backend/specs/market-health/api.md` —
+Business Logic — Classification — description-assisted recovery pass.
 
 Run manually (backend/src/, classification venv):
     python reclassify_unknowns.py
 
-Safe to re-run: only re-attempts `unknown` rows this pass has not already marked with its own
-`model` value (`classification.CLASSIFICATION_RECOVERY_MODEL`). Uses the Gemini **Batch API**
-on `GEMINI_API_KEY_CLASSIFICATION` — off the interactive per-day request quota, Batch
-pricing. Prints the batch job ref so an interrupted run can be checked in the Gemini console.
-Not wired into `ingest.py`; not part of the daily pipeline.
+Safe to re-run: only re-attempts rows still carrying a gap that this pass has not already
+marked with its own `model` value (`classification.CLASSIFICATION_RECOVERY_MODEL` — bump the
+model suffix there to force a redo with a newer model). Uses the Gemini **Batch API** on
+`GEMINI_API_KEY_CLASSIFICATION` — off the interactive per-day request quota, Batch pricing.
+Prints the batch job ref so an interrupted run can be checked in the Gemini console. Not
+wired into `ingest.py`; not part of the daily pipeline.
 """
 
 from __future__ import annotations
@@ -31,8 +34,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from classification import (  # noqa: E402
-    CLASSIFICATION_MODEL,
     CLASSIFICATION_RECOVERY_MODEL,
+    RECOVERY_MODEL,
     RECOVERY_SYSTEM_INSTRUCTION,
     _parse_response,
     _validate,
@@ -51,14 +54,18 @@ POLL_INTERVAL_SECONDS = 30
 
 
 def _fetch_unknowns() -> list[dict]:
-    """`unknown` postings this pass hasn't already re-examined, oldest first."""
+    """Postings with at least one 'unknown' classification field that this pass hasn't
+    already re-examined, oldest first."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT c.posting_id, rp.title, rp.source, rp.raw_response
             FROM classifications c
             JOIN raw_postings rp ON rp.id = c.posting_id
-            WHERE c.role_category = 'unknown'
+            WHERE (c.role_category = 'unknown'
+                   OR c.specialization = 'unknown'
+                   OR c.level = 'unknown'
+                   OR c.track = 'unknown')
               AND c.model IS DISTINCT FROM %s
             ORDER BY rp.fetched_at ASC
             """,
@@ -77,11 +84,12 @@ async def main() -> None:
 
     unknowns = _fetch_unknowns()
     if not unknowns:
-        print("Nothing to do — no 'unknown' classifications left for this pass to re-examine.")
+        print("Nothing to do — no classification gaps left for this pass to re-examine.")
         return
 
     with_desc = sum(1 for p in unknowns if p["description"])
-    print(f"{len(unknowns)} 'unknown' postings to re-examine ({with_desc} have a usable description).")
+    print(f"{len(unknowns)} postings with a classification gap to re-examine "
+          f"({with_desc} have a usable description), via {RECOVERY_MODEL}.")
 
     requests = [
         BatchRequest(
@@ -93,7 +101,7 @@ async def main() -> None:
     ]
 
     batch = providers.batch(
-        "gemini", CLASSIFICATION_MODEL, api_key=os.environ["GEMINI_API_KEY_CLASSIFICATION"]
+        "gemini", RECOVERY_MODEL, api_key=os.environ["GEMINI_API_KEY_CLASSIFICATION"]
     )
     job_ref = await batch.submit(requests)
     print(f"Batch submitted — job ref: {job_ref}")
@@ -128,19 +136,24 @@ async def main() -> None:
         validated["model"] = CLASSIFICATION_RECOVERY_MODEL
         updates.append(validated)
 
+    still_unknown = Counter()
+    for u in updates:
+        for field in ("role_category", "specialization", "level", "track"):
+            if u.get(field) == "unknown":
+                still_unknown[field] += 1
+
     update_classifications(updates)
 
-    outcome = Counter(u["role_category"] for u in updates)
+    role_outcome = Counter(u["role_category"] for u in updates)
     tracked = {"Designer", "Product Manager", "Engineer"}
-    recovered = sum(n for cat, n in outcome.items() if cat in tracked)
 
     print()
-    print(f"Applied {len(updates)} updates ({failed} unparseable/failed):")
-    for cat, n in outcome.most_common():
-        print(f"  {cat:16} {n}")
-    print()
-    print(f"{recovered} of {len(unknowns)} recovered into a tracked role category "
-          f"({outcome.get('other', 0)} -> other, {outcome.get('unknown', 0)} still unknown).")
+    print(f"Applied {len(updates)} updates ({failed} unparseable/failed).")
+    print("role_category:", dict(role_outcome.most_common()))
+    print("fields still 'unknown' after the description pass:", dict(still_unknown))
+    print(f"{sum(n for c, n in role_outcome.items() if c in tracked)} rows now have a tracked "
+          f"role_category; {role_outcome.get('other', 0)} -> other; "
+          f"{role_outcome.get('unknown', 0)} role_category still unknown.")
 
 
 if __name__ == "__main__":

@@ -369,19 +369,27 @@ eventually be filtered by confidence for particularly sensitive analyses, and so
 reviewer has a place to start (low-confidence classifications are the ones worth spot-checking
 first) rather than needing to review the full dataset uniformly.
 
-**`unknown`-recovery fallback (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
-The main path above is title-only by design. When that leaves a posting `role_category:
-"unknown"` — "the title alone can't tell" — a second pass may re-classify it using the
-posting's **job description** in addition to the title. This is the "fallback" the Unknown
-vs. Other section anticipates for a high `unknown` rate. It is:
-- **only for `unknown`** — never re-opens a posting already resolved to a real category or to
-  `other`;
-- **still bound to the same closed sets** — it can resolve an `unknown` into Designer /
-  Product Manager / Engineer / `other`, or leave it `unknown` if the description still
-  doesn't disambiguate. A description-assisted `unknown` is a real, kept outcome, same as a
-  title-only one;
+**Description-assisted recovery fallback (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
+The main path above is title-only by design. When that leaves **any** field `"unknown"` —
+`role_category`, `specialization`, `level`, or `track` ("the title alone doesn't say") — a
+recovery pass may re-classify the posting using its **job description** in addition to the
+title. This is the "fallback" the Unknown vs. Other section anticipates for a high `unknown`
+rate. It is:
+- **triggered by any `"unknown"` field**, not just `role_category` — `level` is `"unknown"`
+  for a plain "Software Engineer" title, and the description almost always discloses it;
+- **still bound to the same closed sets** — it can fill a gap with a real value or leave the
+  field `"unknown"` if the description also doesn't disclose it. A description-assisted
+  `"unknown"` is a real, kept outcome, same as a title-only one;
+- **still able to reach `role_category: "other"`** if the description shows the posting isn't
+  one of the three tracked tech occupations after all;
+- **re-answers all five fields, not only the `"unknown"` ones** — a description-informed
+  classification supersedes the title-only one wholesale, since the description is strictly
+  more signal (this is a deliberate quality pass, not a minimal patch). A field that was
+  already right stays right; one the title got wrong gets corrected;
+- **only runs on postings that have a gap** — a posting whose title-only classification had
+  no `"unknown"` field is not touched;
 - **not part of the daily pipeline** in this revision — run as a one-time reprocessing pass
-  (technical mechanism and the Gemini Batch API details in `backend/specs/market-health/api.md`).
+  (mechanism, model, and Gemini Batch API details in `backend/specs/market-health/api.md`).
 
 **Taxonomy versioning:** every classification is tagged with a `taxonomy_version`. If this
 taxonomy is later revised — a category added, a level split — historical classifications keep
