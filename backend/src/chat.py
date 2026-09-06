@@ -5,9 +5,11 @@ Endpoint:
   POST /api/chat
 
 Answers by analysing the platform's own data for the specific question asked
-(via the query_market_data tool), falling back to real, cited external
-sources only when the platform's data genuinely can't answer — never a fixed
-pre-computed context blob, never an unverified "general knowledge" claim. See
+(via the query_* tools) — and ONLY that data. No web search, no model general
+knowledge, no fixed pre-computed context blob. A question the data can't reach
+gets a plain "we don't track that" plus a pointer to what it can answer, never
+an outside answer (revised 2026-09-06 —
+changes/2026-09-06-chat-answer-truncation-and-curated-match.md). See
 backend/specs/market-health/api.md — Business Logic — Conversational data
 sourcing, and design/market-health/experience.md's sourcing rule.
 
@@ -38,11 +40,13 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 import curated_answers
 from llm import providers
+from llm.base import StreamOutcome
 from llm.chat_fallback import ChatModelUnavailable, call_with_retry, stream_with_retry
 from pydantic import BaseModel
 
 from ai_interaction_settings import (
     CHAT_PAID_DAILY_REQUEST_CAP,
+    CHAT_SYNTHESIS_MAX_OUTPUT_TOKENS,
     MAX_USER_MESSAGE_CHARS,
     SYNTHESIS_HISTORY_WINDOW_MESSAGES,
     TOOL_STAGE_HISTORY_MESSAGES,
@@ -156,30 +160,31 @@ exists, mention the parsed (estimated) one separately and label it as an estimat
 plainly if neither exists rather than guessing.
 - query_requirements_data: skills/technologies, education, years of experience, work \
 arrangement (remote/hybrid/onsite), and language questions, and the data half of any \
-synthesis question ("should I learn X", "what should I focus on"). Its skills breakdown \
-includes both a skill_group aggregate and the specific raw_skill mentions behind it (e.g. \
-"React" within "Frontend frameworks") — use raw_skills when the question asks about a \
-specific named technology, not just a broad category. Every extracted field is an \
-interpretation of free text, not a verified fact — report findings as proportions of \
-total_matching ("42% of postings mention X"), never as absolute claims. If total_matching is \
-small, say so and be cautious about drawing a firm conclusion from it. This tool never \
-returns compensation figures — use query_compensation_data for those.
+synthesis question ("should I learn X", "what should I focus on"). For a question about a \
+specific named technology ("is Rust in demand", "should I learn Kubernetes"), pass that name \
+as the raw_skill filter — one direct query, rather than scanning every skill group. Its \
+skills breakdown also has the specific raw_skill mentions behind each skill_group aggregate. \
+Every extracted field is an interpretation of free text, not a verified fact — report \
+findings as proportions of total_matching ("42% of postings mention X"), never as absolute \
+claims. If total_matching is small, say so and be cautious about drawing a firm conclusion \
+from it. This tool never returns compensation figures — use query_compensation_data for those.
 
 Below is the recent conversation. Answer the LAST message in it, using the earlier messages \
 only to understand what a short reply like "yes please" or "what about X" is referring to.
 
-Always check each tool's data_range and total_matching fields. If total_matching is 0 because \
-the question falls outside data_range, or the question is about something the tool could \
-never answer (general career advice, market history before data_range.earliest, industry \
-context not derivable from job postings), do not guess or use your own general knowledge here. \
-Instead, prefix your entire response with exactly "NEEDS_EXTERNAL: " followed by a one-sentence \
-description of what's missing, then on a new line write anything you WERE able to determine \
-from the data (write "(nothing)" if the data contributed nothing).
+You answer ONLY from these tools' data. You have no web search and must not use your own \
+general knowledge to state a fact, a number, a trend, or a recommendation. Always try the \
+tools first — map the question onto the filters available (including raw_skill for a specific \
+technology) before concluding the data can't help.
 
-If you cannot tell what the last message is asking even with the conversation above — it's too \
-ambiguous, or references something not present in the conversation shown — prefix your response \
-with exactly "NEEDS_EXTERNAL: " followed by that explanation. Never invent an answer, a \
-category, or a number that didn't come from an actual tool call.
+If the data genuinely can't answer — total_matching is 0 because the question falls outside \
+data_range, or it's about something job-posting data could never contain (general life \
+advice, market history before data_range.earliest, a company or place not in the dataset), \
+or the last message is too ambiguous to act on even with the conversation above — prefix your \
+entire response with exactly "NO_DATA: " followed by a one-sentence statement of what the \
+platform doesn't have and the nearest thing it *could* speak to. Then on a new line write \
+anything you WERE able to determine from the data (write "(nothing)" if the data contributed \
+nothing). Do not answer the missing part from outside the data.
 
 If the data can answer the question, respond directly and specifically: state the data's time \
 window (from data_range) and the real numbers returned. Never state a number or claim the tool \
@@ -193,7 +198,7 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
     `recent_messages` is a bounded window (TOOL_STAGE_HISTORY_MESSAGES), not the
     full conversation — enough to resolve a short follow-up, not enough to grow
     cost with conversation length. Returns the model's text (possibly prefixed
-    "NEEDS_EXTERNAL: ...") and the real tool calls made (for the reasoning trace).
+    "NO_DATA: ...") and the real tool calls made (for the reasoning trace).
     Raises ChatModelUnavailable if the paid model can't be reached after retries.
     """
     today = datetime.now(timezone.utc).date().isoformat()
@@ -210,95 +215,72 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
     return response.text, response.tool_calls
 
 
-# ---------------------------------------------------------------------------
-# Stage 2 — real external sources (only when stage 1 can't answer)
-# ---------------------------------------------------------------------------
+# There is no Stage 2. A "Stage 2 — real external sources" (Google Search
+# grounding) lived here until 2026-09-06; chat is now DB-only
+# (changes/2026-09-06-chat-answer-truncation-and-curated-match.md). The stage
+# numbering is kept (Stage 1 → Stage 3) so existing references still resolve.
 
-_SEARCH_STAGE_SYSTEM = """You are filling a gap in a job-market platform's own data using real \
-web search. Search for real, citable sources (articles, reports, named studies) relevant to \
-the question. If you cannot find a real source, say so plainly rather than answering from \
-unverified memory. Never state a claim without a source you actually found via search."""
+_NO_DATA_MARKER = "NO_DATA:"
 
 
-def _needs_external(stage1_text: str) -> tuple[bool, str]:
-    """Parse stage 1's NEEDS_EXTERNAL marker. Returns (needed, gap_description)."""
-    marker = "NEEDS_EXTERNAL:"
-    if not stage1_text.startswith(marker):
-        return False, ""
-    first_line, _, _ = stage1_text[len(marker):].partition("\n")
-    return True, first_line.strip()
-
-
-async def _search_external_sources(recent_messages: list[ChatMessage], gap_description: str):
-    """Stage 2: real, cited external sources for what stage 1 couldn't answer."""
-    prompt = (
-        f'The platform\'s own job market data could not answer this: "{gap_description}"\n'
-        f"Recent conversation:\n{_render_transcript(recent_messages)}\n\n"
-        "Find real, citable external sources to help answer the last message."
-    )
-
-    async def _call(provider):
-        return await provider.complete_with_search_grounding(prompt=prompt, system=_SEARCH_STAGE_SYSTEM)
-
-    grounded = await call_with_retry(_chat_provider(), _call)
-    _record_chat_paid_request()
-    return grounded
+def _has_no_data_marker(stage1_text: str) -> bool:
+    """True when Stage 1 declared the platform's data can't answer the question.
+    The synthesis stage then composes an honest "we don't track that" reply from
+    whatever Stage 1 could determine — it never routes anywhere else."""
+    return stage1_text.lstrip().startswith(_NO_DATA_MARKER)
 
 
 # ---------------------------------------------------------------------------
 # Stage 3 — final synthesis (this is what actually streams to the user)
 # ---------------------------------------------------------------------------
 
-def _build_synthesis_system(
-    stage1_text: str,
-    tool_calls: list,
-    grounded_text: str | None,
-    grounded_sources: list,
-) -> str:
+def _build_synthesis_system(stage1_text: str, tool_calls: list) -> str:
     if tool_calls:
         raw_results = "\n".join(f"{c.name}({c.args}) -> {c.result}" for c in tool_calls)
     else:
         raw_results = "(no platform data was queried for this question)"
 
+    no_data = _has_no_data_marker(stage1_text)
+
     sections = [
         "You are a market intelligence assistant for tech professionals. Write the final answer "
-        "to the user's question using ONLY the findings below — do not add facts beyond them, "
-        "and never invent a number, category, or statistic that isn't in RAW PLATFORM DATA.",
+        "to the user's question using ONLY the platform's own data below — never the open web, "
+        "never your own general knowledge, never an invented number, category, or statistic.",
         "",
         "RAW PLATFORM DATA (ground truth — the only real numbers, if any):",
         raw_results,
         "",
-        "Summary of what the data-query stage concluded (for context; if this ever conflicts "
-        "with RAW PLATFORM DATA above, the raw data wins):",
+        "What the data-query stage concluded (context; if it conflicts with RAW PLATFORM DATA, "
+        "the raw data wins):",
         stage1_text or "(none)",
+        "",
+        "Style: answer conversationally and concisely — a few sentences, or a short bullet list "
+        "for several figures. Not a multi-section report, no headings. State the data's time "
+        "window once. Proportions carry their denominator; never an absolute claim. Structured "
+        "and parsed compensation are never blended into one number.",
     ]
-    if grounded_text is not None:
-        sources_list = "\n".join(f"- {s.title} ({s.url})" for s in grounded_sources) or "(no sources found)"
+    if no_data:
         sections += [
             "",
-            "EXTERNAL SOURCE FINDINGS:",
-            grounded_text,
-            "",
-            "External sources found:",
-            sources_list,
+            "The data-query stage marked this NO_DATA — the platform doesn't track what was "
+            "asked. Say that plainly and briefly, name the nearest thing the data *can* speak "
+            "to, and suggest one or two questions the platform can actually answer. Do NOT "
+            "answer the missing part from outside the platform's data.",
         ]
-    sections += [
-        "",
-        "Rules: state plainly which parts of your answer come from the platform's own data and "
-        "which come from an external source — never blend the two without saying which is which. "
-        "If RAW PLATFORM DATA is empty and no external search was done, say plainly that you "
-        "don't have enough information rather than guessing. Never cite a source that isn't "
-        "listed above.",
-        "",
-        "If the question asks for a judgment or recommendation (e.g. \"should I learn X\", "
-        "\"what should I focus on\") rather than a plain lookup, and query_requirements_data "
-        "was called: write the answer in two clearly separated parts — first the underlying "
-        "data (the actual proportions/counts), then, separated by its own sentence or "
-        "paragraph break, your judgment built on that data. Never blend the two into one "
-        "statement. If that tool's total_matching is too small to support a confident "
-        "conclusion, give the data alone and say plainly that the sample is too small to "
-        "recommend anything from it — do not guess a recommendation anyway.",
-    ]
+    else:
+        sections += [
+            "",
+            "If RAW PLATFORM DATA is empty, say plainly you don't have that in the platform's "
+            "data rather than guessing.",
+            "",
+            "If the question asks for a judgment or recommendation (\"should I learn X\", "
+            "\"what should I focus on\") and query_requirements_data was called: two clearly "
+            "separated parts — first the underlying data (real proportions/counts), then, on "
+            "its own line, your judgment built on that data. Never blend them. The judgment "
+            "reasons over these numbers only, not outside advice. If total_matching is too "
+            "small for a confident conclusion, give the data alone and say the sample is too "
+            "small — don't guess a recommendation anyway.",
+        ]
     return "\n".join(sections)
 
 
@@ -309,10 +291,12 @@ def _build_synthesis_system(
 def _build_reasoning_trace(
     question: str,
     tool_calls: list,
-    used_external: bool,
-    grounded_queries: list[str],
-    grounded_sources: list,
+    *,
+    truncated: bool = False,
 ) -> ReasoningTrace:
+    """Trace for a model-composed chat turn. Chat is DB-only — every source is
+    one of the platform's own owned-data queries; there is never an external
+    entry. `truncated=True` marks a Stage 3 answer that was cut short."""
     sources: list[SourceAccess] = []
     steps: list[ReasoningStep] = []
     seq = 1
@@ -345,27 +329,14 @@ def _build_reasoning_trace(
         ))
         step_seq += 1
 
-    if used_external:
-        for q in grounded_queries:
-            sources.append(SourceAccess(
-                sequence=seq,
-                source_type="tool",
-                name="Google Search",
-                purpose=q,
-            ))
-            seq += 1
-        steps.append(ReasoningStep(
-            sequence=step_seq,
-            content=(
-                f"Platform data didn't fully answer the question, so searched real external "
-                f"sources and found {len(grounded_sources)} source(s)."
-            ),
-        ))
-        step_seq += 1
-
     steps.append(ReasoningStep(
         sequence=step_seq,
-        content="Synthesised the final answer, attributing platform data and external sources separately.",
+        content=(
+            "The answer was cut short before it finished — it is incomplete, not a "
+            "completed response."
+            if truncated
+            else "Synthesised the final answer from the platform's own data."
+        ),
     ))
 
     return ReasoningTrace(
@@ -403,11 +374,19 @@ def _sdk_finish(finish_reason: str = "stop") -> str:
 # Streaming generator
 # ---------------------------------------------------------------------------
 
+# Vercel AI SDK finishReason values, keyed by our provider-neutral StreamStop.
+_SDK_FINISH_REASON = {
+    "complete": "stop",
+    "truncated": "length",
+    "filtered": "content-filter",
+    "error": "error",
+}
+
+
 def _curated_trace(question: str, tool_calls: list) -> ReasoningTrace:
     """Trace for a curated instant answer — the real query it ran, and an explicit
     'no model' step (Principle 4, full inspectability)."""
-    trace = _build_reasoning_trace(question, tool_calls, used_external=False,
-                                   grounded_queries=[], grounded_sources=[])
+    trace = _build_reasoning_trace(question, tool_calls)
     # _build_reasoning_trace always ends with a "Synthesised the final answer…"
     # step — no synthesis happens on the curated path, so replace it.
     if trace.reasoning_steps:
@@ -429,18 +408,23 @@ async def _stream_response(
 
     Path selection:
       1. Curated instant answer (curated_answers.match) — no model call, sub-second.
-      2. Otherwise the model stages (Stage 1 tools → optional Stage 2 search → Stage 3
-         synthesis stream) on the single paid tier (_chat_provider). 10–30s.
+      2. Otherwise the model stages (Stage 1 owned-data tools → Stage 3 synthesis
+         stream) on the single paid tier (_chat_provider). DB-only — no web search.
       3. If the paid model is unavailable / its daily cap is spent — the calm
          degraded message. Never a hang or a bare error.
-    See changes/2026-09-03-chat-resilience-and-instant-answers.md.
+    See changes/2026-09-03-chat-resilience-and-instant-answers.md and
+    changes/2026-09-06-chat-answer-truncation-and-curated-match.md.
     """
     start_time = time.time()
     question = next((m.content for m in reversed(messages) if m.role == "user"), "")
 
-    def _finish() -> str:
+    def _finish(finish_reason: str = "stop") -> str:
         ms = int((time.time() - start_time) * 1000)
-        return _sdk_data({"type": "finish_message", "finishReason": "stop", "generation_time_ms": ms})
+        return _sdk_data({
+            "type": "finish_message",
+            "finishReason": finish_reason,
+            "generation_time_ms": ms,
+        })
 
     # ── Path 1: curated instant answer (no model call) ────────────────────────
     curated = curated_answers.match(question)
@@ -465,7 +449,7 @@ async def _stream_response(
         logger.warning("Chat model unavailable (key missing or daily cap reached) and no curated match.")
         yield _sdk_data({
             "type": "reasoning_trace",
-            "trace": dataclasses.asdict(_build_reasoning_trace(question, [], False, [], [])),
+            "trace": dataclasses.asdict(_build_reasoning_trace(question, [])),
         })
         yield _sdk_text(_DEGRADED_MESSAGE)
         yield _finish()
@@ -483,7 +467,7 @@ async def _stream_response(
         logger.error("Stage 1 unavailable after retries: %s", exc)
         yield _sdk_data({
             "type": "reasoning_trace",
-            "trace": dataclasses.asdict(_build_reasoning_trace(question, [], False, [], [])),
+            "trace": dataclasses.asdict(_build_reasoning_trace(question, [])),
         })
         yield _sdk_text(_DEGRADED_MESSAGE)
         yield _finish()
@@ -493,40 +477,33 @@ async def _stream_response(
         logger.error("Stage 1 (query_market_data) failed: %s", exc)
         stage1_text, tool_calls = "(platform data query failed)", []
 
-    used_external, gap = _needs_external(stage1_text)
+    no_data = _has_no_data_marker(stage1_text)
 
-    # Anti-fabrication guard: if the model neither called the tool nor admitted it
-    # needed external help, its text is untrusted — a confused model will sometimes
+    # Anti-fabrication guard: if the model neither called a data tool nor marked
+    # the question NO_DATA, its text is untrusted — a confused model will sometimes
     # answer with fabricated numbers instead of abstaining. Never let that reach synthesis.
-    if not tool_calls and not used_external:
-        logger.warning("Stage 1 produced ungrounded text with no tool call and no NEEDS_EXTERNAL marker; discarding it.")
+    if not tool_calls and not no_data:
+        logger.warning("Stage 1 produced ungrounded text with no tool call and no NO_DATA marker; discarding it.")
         stage1_text = "(no real platform data was retrieved for this question)"
 
-    grounded_text: str | None = None
-    grounded_queries: list[str] = []
-    grounded_sources: list = []
-
-    if used_external:
-        try:
-            grounded = await _search_external_sources(tool_stage_messages, gap)
-            grounded_text = grounded.text
-            grounded_queries = grounded.search_queries
-            grounded_sources = grounded.sources
-        except Exception as exc:
-            logger.error("Stage 2 (search grounding) failed: %s", exc)
-            grounded_text = "(external search failed)"
-
-    trace = _build_reasoning_trace(question, tool_calls, used_external, grounded_queries, grounded_sources)
+    trace = _build_reasoning_trace(question, tool_calls)
     yield _sdk_data({"type": "reasoning_trace", "trace": dataclasses.asdict(trace)})
 
-    # Stage 3 — stream the final synthesis
-    synthesis_system = _build_synthesis_system(stage1_text, tool_calls, grounded_text, grounded_sources)
+    # Stage 3 — stream the final synthesis (DB-only, concise, bounded length)
+    synthesis_system = _build_synthesis_system(stage1_text, tool_calls)
     synthesis_payload = [{"role": m.role, "content": m.content} for m in synthesis_messages]
+    outcome = StreamOutcome()
 
     def _stream_call(provider):
-        return provider.stream(messages=synthesis_payload, system=synthesis_system)
+        return provider.stream(
+            messages=synthesis_payload,
+            system=synthesis_system,
+            max_output_tokens=CHAT_SYNTHESIS_MAX_OUTPUT_TOKENS,
+            outcome=outcome,
+        )
 
     recorded_synthesis = False
+    stream_errored = False
     try:
         async for chunk in stream_with_retry(_chat_provider(), _stream_call):
             if not recorded_synthesis:
@@ -534,16 +511,45 @@ async def _stream_response(
                 _record_chat_paid_request()
             yield _sdk_text(chunk)
     except ChatModelUnavailable as exc:
+        stream_errored = True
         logger.error("Synthesis stage unavailable after retries: %s", exc)
         yield _sdk_text("\n\n" + _DEGRADED_MESSAGE)
     except Exception as exc:
+        stream_errored = True
         logger.error("LLM provider error (%s): %s", _CHAT_MODEL, exc)
-        yield _sdk_text("\n\n[The AI service returned an error. Please try again.]")
+        yield _sdk_text("\n\n" + _DEGRADED_MESSAGE)
 
-    yield _finish()
+    # Provider-neutral stop reason (llm.base.StreamStop) — never Gemini's raw enum.
+    # An answer cut short is never presented as if it were complete.
+    finish_reason = "stop"
+    if not stream_errored and outcome.stop != "complete":
+        if outcome.stop == "truncated":
+            yield _sdk_text(
+                "\n\n_(This answer was cut off before it finished. Ask me to continue "
+                "and I'll pick up where it stopped.)_"
+            )
+        elif outcome.stop == "filtered":
+            yield _sdk_text(
+                "\n\n_(The rest of this answer was withheld by a safety filter.)_"
+            )
+        else:  # "error"
+            yield _sdk_text("\n\n" + _DEGRADED_MESSAGE)
+        finish_reason = _SDK_FINISH_REASON.get(outcome.stop, "error")
+        # Re-emit the trace with the truncation marked — a partial answer's
+        # provenance must say it was cut short (ai-reasoning-panel spec).
+        yield _sdk_data({
+            "type": "reasoning_trace",
+            "trace": dataclasses.asdict(
+                _build_reasoning_trace(question, tool_calls, truncated=True)
+            ),
+        })
+    elif stream_errored:
+        finish_reason = "error"
+
+    yield _finish(finish_reason)
 
     # 4. Finish delta — signals stream end to useChat
-    yield _sdk_finish()
+    yield _sdk_finish(finish_reason)
 
 
 # ---------------------------------------------------------------------------

@@ -48,6 +48,42 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower()).strip(" ?.!,’'\"")
 
 
+# Filler that carries no intent — dropped before comparing a message to a
+# catalogued phrasing (see match()). Keep this tight: a word that distinguishes
+# one curated question from another must NOT be here.
+_STOPWORDS = frozenset(
+    """
+    a an the is are was were be been being am
+    do does did done doing
+    what which who whom whose how why where when
+    much many more most some any all
+    for of in on at to from with by as into about around over
+    i me my mine you your yours we us our ours they them their
+    it its this that these those there here
+    right now today currently these days lately recently nowadays
+    and or vs versus than then so just also too very really quite
+    tell show give list explain
+    need needs want wants would will can could should shall may might must
+    get gets got getting have has had having
+    like looking look s re ll
+    please thanks
+    """.split()
+)
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Lowercase alnum tokens, minus stopwords, crudely singularised so
+    'managers' == 'manager' and 'skills' == 'skill'. Used for tolerant matching
+    of a naturally-worded question against a catalogued phrasing."""
+    out: set[str] = set()
+    for tok in re.sub(r"[^a-z0-9\s]", " ", text.lower()).split():
+        if len(tok) > 3 and tok.endswith("s") and not tok.endswith("ss"):
+            tok = tok[:-1]
+        if tok and tok not in _STOPWORDS:
+            out.add(tok)
+    return out
+
+
 def _window(data_range: dict) -> str:
     e, l = data_range.get("earliest"), data_range.get("latest")
     return f"tracked between {e} and {l}" if e and l else "tracked so far"
@@ -186,9 +222,14 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
             "which roles are growing",
             "which roles are in demand",
             "what roles are in demand",
+            "what roles are most in demand",
             "which role has the most demand",
             "which role has the most openings",
             "what role has the most jobs",
+            "which roles are hiring the most",
+            "what is being hired the most",
+            "hiring demand by role",
+            "demand by role category",
             "role breakdown",
         ),
         builder=_roles_in_demand,
@@ -198,10 +239,16 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
         question="What do engineers earn?",
         match_phrasings=(
             "what do engineers earn",
+            "what do software engineers earn",
             "engineer salary",
+            "engineering salary",
             "engineer pay",
+            "engineer compensation",
+            "pay for engineers",
             "how much do engineers make",
+            "how much do engineers earn",
             "what is the salary for engineers",
+            "what salary do engineers get",
         ),
         builder=_pay_for("Engineer"),
     ),
@@ -211,8 +258,13 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
         match_phrasings=(
             "what do designers earn",
             "designer salary",
+            "design salary",
             "designer pay",
+            "designer compensation",
+            "pay for designers",
             "how much do designers make",
+            "how much do designers earn",
+            "what is the salary for designers",
         ),
         builder=_pay_for("Designer"),
     ),
@@ -221,9 +273,16 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
         question="What do product managers earn?",
         match_phrasings=(
             "what do product managers earn",
+            "what do pms earn",
             "product manager salary",
+            "product management salary",
             "pm salary",
+            "pm pay",
+            "product manager compensation",
+            "pay for product managers",
             "how much do product managers make",
+            "how much do product managers earn",
+            "how much do pms make",
         ),
         builder=_pay_for("Product Manager"),
     ),
@@ -232,9 +291,18 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
         question="What skills do product manager roles ask for?",
         match_phrasings=(
             "what skills do product manager postings ask for",
+            "what skills do product managers need",
             "what skills do pms need",
+            "what skills are in demand for product managers",
+            "what skills are most in demand for product managers",
+            "which skills are in demand for pms",
+            "in demand skills for product managers",
+            "top skills for product managers",
             "product manager skills",
+            "product management skills",
+            "pm skills",
             "skills for product managers",
+            "what should a product manager know",
         ),
         builder=_skills_for("Product Manager"),
     ),
@@ -244,8 +312,16 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
         match_phrasings=(
             "what skills do engineering postings ask for",
             "what skills do engineers need",
+            "what skills do software engineers need",
+            "what skills are in demand for engineers",
+            "what skills are most in demand for engineers",
+            "in demand skills for engineers",
+            "top skills for engineers",
             "engineer skills",
+            "engineering skills",
             "skills for engineers",
+            "skills for software engineers",
+            "what should an engineer know",
         ),
         builder=_skills_for("Engineer"),
     ),
@@ -257,20 +333,66 @@ def suggestions() -> dict:
     return {"suggestions": [{"id": e.id, "question": e.question} for e in CURATED_CATALOGUE]}
 
 
+# A phrasing must contribute at least this share of its own content words to the
+# message, and at least this many words, to count as a match — and it must be a
+# clear winner over every other entry. Tuned so ordinary rephrasings land while
+# comparison / compound questions ("engineer vs designer pay") fall through.
+_MIN_OVERLAP_RATIO = 0.75
+_MIN_OVERLAP_WORDS = 2
+
+
+def _best_overlap(msg_tokens: set[str], entry: CuratedEntry) -> tuple[float, int]:
+    """(best ratio, matched-word count) for this entry's closest phrasing."""
+    best = (0.0, 0)
+    for phrasing in (entry.question, *entry.match_phrasings):
+        pt = _content_tokens(phrasing)
+        if not pt:
+            continue
+        matched = len(msg_tokens & pt)
+        ratio = matched / len(pt)
+        if (ratio, matched) > best:
+            best = (ratio, matched)
+    return best
+
+
 def match(user_text: str) -> CuratedEntry | None:
     """
-    Conservative match: the normalised message must equal, or clearly contain,
-    a canonical question or one of its phrasings. Anything ambiguous returns
-    None and falls through to the model — a wrong instant answer is worse than
-    a slow correct one.
+    Match a user message to a curated entry — tolerant of natural rephrasings,
+    but still conservative: an ambiguous message, or one that fits two entries
+    equally well, falls through to the model. A wrong instant answer is worse
+    than a slow correct one.
+
+    Two passes:
+      1. exact, or a phrasing that is a substring AND most of the message (so a
+         short phrasing like "engineer pay" inside a comparison question does not
+         trigger a false match);
+      2. content-word overlap — the message must carry ≥75% of some phrasing's
+         distinguishing words (≥2 words), and beat every other entry.
     """
     if not user_text:
         return None
+
     norm = _norm(user_text)
     for entry in CURATED_CATALOGUE:
-        candidates = (entry.question, *entry.match_phrasings)
-        for c in candidates:
+        for c in (entry.question, *entry.match_phrasings):
             cn = _norm(c)
-            if norm == cn or (len(cn) >= 12 and cn in norm):
+            if norm == cn or (
+                len(cn) >= 12 and cn in norm and len(cn) >= 0.6 * len(norm)
+            ):
                 return entry
-    return None
+
+    msg_tokens = _content_tokens(user_text)
+    if not msg_tokens:
+        return None
+    scored = sorted(
+        ((*_best_overlap(msg_tokens, e), e) for e in CURATED_CATALOGUE),
+        key=lambda s: (s[0], s[1]),
+        reverse=True,
+    )
+    top_ratio, top_matched, top_entry = scored[0]
+    if top_ratio < _MIN_OVERLAP_RATIO or top_matched < _MIN_OVERLAP_WORDS:
+        return None
+    runner_ratio, runner_matched, _ = scored[1]
+    if runner_ratio >= top_ratio and runner_matched >= top_matched:
+        return None  # ambiguous — two entries fit equally
+    return top_entry

@@ -22,24 +22,27 @@ specific to this product.
 
 ## How this product handles it
 
-`/api/chat` makes up to three separate calls to the LLM per user turn, not
-one:
+`/api/chat` makes up to two separate calls to the LLM per user turn, not one
+(revised 2026-09-06 — the web-search stage was removed; chat answers only from
+the platform's own data):
 
 1. **Query the platform's own data** — the model decides what to look up in
    the real, live-classified job posting database for this specific question.
-2. **Search the web** — only if step 1 couldn't answer the question from the
-   platform's data; finds real, citable external sources instead of guessing.
-3. **Write the final answer** — the reply the user actually reads, combining
-   whatever was found in steps 1–2.
+   If the data genuinely can't answer, this stage says so — it never reaches
+   outside the platform.
+2. **Write the final answer** — the reply the user actually reads, composed
+   only from what step 1 found. It has a bounded output length so it stays a
+   conversational answer, not a wall of text, and if it is ever cut short the
+   user is told plainly rather than left with a sentence that stops mid-word.
 
 Each of these needs *some* conversation history to make sense of short
 follow-ups like "yes please" or "what about X" — but not the same amount:
 
-- **Step 3** needs enough history to sound like a coherent conversation, so
+- **Step 2** needs enough history to sound like a coherent conversation, so
   it gets a real, but bounded, window of recent messages.
-- **Steps 1 and 2** only need to resolve what a short follow-up is actually
-  asking about — which only ever depends on the last exchange or two, never
-  the whole conversation. They get a much smaller window.
+- **Step 1** only needs to resolve what a short follow-up is actually asking
+  about — which only ever depends on the last exchange or two, never the whole
+  conversation. It gets a much smaller window.
 
 Both windows are *sliding* — always "the most recent N messages," never
 "every message ever." For an ordinary conversation this is invisible: nobody
@@ -74,6 +77,10 @@ behind each one.
 ## Related
 
 - `backend/specs/market-health/api.md` — Business Logic — Conversational
-  data sourcing, for the full technical design of the three-stage flow above.
+  data sourcing (the two-stage flow) and "Provider-neutral streaming contract"
+  (the output-length cap and the truncation guarantee).
 - `design/market-health/experience.md` — the user-facing sourcing rule this
-  implements (real data first, real external sources second, never fabricate).
+  implements: every answer comes only from the platform's own data; a question
+  it can't reach gets a plain "we don't track that", never an outside answer.
+- `changes/2026-09-06-chat-answer-truncation-and-curated-match.md` — the change
+  that removed the web-search stage and added the length/completeness guarantees.

@@ -126,10 +126,9 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
   (exact mechanism — trailing marker vs. returned object — decided in the backend spec).
 - "Managing internal reasoning tokens so they don't starve the visible answer" is an adapter
   *quality bar*, not a chat concern — each adapter owns a sane default for its own model.
-- `complete_with_search_grounding` stays in the `LLMProvider` protocol as an optional
-  capability (a future non-chat feature may want it) but **chat structurally never calls any
-  grounding path** — "DB-only" is a property of the chat pipeline's shape, not of a provider
-  flag. (Confirm removal-vs-keep in the backend spec.)
+- `complete_with_search_grounding` (+ `GroundedResponse` / `GroundingSource`) removed from
+  the `LLMProvider` protocol and the Gemini adapter — not kept dormant (see Decision Log).
+  "DB-only" is a property of the chat pipeline's shape, not of a provider flag.
 
 ## Specs Affected
 
@@ -224,29 +223,40 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
       `reasoning_steps` rendering; `SuggestedQuestions` untouched).
       `frontend/specs/ai-reasoning-panel/architecture.md` — reviewed, no change (the
       `source_type` union and "no external tools" placeholder are already generic).
-- [ ] Step 5: `/implement-backend` —
-      - `llm/base.py`: `stream()`/`complete()` gain `max_output_tokens: int | None`; add the
-        normalised stream stop-reason type (sibling of `BatchState`).
-      - `llm/gemini.py`: honour `max_output_tokens`; map Gemini's `finish_reason` onto the
-        neutral stop reason; own a sane internal-reasoning-budget default so thinking never
-        starves visible output. No chat-specific values here.
-      - `chat.py`: delete Stage 2 + `NEEDS_EXTERNAL`; rewrite the data-stage and synthesis
-        system prompts (DB-only, concise, judgment-from-data); pass the app-layer output
-        budget; act on the neutral stop reason (continue once, or append a clear "cut off"
-        line); keep the degraded/cap/error paths.
-      - `market_query.py`: `raw_skill` filter on `query_requirements_data`.
-      - `curated_answers.py`: widen matching + a regression test per catalogued phrasing.
-      - decide `complete_with_search_grounding`'s fate per the backend spec.
-- [ ] Step 6: `/implement-frontend` — only if Step 4 finds a change (reasoning panel).
-- [ ] Step 7: Verify against production —
-      - the exact question, full answer, no cut-off;
-      - 3–4 natural rephrasings of each curated entry → instant, no-model trace;
-      - "should I learn Rust?" → a data-grounded answer (skill frequency, must-have share),
-        no web content;
-      - a genuinely uncovered question → plain "not in the data" + redirect, no outside answer;
-      - a long answer no longer truncates.
-      Commit + push (auto-deploys `api` + `web`).
-- [ ] Step 8: Mark `complete` when every box is checked and specs match the code.
+- [x] Step 5: `/implement-backend` (2026-09-06) —
+      - `llm/base.py`: `StreamStop` + `StreamOutcome`; `stream()`/`complete()` take
+        `max_output_tokens`; `GroundingSource`/`GroundedResponse`/`complete_with_search_grounding`
+        **removed from the protocol** (not kept dormant).
+      - `llm/gemini.py`: `stream()` honours `max_output_tokens` (default 2048, was hard 1024),
+        thinking budget pinned to 1, `_GEMINI_FINISH_MAP` (`finish_reason` → `StreamStop`) +
+        `_finish_reason_name()`; `complete()` takes `max_output_tokens`;
+        `complete_with_search_grounding` removed.
+      - `chat.py`: Stage 2 / `_search_external_sources` / `_SEARCH_STAGE_SYSTEM` /
+        `_needs_external` deleted; `NEEDS_EXTERNAL` → `NO_DATA:`; data + synthesis prompts
+        rewritten (DB-only, concise/no headings, judgment-from-data); Stage 3 passes
+        `CHAT_SYNTHESIS_MAX_OUTPUT_TOKENS` + a `StreamOutcome`, and on a non-`complete` stop
+        appends a plain marker, sets `finishReason` (`length`/`content-filter`/`error`, never
+        a false `stop`) and re-emits the trace with `truncated=True`; bare-error path now uses
+        the calm degraded message.
+      - `market_query.py`: `raw_skill` list filter on `query_requirements_data` (ILIKE
+        substring `EXISTS` against `posting_skills`, scopes every count + `total_matching`).
+      - `curated_answers.py`: content-word-overlap matcher (stopwords + singularise +
+        ≥75%/≥2-word + clear-winner); substring fast path tightened to ≥60% of the message;
+        ~2× more `match_phrasings` per entry.
+      - `ai_interaction_settings.py`: `CHAT_SYNTHESIS_MAX_OUTPUT_TOKENS = 2048`; stale
+        free-tier / "Stage 2" comments corrected.
+      - `backend/tests/test_curated_match.py` (new — repo had no test infra): 4 assert tests,
+        run directly or via pytest. All pass.
+      - Docs: `backend/AI_INTERACTION_SETTINGS.md`, product `CLAUDE.md`.
+      **Local verification (backend on the prod DB):** curated rephrasing → 2.6s, no model;
+      "compare backend vs frontend" → complete multi-part answer, `finishReason: stop`
+      (previously truncated at 1024); "should I learn Rust?" → used `raw_skill`, answered
+      "13 of 2,259 postings (~0.58%)" + judgment, no web content; "market in 2019?" → "I do
+      not have data for 2019… I can answer…", no fabrication.
+- [x] Step 6: `/implement-frontend` — none needed (Step 4).
+- [ ] Step 7: Commit + push (done in this pass); verify the same four scenarios against
+      production after the `api` deploy.
+- [ ] Step 8: Mark `complete` when Step 7 passes in prod and specs match the code.
 
 ## Decision Log
 
@@ -274,3 +284,15 @@ only be done with Gemini-specific knobs (`max_output_tokens`, `thinking_config`,
 - 2026-09-06: Both original bugs confirmed by reproduction before writing (prod stream cut
   off at "Stakeholder Management: Required in"; `curated_answers.match()` returns `None` for
   the reported phrasings).
+- 2026-09-06 (implementation): `complete_with_search_grounding` + `GroundedResponse` /
+  `GroundingSource` were **removed outright**, not left dormant. Dead code that contradicts
+  the current product direction ("only our own data") is a trap for a future reader; if web
+  search is ever wanted it returns as a new capability with its own spec. Only chat used it.
+- 2026-09-06 (implementation): truncation is handled by **appending a plain marker + a
+  re-emitted `truncated` trace + a non-`stop` finishReason**, not by auto-issuing a
+  continuation call. With the 2048-token budget and thinking pinned to 1, truncation is now
+  rare; a second model call per truncation adds latency and cost for little gain. Revisit if
+  truncation turns out to be common in real use.
+- 2026-09-06 (implementation): the bare `"[The AI service returned an error…]"` string is
+  gone — every synthesis-stage failure now streams the calm degraded message, matching the
+  experience spec's "never a dead-end error" rule.

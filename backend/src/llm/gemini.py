@@ -10,11 +10,38 @@ from llm.base import (
     BatchRequest,
     BatchResult,
     BatchState,
-    GroundedResponse,
-    GroundingSource,
+    StreamOutcome,
+    StreamStop,
     ToolCall,
     ToolCallResponse,
 )
+
+# gemini-3.6-flash's own finish_reason names -> the four provider-neutral
+# StreamStop values (llm.base). Anything not listed — FINISH_REASON_UNSPECIFIED,
+# OTHER, MALFORMED_FUNCTION_CALL, or a name a future SDK adds — maps to "error":
+# an abnormal end the caller should treat as a failed answer, not a clean stop.
+_GEMINI_FINISH_MAP: dict[str, StreamStop] = {
+    "STOP": "complete",
+    "MAX_TOKENS": "truncated",
+    "SAFETY": "filtered",
+    "RECITATION": "filtered",
+    "PROHIBITED_CONTENT": "filtered",
+    "BLOCKLIST": "filtered",
+    "SPII": "filtered",
+    "IMAGE_SAFETY": "filtered",
+}
+
+# stream() is used for the conversational synthesis reply. The heavy reasoning
+# happened in an earlier tool-calling stage, so this call needs almost no
+# "thinking" budget — and must not spend the visible-output budget on invisible
+# thinking (the bug fixed 2026-09-06: stream() hard-capped output at 1024 with
+# thinking left on, so gemini-3.6-flash truncated normal answers mid-sentence).
+# 1 is the minimum every current flash model accepts (0 is rejected by
+# gemini-3.6-flash / gemini-flash-latest; see complete()).
+_STREAM_THINKING_BUDGET = 1
+# Fallback when a caller passes no max_output_tokens — a full conversational
+# answer with comfortable margin, not the model's hard maximum.
+_DEFAULT_STREAM_MAX_OUTPUT_TOKENS = 2048
 
 # Models confirmed (at runtime, in this process) to reject thinking_budget=0
 # outright — see complete()'s fallback. Remembered process-wide, keyed by
@@ -25,6 +52,19 @@ from llm.base import (
 # this can't live on the instance — it has to be module-level to actually
 # save anything across calls.
 _MODELS_REJECTING_ZERO_THINKING_BUDGET: set[str] = set()
+
+
+def _finish_reason_name(chunk) -> str | None:
+    """The finish_reason on a streamed chunk's first candidate, as a bare string
+    (e.g. "STOP", "MAX_TOKENS"), or None if this chunk carries no finish reason
+    yet. Defensive against SDK shape changes — never raises."""
+    candidates = getattr(chunk, "candidates", None) or []
+    if not candidates:
+        return None
+    reason = getattr(candidates[0], "finish_reason", None)
+    if reason is None:
+        return None
+    return getattr(reason, "name", str(reason)) or None
 
 
 class GeminiAdapter:
@@ -41,8 +81,20 @@ class GeminiAdapter:
             http_options=types.HttpOptions(timeout=60_000),  # ms
         )
 
-    async def stream(self, messages: list[dict], system: str):
-        """Yield plain-text chunks from the Gemini model."""
+    async def stream(
+        self,
+        messages: list[dict],
+        system: str,
+        *,
+        max_output_tokens: int | None = None,
+        outcome: StreamOutcome | None = None,
+    ):
+        """Yield plain-text chunks from the Gemini model.
+
+        If `outcome` is given, its `.stop` is set to a provider-neutral StreamStop
+        as the stream ends — mapped from Gemini's `finish_reason`, so the caller
+        never sees the raw enum. A stream that ends without ever reporting a
+        finish reason is treated as "error" (an abnormal end), not "complete"."""
         contents = [
             types.Content(
                 role="model" if m["role"] == "assistant" else "user",
@@ -50,29 +102,39 @@ class GeminiAdapter:
             )
             for m in messages
         ]
+        stop: StreamStop = "error"
+        saw_finish_reason = False
         async for chunk in await self._client.aio.models.generate_content_stream(
             model=self._model,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system,
-                max_output_tokens=1024,
+                max_output_tokens=max_output_tokens or _DEFAULT_STREAM_MAX_OUTPUT_TOKENS,
+                thinking_config=types.ThinkingConfig(thinking_budget=_STREAM_THINKING_BUDGET),
             ),
         ):
             if chunk.text:
                 yield chunk.text
+            reason = _finish_reason_name(chunk)
+            if reason is not None:
+                saw_finish_reason = True
+                stop = _GEMINI_FINISH_MAP.get(reason, "error")
+        if outcome is not None:
+            outcome.stop = stop if saw_finish_reason else "error"
 
-    async def complete(self, prompt: str, system: str = "") -> str:
+    async def complete(
+        self, prompt: str, system: str = "", *, max_output_tokens: int | None = None
+    ) -> str:
         """Return a single complete response from the Gemini model."""
         # thinking_budget=0: complete() is for simple, single-shot completions
         # (e.g. structured extraction), not open-ended reasoning. Without this,
         # gemini-2.5-flash spends its output budget on invisible "thinking"
         # tokens before ever producing visible text — observed truncating a
         # classification response to a few tokens, well before the output
-        # budget's worth of real text. Left enabled for stream(), which is
-        # used for higher-quality conversational answers.
+        # budget's worth of real text. stream() sets its own small budget too.
         starting_budget = 1 if self._model in _MODELS_REJECTING_ZERO_THINKING_BUDGET else 0
         config_kwargs: dict = {
-            "max_output_tokens": 8192,
+            "max_output_tokens": max_output_tokens or 8192,
             "thinking_config": types.ThinkingConfig(thinking_budget=starting_budget),
         }
         if system:
@@ -147,40 +209,12 @@ class GeminiAdapter:
 
         return ToolCallResponse(text=response.text or "", tool_calls=tool_calls)
 
-    async def complete_with_search_grounding(
-        self, prompt: str, system: str = ""
-    ) -> GroundedResponse:
-        """
-        Single call with Google Search grounding enabled — the model can
-        search and cite real results. Never combined with complete_with_tools
-        in the same call; Gemini doesn't support mixing custom function tools
-        with the search-grounding tool in one request.
-        """
-        config_kwargs: dict = {
-            "max_output_tokens": 8192,
-            "tools": [types.Tool(google_search=types.GoogleSearch())],
-        }
-        if system:
-            config_kwargs["system_instruction"] = system
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=prompt,
-            config=types.GenerateContentConfig(**config_kwargs),
-        )
-
-        search_queries: list[str] = []
-        sources: list[GroundingSource] = []
-        candidates = response.candidates or []
-        if candidates:
-            grounding_metadata = getattr(candidates[0], "grounding_metadata", None)
-            if grounding_metadata is not None:
-                search_queries = list(getattr(grounding_metadata, "web_search_queries", None) or [])
-                for chunk in getattr(grounding_metadata, "grounding_chunks", None) or []:
-                    web = getattr(chunk, "web", None)
-                    if web is not None:
-                        sources.append(GroundingSource(title=web.title or web.uri, url=web.uri))
-
-        return GroundedResponse(text=response.text or "", search_queries=search_queries, sources=sources)
+    # Note: a `complete_with_search_grounding` method lived here until 2026-09-06.
+    # It was removed with the chat web-search stage
+    # (changes/2026-09-06-chat-answer-truncation-and-curated-match.md) — the
+    # product answers only from its own data. If a future feature needs real web
+    # search it comes back as a new capability with its own spec, not as dormant
+    # code that contradicts the current product direction.
 
 
 # Gemini's JobState names -> the four provider-neutral BatchState values.

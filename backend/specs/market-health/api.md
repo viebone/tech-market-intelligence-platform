@@ -1720,10 +1720,10 @@ Gemini adapter — implementation detail of the exact method signature is left t
 2. **Tool-enabled calls.** `LLMProvider` needs a call mode that passes function declarations
    (for `query_market_data` / `query_compensation_data` / `query_requirements_data`) —
    `complete_with_tools`. **Updated 2026-09-06:** the second mode, search grounding, is
-   removed with the web-search stage. `complete_with_search_grounding` may remain on the
-   `LLMProvider` protocol as a dormant capability for a possible future non-chat feature, but
-   `/api/chat` never calls it — DB-only is a property of the chat pipeline's shape, not a
-   provider flag. Decide keep-vs-remove at `/implement-backend`.
+   removed with the web-search stage — `complete_with_search_grounding`, `GroundedResponse`,
+   and `GroundingSource` were deleted from `llm/base.py` and `llm/gemini.py` (implemented
+   2026-09-06), not left dormant. DB-only is a property of the chat pipeline's shape; if web
+   search is ever wanted again it comes back as a new capability with its own spec.
 
 3. **Provider-neutral streaming contract (added 2026-09-06).** `stream()`/`complete()` gain
    `max_output_tokens: int | None`, and the stream exposes a normalised stop reason

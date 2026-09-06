@@ -146,9 +146,23 @@ npm run dev
 Chat's "super fast" path is `curated_answers.py` — common questions
 ("which roles are in demand?", "what do engineers earn?", "top skills for PMs?")
 answered from the DB with **no model call**, in under a second, surfaced as
-tappable chips. Anything not in that catalogue goes to the paid model and takes
-10–30s (inherent to `gemini-3.6-flash` doing live-data tool calls). Grow the
-catalogue: one entry in `curated_answers.py` + a test.
+tappable chips. The matcher (revised 2026-09-06) is tolerant of natural
+rephrasings, not just near-exact wording — "what skills are in demand for PMs?"
+hits the same entry as the canonical question. Grow the catalogue: one entry in
+`curated_answers.py` + a case in `backend/tests/test_curated_match.py`.
+
+Anything not curated goes to the paid model (~10–30s for the two-call flow —
+Stage 1 owned-data query, Stage 3 synthesis). **Chat is DB-only** (revised
+2026-09-06 — `changes/2026-09-06-chat-answer-truncation-and-curated-match.md`):
+every answer is composed only from the platform's own data — no web search, no
+model general knowledge. A question the data can't reach gets a plain "we don't
+track that" plus a pointer to what it can answer. "Should I learn X" questions
+are answered *from* the data (skill-mention frequency via `query_requirements_data`'s
+`raw_skill` filter). Synthesis answers have a bounded length
+(`CHAT_SYNTHESIS_MAX_OUTPUT_TOKENS`) and are never shown cut off mid-sentence as
+though complete. All of this is enforced in `chat.py` / `ai_interaction_settings.py`
+— above the LLM provider line — so it survives a model swap; `llm/base.py` carries
+the provider-neutral `max_output_tokens` + `StreamStop` contract.
 
 **Admin dashboard** (operator-only pipeline visibility — see
 `backend/specs/pipeline-visibility/api.md`) — a separate FastAPI app, run the

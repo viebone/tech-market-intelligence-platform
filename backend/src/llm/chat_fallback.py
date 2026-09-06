@@ -58,9 +58,9 @@ async def call_with_retry(
     provider: LLMProvider,
     call: Callable[[LLMProvider], Awaitable[T]],
 ) -> T:
-    """Non-streaming call (Stage 1 tools, Stage 2 search grounding). Retries a
-    transient error up to CHAT_MAX_RETRIES with short exponential backoff, then
-    raises ChatModelUnavailable. A non-transient error raises immediately."""
+    """Non-streaming call (Stage 1 owned-data tool query). Retries a transient
+    error up to CHAT_MAX_RETRIES with short exponential backoff, then raises
+    ChatModelUnavailable. A non-transient error raises immediately."""
     for attempt in range(1, CHAT_MAX_RETRIES + 1):
         try:
             return await call(provider)

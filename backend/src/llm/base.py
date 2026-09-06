@@ -18,17 +18,32 @@ class ToolCallResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 
-@dataclass
-class GroundingSource:
-    title: str
-    url: str
+# Note: GroundingSource / GroundedResponse (for web-search grounding) lived here
+# until 2026-09-06. Removed with the chat web-search stage
+# (changes/2026-09-06-chat-answer-truncation-and-curated-match.md) — the product
+# answers only from its own data.
+
+
+# Provider-neutral streaming stop reason. Every adapter maps its provider's own
+# finish enum (Gemini's finish_reason, etc.) onto exactly these four — the caller
+# never sees a raw provider value. Sibling of BatchState below; same contract.
+# See backend/specs/market-health/api.md — "Provider-neutral streaming contract"
+# and outcomes/ai-provider-flexibility.md (amended 2026-09-06).
+#   complete  — generation ended on its own
+#   truncated — hit the output-length limit before finishing
+#   filtered  — stopped by a safety / content filter
+#   error     — ended abnormally, or the finish reason was unknown/unreported
+StreamStop = Literal["complete", "truncated", "filtered", "error"]
 
 
 @dataclass
-class GroundedResponse:
-    text: str
-    search_queries: list[str] = field(default_factory=list)
-    sources: list[GroundingSource] = field(default_factory=list)
+class StreamOutcome:
+    """Mutable holder a caller passes to stream() to learn how generation ended,
+    without any provider's raw finish enum crossing the boundary. The adapter
+    sets `stop` as the stream completes; the caller reads it after the iterator
+    drains. Defaults to "complete" so a caller that doesn't pass one, or a
+    provider that can't report, degrades to today's behaviour."""
+    stop: StreamStop = "complete"
 
 
 class LLMProvider(Protocol):
@@ -57,17 +72,33 @@ class LLMProvider(Protocol):
         providers.gemini("gemini-2.5-flash", api_key=os.environ["GEMINI_API_KEY_CLASSIFICATION"])
     """
 
-    def stream(self, messages: list[dict], system: str) -> AsyncIterator[str]:
+    def stream(
+        self,
+        messages: list[dict],
+        system: str,
+        *,
+        max_output_tokens: int | None = None,
+        outcome: "StreamOutcome | None" = None,
+    ) -> AsyncIterator[str]:
         """
         Yield plain-text chunks from the model.
 
         messages: [{"role": "user" | "assistant", "content": str}, ...]
         system:   system instruction prepended to the conversation
+        max_output_tokens: provider-neutral cap on the visible answer length. The
+            caller passes an application-layer value; the adapter maps it to its
+            SDK's own parameter. None means the adapter's own sensible default.
+        outcome: if given, the adapter sets `outcome.stop` (a StreamStop) as the
+            stream ends, so the caller can tell a clean finish from a truncated /
+            filtered / errored one without touching a provider enum.
         """
         ...
 
-    async def complete(self, prompt: str, system: str = "") -> str:
-        """Return a single complete (non-streaming) text response."""
+    async def complete(
+        self, prompt: str, system: str = "", *, max_output_tokens: int | None = None
+    ) -> str:
+        """Return a single complete (non-streaming) text response.
+        `max_output_tokens`: provider-neutral length cap; None uses the adapter default."""
         ...
 
     async def complete_with_tools(
@@ -79,18 +110,7 @@ class LLMProvider(Protocol):
         final answer; the provider is responsible for executing those calls and
         feeding results back. `tool_calls` records what was actually invoked, in
         order, for building an honest reasoning trace — never reconstructed after
-        the fact. Never combined with search grounding in the same call.
-        """
-        ...
-
-    async def complete_with_search_grounding(
-        self, prompt: str, system: str = ""
-    ) -> GroundedResponse:
-        """
-        Single call with real web search grounding enabled — the model can
-        search and cite real results. `search_queries` and `sources` reflect
-        what was actually searched and found; never fabricated. Never combined
-        with custom function tools in the same call.
+        the fact.
         """
         ...
 

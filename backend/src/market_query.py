@@ -329,6 +329,7 @@ def query_requirements_data(
     skill_group: list[str] | None = None,
     work_arrangement: list[str] | None = None,
     education_required: list[str] | None = None,
+    raw_skill: list[str] | None = None,
 ) -> dict:
     """
     Query real extracted requirements (skills, education, years of
@@ -357,6 +358,12 @@ def query_requirements_data(
             skills breakdown this tool returns for real examples) to filter to.
         work_arrangement: List of one or more of "onsite", "hybrid", "remote" to filter to.
         education_required: List of one or more of "required", "preferred" to filter to.
+        raw_skill: List of one or more specific technology/practice names, e.g.
+            ["Rust"] or ["Kubernetes", "Terraform"]. Filters to postings that
+            mention a matching skill (case-insensitive substring). Use this for
+            "is X in demand" / "should I learn X" questions instead of scanning
+            every skill group's raw_skills list. When set, every returned count
+            and total_matching is scoped to postings mentioning a matching skill.
 
     Returns:
         A dict with:
@@ -385,6 +392,8 @@ def query_requirements_data(
     skill_groups = _as_list(skill_group)
     work_arrangements = [v for v in _as_list(work_arrangement) if v in _ALLOWED_WORK_ARRANGEMENT]
     education_requireds = [v for v in _as_list(education_required) if v in _ALLOWED_EDUCATION_REQUIRED]
+    # Substring patterns, case-insensitive, fully parameterised (never interpolated).
+    raw_skill_patterns = [f"%{v.strip()}%" for v in _as_list(raw_skill) if v and v.strip()]
 
     where = ["c.role_category != 'other'"]
     params: list = []
@@ -415,6 +424,12 @@ def query_requirements_data(
     if education_requireds:
         where.append("pr.education_required = ANY(%s)")
         params.append(education_requireds)
+    if raw_skill_patterns:
+        where.append(
+            "EXISTS (SELECT 1 FROM posting_skills psrs "
+            "WHERE psrs.posting_id = pr.posting_id AND psrs.raw_skill ILIKE ANY(%s))"
+        )
+        params.append(raw_skill_patterns)
     where_sql = " AND ".join(where)
 
     with get_connection() as conn:
