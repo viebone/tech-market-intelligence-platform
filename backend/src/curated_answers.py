@@ -334,11 +334,15 @@ def suggestions() -> dict:
 
 
 # A phrasing must contribute at least this share of its own content words to the
-# message, and at least this many words, to count as a match — and it must be a
-# clear winner over every other entry. Tuned so ordinary rephrasings land while
-# comparison / compound questions ("engineer vs designer pay") fall through.
+# message (_MIN_OVERLAP_RATIO), account for at least this many words
+# (_MIN_OVERLAP_WORDS), AND cover at least this share of the *message's* content
+# words (_MIN_MSG_COVERAGE — so a 2-word phrasing like "engineer skill" doesn't
+# match a long comparison question that merely happens to contain both words).
+# It must also beat every other entry. Tuned so ordinary rephrasings land while
+# comparison / compound questions fall through to the model.
 _MIN_OVERLAP_RATIO = 0.75
 _MIN_OVERLAP_WORDS = 2
+_MIN_MSG_COVERAGE = 0.5
 
 
 def _best_overlap(msg_tokens: set[str], entry: CuratedEntry) -> tuple[float, int]:
@@ -392,6 +396,8 @@ def match(user_text: str) -> CuratedEntry | None:
     top_ratio, top_matched, top_entry = scored[0]
     if top_ratio < _MIN_OVERLAP_RATIO or top_matched < _MIN_OVERLAP_WORDS:
         return None
+    if top_matched / len(msg_tokens) < _MIN_MSG_COVERAGE:
+        return None  # the message is about more than this phrasing covers
     runner_ratio, runner_matched, _ = scored[1]
     if runner_ratio >= top_ratio and runner_matched >= top_matched:
         return None  # ambiguous — two entries fit equally

@@ -93,8 +93,9 @@ class GeminiAdapter:
 
         If `outcome` is given, its `.stop` is set to a provider-neutral StreamStop
         as the stream ends — mapped from Gemini's `finish_reason`, so the caller
-        never sees the raw enum. A stream that ends without ever reporting a
-        finish reason is treated as "error" (an abnormal end), not "complete"."""
+        never sees the raw enum. If a stream yields text but never reports a
+        finish reason we assume "complete" (benign — some SDK builds omit it on
+        the final chunk); a stream that yields nothing at all is "error"."""
         contents = [
             types.Content(
                 role="model" if m["role"] == "assistant" else "user",
@@ -102,8 +103,8 @@ class GeminiAdapter:
             )
             for m in messages
         ]
-        stop: StreamStop = "error"
-        saw_finish_reason = False
+        stop: StreamStop | None = None
+        saw_text = False
         async for chunk in await self._client.aio.models.generate_content_stream(
             model=self._model,
             contents=contents,
@@ -114,13 +115,16 @@ class GeminiAdapter:
             ),
         ):
             if chunk.text:
+                saw_text = True
                 yield chunk.text
             reason = _finish_reason_name(chunk)
             if reason is not None:
-                saw_finish_reason = True
                 stop = _GEMINI_FINISH_MAP.get(reason, "error")
         if outcome is not None:
-            outcome.stop = stop if saw_finish_reason else "error"
+            if stop is not None:
+                outcome.stop = stop
+            else:
+                outcome.stop = "complete" if saw_text else "error"
 
     async def complete(
         self, prompt: str, system: str = "", *, max_output_tokens: int | None = None

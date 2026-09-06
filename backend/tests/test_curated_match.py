@@ -64,11 +64,14 @@ _SHOULD_MATCH = {
 # answer is worse than a slow correct one).
 _SHOULD_NOT_MATCH = [
     "how does engineer pay compare to designer pay",   # comparison — ambiguous
+    "Compare demand and required skills for security engineers versus ML engineers.",
+    "what skills and pay do backend engineers get versus frontend",
     "should I learn Rust as an engineer",              # synthesis — model territory
     "is Kubernetes worth learning",
     "what is the weather today",
     "tell me about the market",
     "what changed last month",
+    "how many product manager postings mention SQL",   # narrow — model territory
     "",
 ]
 
