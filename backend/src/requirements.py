@@ -783,6 +783,24 @@ def collect_batch_results(results, postings: list[dict], model: str) -> int:
             continue
         entries.extend(parse_and_validate(r.text or "", vs_by_id))
 
+    # Keep only entries whose id is a real posting we asked about. Two ways a
+    # stray id gets here, both seen in production (the bug behind runs 54-56,
+    # 2026-09-06..08 — `ForeignKeyViolation` on posting_requirements aborting the
+    # whole insert): (1) the model occasionally echoes back a malformed/invented
+    # id in its JSON; (2) a batch that sat for days can name a posting that was
+    # pruned from raw_postings in the meantime. `vs_by_id` is built from
+    # `postings` (ids that still exist), so it is exactly the allow-list. A
+    # skipped id needs no failure row — either it was never a real posting, or
+    # it is gone from the backlog.
+    live_ids = set(vs_by_id)
+    before = len(entries)
+    entries = [e for e in entries if e["id"] in live_ids]
+    if len(entries) != before:
+        logger.info(
+            "batch collect: skipped %d/%d results for unknown/pruned posting ids",
+            before - len(entries), before,
+        )
+
     covered = {e["id"] for e in entries}
     for pid in vs_by_id:
         if pid not in covered:

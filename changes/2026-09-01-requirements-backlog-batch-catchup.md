@@ -275,6 +275,18 @@ a later addition, not a redesign.
     blocks batch submission for up to 72h (≈3 cycles), because submission is gated on
     "no active job" even when that job is already `succeeded` provider-side.
 
+  **Update 2026-09-09 — it was NOT transient. Root-caused, fixed, backlog recovered
+  (`changes/2026-09-09-batch-collect-fk-violation.md`).** Runs 54, 55, 56 all failed the
+  collect with the *same* error — from the Railway `job-sync` logs (run 56):
+  `psycopg.errors.ForeignKeyViolation` in `insert_requirements` via `collect_batch_results`.
+  `parse_and_validate` kept an entry for a posting id the model garbled/invented (1 of job
+  4's 500); `insert_requirements`'s single `executemany` INSERT then FK-violated and aborted
+  the whole batch. Fixed: `collect_batch_results` now filters entries to live posting ids
+  before insert. Job 4 (499 rows) and job 5 (500 rows) collected by hand with the fix;
+  `insert_requirements` auto-cleared their 999 failure rows. **Tracked-role backlog 697 →
+  152; failures 474 → 1.** The 09-06 "wait and see" call was wrong — the failure was
+  deterministic, not a blip.
+
 ## Documentation & code-quality bar (explicit acceptance criteria)
 
 The stakeholder called out "very well documented and cleanly coded" as a
