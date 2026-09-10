@@ -4,7 +4,7 @@ date: 2026-09-10
 trigger-type: stakeholder-request
 change-type: ux-change, api-change
 outcome: understand-market-health-before-searching
-status: triaged
+status: in-progress
 ---
 
 # Change Request: Year-on-year market breakdowns in "What we know about the market"
@@ -103,17 +103,28 @@ the experience/data-stories spec work, not here.
 
 ## Execution Plan
 
-- [ ] Step 1: Read the chain — outcome, `design/market-health/experience.md` (Data stories),
-      `design/market-health/data-stories.md` (Story 1 + the 2026-09-10 checklist),
-      `design/visual-design.md` (Data Story composition), `backend/specs/market-health/api.md`
-      (Data stories + `build_market_data_briefing`), `frontend/specs/market-health/architecture.md`
-      (Data stories), and the admin's `classification.get_classification_distribution()` +
-      `backend/specs/pipeline-visibility/api.md` overview shape.
-- [ ] Step 2: `outcomes/understand-market-health-before-searching.md` — review; record
-      no-change with the "delivered more directly" note.
-- [ ] Step 3: `/new-visual-design` — add the "Year-on-year comparison" form to
-      `design/visual-design.md` — Data Story composition (the paired-window mark + delta
-      call-out + the "no prior window yet" state). Bump the version.
+- [x] Step 1: Read the chain (2026-09-10) — experience.md Data stories, data-stories.md
+      (Story 1 + checklist), visual-design.md Data Story composition, backend api.md Data
+      stories, frontend architecture.md Data stories, `market_stories.build_market_data_briefing()`
+      (`_section()` shape: `{id,title,status,content,qualifier,message?}`),
+      `classification.get_classification_distribution()` (one `GROUP BY` per dimension over
+      `classifications`, `DISTRIBUTION_DIMENSIONS = role_category/level/track/specialization/
+      classification_confidence`, NULLs excluded), `LEVEL_LADDER`, `TRACKS = {ic, management}`.
+      Design note: the YoY sections need a **third state** — `status: "ready"` but
+      `content.comparison_available: false` — so the current window still renders while the
+      prior-year window is absent (`insufficient_data` would blank the whole block).
+- [x] Step 2: `outcomes/understand-market-health-before-searching.md` — reviewed,
+      **no-change**. Its "identify which roles and skills are in demand vs. declining" and
+      "see the trends clearly, how the hiring market numbers evolve through time" already
+      cover this; the change delivers them more directly, it doesn't add a criterion.
+- [x] Step 3: `/new-visual-design` (2026-09-10) — `design/visual-design.md` → v1.5. Added
+      **"Year-on-year comparison"** to the Data Story composition vocabulary: two 12-month
+      windows only; per-row shared track with a `gray-700` prior-year ghost behind an
+      `indigo-500` current fill (the visible gap = the change); a `▲/▼/– +N pp` delta column
+      where glyph+sign carry direction, not colour; both date ranges stated in words under
+      the heading; a required "what this means" sentence; and the **"No prior window yet"**
+      state — current window only + a muted "comparison starts {Month Year}" line, reading as
+      "coming soon", not "broken".
 - [ ] Step 4: `/new-experience` — `design/market-health/experience.md` (snapshot vs trend)
       and `design/market-health/data-stories.md` (Story 1's four new blocks, the reworded
       de-dup / checklist item, the data contract, the insufficient-history `no_data_state`,

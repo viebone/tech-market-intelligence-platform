@@ -1,6 +1,6 @@
 ---
 id: visual-design
-version: 1.4
+version: 1.5
 status: active
 created: 2026-06-21
 updated: 2026-09-10
@@ -340,6 +340,7 @@ design goal.
 | **Meter** | one share as a part-to-whole bar (e.g. "6% of postings state a salary") | below |
 | **Category Share Bar** | a part-to-whole split across the 3 tracked Role Categories | "Category Share Bar", above |
 | **Trend line** | a value over time, where the block's data is genuinely time-series | Chart Specification, `design/market-health/experience.md` (compact variant) |
+| **Year-on-year comparison** | how a set of proportions shifted between the trailing 12 months and the 12 months a year earlier — one year back, never more | below |
 
 **Meter** (new here):
 ```
@@ -350,6 +351,44 @@ fill:     h-full rounded-full bg-indigo-500, width = the share (min 1% so it's v
 below:    one text-sm text-gray-400 line stating the complement plainly
           ("The other 94% don't disclose compensation.")
 ```
+
+**Year-on-year comparison** (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`):
+
+A block that answers "how is this mix *changing*", not "what is it now". Exactly two 12-month
+windows — the trailing 12 months and the 12 months ending one year before that. Not a
+multi-year sparkline, not a rolling series.
+
+```
+windows:  both date ranges stated in words, once, directly under the block heading —
+          text-xs text-gray-500 (e.g. "Sep 2026 – Sep 2027, compared with the year before")
+row:      one per category, ordered by current-window share, descending. Each row:
+            label   text-sm text-gray-300, left, truncate
+            bars    a shared track (bg-gray-800, rounded, h-1.5). Two fills on it:
+                      prior year   bg-gray-700 (a muted ghost of the earlier share)
+                      current      bg-indigo-500 at ~70% opacity (same magnitude hue
+                                   as Ranked bar list) — width = current share
+                    the ghost sits behind; the current fill overlays from the same
+                    left edge, so the visible gap between their right ends IS the change
+            delta   right, text-xs tabular-nums:
+                      "+3 pp" rising  ·  "−2 pp" falling  ·  "no change"
+                    with a ▲ / ▼ / – glyph BEFORE the number — the glyph and the sign
+                    both carry the direction; colour never carries it alone
+rows:     the categories of the dimension (role_category: the 3 tracked + `other` as
+          context; level: the LEVEL_LADDER; track: ic/management). For an open-ended
+          dimension (specialization) it is a Ranked bar list of the top 10 by current
+          share, each row carrying the same "+N pp" delta on the right.
+meaning:  one plain sentence under the block — what a shift in this mix means for the
+          reader ("A rising management share means more of the new roles are for people
+          who lead teams rather than do the work directly."). text-sm text-gray-400.
+```
+
+**"No prior window yet" state.** Until the platform has ~13 months of data there is no
+year-earlier window to compare against. The block does **not** hide and does **not** show a
+"not enough data" blank — it renders the **current window only** (as a plain Ranked bar list
+or share bar, no ghost, no delta column) plus one muted line:
+`text-xs text-gray-500` — "Year-on-year comparison starts {Month Year}. Tracking since {date}."
+This is the block's state at ship time and for the product's first year; it must read as
+"coming soon", not "broken".
 
 **Combination rule.** At least **two distinct visual forms** across a story (3+ preferred) —
 a story that is five ranked bar lists in a row is under-composed. Where a form repeats, each
