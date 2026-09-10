@@ -1888,9 +1888,12 @@ is at least 12 months before now — i.e. a full prior window exists. Below that
 - `current_share` / `prior_share` are each computed against their own window's classified
   total (the denominator), which the section carries.
 - `delta_pp` is `current_share − prior_share` in **percentage points**, not a percent change.
-- `other` appears in `role-mix-shift` as context for reading the tracked shares, but its own
-  `delta_pp` is never surfaced as a market signal (it tracks sourcing breadth — see
-  `changes/2026-09-06-market-story-visual-and-dedup.md`).
+- `role-mix-shift` shares are computed over the **three tracked categories only**
+  (`Designer` / `Product Manager` / `Engineer`) — `other` and `unknown` are excluded from
+  both the rows and the denominator, matching the trend chart and the welcome's Category
+  Share Bar. `other`'s own trend is never a market signal (it tracks sourcing breadth — see
+  `changes/2026-09-06-market-story-visual-and-dedup.md`). `seniority-shift` keeps `unknown`
+  as a visible row (coverage, per the taxonomy spec); `track-shift` excludes `unknown`.
 - `unknown` rows in `level` / `track` are shown as coverage, not folded into a known value.
 
 No LLM, no new endpoint, no schema change — the aggregate reads existing

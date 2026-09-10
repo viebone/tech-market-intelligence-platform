@@ -143,9 +143,11 @@ comparison** (`design/visual-design.md`) with one "what this means" sentence. **
 for the product's first year all three are in the "no prior window yet" state** — current
 window only + "comparison starts {Month Year}".
 
-6. **How the role mix is shifting** — `role_category` shares (Designer / Product Manager /
-   Engineer; `other` shown as context, its own trend never presented as a signal). *Meaning:*
-   which of the three areas is taking a bigger or smaller slice of new roles.
+6. **How the role mix is shifting** — `role_category` shares over the **three tracked areas
+   only** (Designer / Product Manager / Engineer), matching the trend chart and the welcome's
+   Category Share Bar. `other` / `unknown` are coverage, not rows here, and their own trend
+   is never a signal. *Meaning:* which of the three areas is taking a bigger or smaller slice
+   of new roles.
 7. **How seniority is shifting** — `level` shares across the ladder. *Meaning:* whether the
    market is opening more junior or more senior roles than a year ago.
 8. **IC vs. management** — `track` shares (`ic` / `management`; `unknown` excluded).

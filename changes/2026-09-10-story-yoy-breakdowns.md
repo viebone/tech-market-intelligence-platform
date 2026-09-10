@@ -160,9 +160,18 @@ the experience/data-stories spec work, not here.
       render); reference story restructured into two labelled movements (1–5 now, 6–8 the YoY
       shift blocks); the checklist's "no current-snapshot duplication" wording; component
       table updated.
-- [ ] Step 7: `/implement-backend` — `market_stories.py` new sections; the date-windowed
-      distribution helper. Verify the story endpoint returns the new sections in the
-      `insufficient_history` state against production (which has <1yr of data).
+- [x] Step 7: `/implement-backend` (2026-09-10) — `market_stories.py`: `_windowed_counts`
+      (whitelisted-dimension GROUP BY over `classifications` ⨝ `raw_postings` on a
+      `fetched_at` window), `_yoy_rows` (own-window denominators, `delta_pp` in points, prior
+      fields `None` — never estimated — when unavailable), `_yoy_section` (builds the
+      content + a qualifier that states the window and, when unavailable, when the comparison
+      begins). `build_market_data_briefing` computes the two windows + `comparison_available`
+      from `min(fetched_at)`, appends `role-mix-shift` / `seniority-shift` / `track-shift`,
+      and adds `top_specializations_yoy` to `roles-offered`. `role-mix-shift` shares are over
+      the 3 tracked categories only. **Verified against the prod DB:** all 3 sections return
+      `status: "ready"`, `comparison_available: false`, `prior_window: null`, "comparison
+      starts 2027-08-03" in the qualifier; role-mix shares sum to 1.0 over Designer/PM/Engineer.
+      New `backend/tests/test_story_yoy.py` (3 asserts, DB-gated) — all pass.
 - [ ] Step 8: `/implement-frontend` — `DataStoryMessage.tsx` new blocks + the comparison
       component + the insufficient-history render. `npm run build` + `tsc`; eyeball.
 - [ ] Step 9: Commit + push; mark `complete` when specs and the shipped story match (in its
