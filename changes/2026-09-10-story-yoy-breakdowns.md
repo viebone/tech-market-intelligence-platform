@@ -144,13 +144,22 @@ the experience/data-stories spec work, not here.
         `other`'s own YoY trend is never a signal.
       - `design/visual-design.md` — Reference implementation line + rules-out reworded for
         the two movements and snapshot-vs-shift.
-- [ ] Step 5: `/new-backend-spec` — `backend/specs/market-health/api.md`: the new
-      `market-data-briefing` sections and their `content` shape (current + prior window +
-      delta, or an `insufficient_history` flag); the windowed distribution aggregate and its
-      reuse of the admin helper; the honesty rules.
-- [ ] Step 6: `/new-frontend-spec` — `frontend/specs/market-health/architecture.md`: the new
-      `StoryBlock`s, the year-on-year comparison component, the "not enough history" render,
-      and how the frontend reads the new section shape.
+- [x] Step 5: `/new-backend-spec` (2026-09-10) — `backend/specs/market-health/api.md` Data
+      stories: new "Year-on-year breakdown sections" subsection — `role-mix-shift` /
+      `seniority-shift` / `track-shift` + per-item deltas on `roles-offered.top_specializations`;
+      the windowed distribution aggregate (reuse `get_classification_distribution` with a
+      `fetched_at` window; two windows `[now−12mo, now]` and `[now−24mo, now−12mo]`); the
+      `content` shape (`dimension`, `current_window`, `prior_window|null`,
+      `comparison_available`, `rows[]` with `current_*`/`prior_*|null`/`delta_pp|null`);
+      `status` stays `"ready"` when `comparison_available` is false; honesty rules (windowed
+      on `fetched_at`, never blend, never estimate/zero-fill the prior year, `other`'s trend
+      not a signal); no LLM, no new endpoint, no schema change. "Updated 2026-09-10" note.
+- [x] Step 6: `/new-frontend-spec` (2026-09-10) — `frontend/specs/market-health/architecture.md`:
+      new `YearOnYearBars` component (shared-track ghost/current bars + glyph-and-sign delta;
+      owns the `comparison_available: false` "current window only + comparison-starts line"
+      render); reference story restructured into two labelled movements (1–5 now, 6–8 the YoY
+      shift blocks); the checklist's "no current-snapshot duplication" wording; component
+      table updated.
 - [ ] Step 7: `/implement-backend` — `market_stories.py` new sections; the date-windowed
       distribution helper. Verify the story endpoint returns the new sections in the
       `insufficient_history` state against production (which has <1yr of data).

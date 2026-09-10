@@ -1736,6 +1736,10 @@ Gemini adapter — implementation detail of the exact method signature is left t
 See `design/market-health/data-stories.md` for the user-facing catalogue and first story
 contract. Data stories are resolved before any model call.
 
+**Updated 2026-09-10** (`changes/2026-09-10-story-yoy-breakdowns.md`) — `market-data-briefing`
+gains year-on-year breakdown sections. See "Year-on-year breakdown sections" under Story
+business logic, below.
+
 **Reviewed 2026-09-10** (`changes/2026-09-10-story-visual-standard.md` — data-story visual
 standard) — **no backend change.** The standard is entirely a frontend composition concern:
 each story's renderer maps its own `sections` to visual forms from a shared component set. A
@@ -1832,6 +1836,65 @@ at request time; it is not cached as a prepared answer.
   silently assigning them to a known category.
 - Add a new story by registering one catalogue entry, its aggregate query, its deterministic
   renderer, and focused tests. Generic routing and source adapters remain unchanged.
+
+### Year-on-year breakdown sections (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`)
+
+`market-data-briefing` gains a second movement — how the market's mix is *shifting*, not just
+what it is. Three new sections (`role-mix-shift`, `seniority-shift`, `track-shift`), plus a
+per-item year-on-year delta on the existing `roles-offered.top_specializations`.
+
+**Windowed distribution aggregate.** Reuse the admin overview's per-dimension distribution —
+`classification.get_classification_distribution()` (one `GROUP BY` over `classifications`,
+NULLs excluded) — extended to accept an optional `fetched_at` window
+(`get_windowed_distribution(dimension, start, end)` or an added `since`/`until` pair). Windows
+join `classifications` to `raw_postings` and filter on `raw_postings.fetched_at`. Each YoY
+section runs it for **exactly two windows**:
+- **current**: `[now − 12 months, now]`
+- **prior**: `[now − 24 months, now − 12 months]`
+
+One year back, never further. Windowing is on `fetched_at` (when the platform observed the
+posting) — the only date this product can trust — same rule as the trend chart's baseline.
+
+**Section `content` shape** (`role-mix-shift`, `seniority-shift`, `track-shift`):
+```json
+{
+  "dimension": "role_category",
+  "current_window": { "start_date": "2026-09-01", "end_date": "2027-09-01" },
+  "prior_window":   { "start_date": "2025-09-01", "end_date": "2026-09-01" },
+  "comparison_available": true,
+  "rows": [
+    { "value": "Engineer",
+      "current_count": 1800, "current_share": 0.61,
+      "prior_count": 1400, "prior_share": 0.66,
+      "delta_pp": -5.0 }
+  ]
+}
+```
+`roles-offered.top_specializations` items gain the same optional `prior_count`,
+`prior_share`, `delta_pp` fields (top 10 by current-window share).
+
+**Availability.** `comparison_available` is `true` only when `min(raw_postings.fetched_at)`
+is at least 12 months before now — i.e. a full prior window exists. Below that threshold
+(the state at launch and for the platform's first year):
+- `prior_window` is `null`, `comparison_available` is `false`, and every row's `prior_*` /
+  `delta_pp` fields are `null` — **never estimated, never zero-filled**;
+- the section's `status` stays `"ready"` (the current window has real data and must render);
+  the frontend shows the current window only plus a "comparison starts {date}" line;
+- the `qualifier` states the current window's date range and, when unavailable, when the
+  comparison begins (derived from `min(fetched_at) + 12 months`).
+
+**Honesty rules** (in addition to the story's existing ones):
+- The two windows are never blended into a single number or an averaged share.
+- `current_share` / `prior_share` are each computed against their own window's classified
+  total (the denominator), which the section carries.
+- `delta_pp` is `current_share − prior_share` in **percentage points**, not a percent change.
+- `other` appears in `role-mix-shift` as context for reading the tracked shares, but its own
+  `delta_pp` is never surfaced as a market signal (it tracks sourcing breadth — see
+  `changes/2026-09-06-market-story-visual-and-dedup.md`).
+- `unknown` rows in `level` / `track` are shown as coverage, not folded into a known value.
+
+No LLM, no new endpoint, no schema change — the aggregate reads existing
+`classifications` + `raw_postings` columns.
 
 ## Welcome
 

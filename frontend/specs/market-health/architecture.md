@@ -68,7 +68,7 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/WelcomeMessage.tsx` |
 | `DataStoryMessage` | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Composes a framing line + `StoryBlock`s from the shared story component set (see Data stories → "Every story: the shared build"). Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
 | `StoryBlock` *(added 2026-09-10)* | The fixed data-story block anatomy — heading → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/StoryBlock.tsx` |
-| `RankedBarList` / `StoryFigure` / `Meter` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. | `frontend/src/features/market-health/{RankedBarList,StoryFigure,Meter}.tsx` |
+| `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearBars` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearBars` also owns the "no prior window yet" render. | `frontend/src/features/market-health/{RankedBarList,StoryFigure,Meter,YearOnYearBars}.tsx` |
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
@@ -419,29 +419,52 @@ standard every story must meet". In frontend terms:
   never a bare `<p>`;
 - **≥2 distinct** of those form components across the story;
 - **≤1** `StoryFigure` in the whole story;
-- no block renders total postings, company count, collection start, or the role-category
-  split (those are `WelcomeMessage`'s);
+- no block renders the welcome's *current-snapshot* figures — total postings, company count,
+  collection start, current role-category split (a *year-on-year shift* in the same dimension
+  is allowed; it answers a different question);
 - `npm run build` + `tsc` clean; eyeball against the running welcome to confirm no duplication
   and consistent rhythm.
+
+### Year-on-year comparison component (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`)
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `YearOnYearBars` | Renders a YoY section's `content`: for each `row`, a shared track with a `gray-700` prior-year ghost (`prior_share` width) behind an `indigo-500`/70% current fill (`current_share` width), and a right-aligned `▲/▼/– ±N pp` delta (glyph **and** sign carry direction — colour never alone). Per `design/visual-design.md` — Year-on-year comparison. When `content.comparison_available === false`: renders **only** the current window (plain `RankedBarList` of `current_share`, no ghost, no delta column) + a muted `text-xs text-gray-500` line derived from the section `qualifier` ("Year-on-year comparison starts {Month Year}"). Never renders a prior bar or delta from a `null`. | `frontend/src/features/market-health/YearOnYearBars.tsx` |
+
+The two window date ranges come from `content.current_window` / `content.prior_window` and
+are shown once under the block heading (`StoryBlock` already owns the heading; the dates go in
+the block's own markup, `text-xs text-gray-500`). The "what this means" sentence is per-block
+copy in `DataStoryMessage`, not from the API.
 
 ### Reference story: market data briefing
 
 The Task Panel item **"What we know about the market"** — `DataStoryMessage` from
 `POST /api/market-health/stories/market-data-briefing`. It is the reference implementation of
-the standard above. In order:
+the standard above, in **two labelled movements**:
 
+**Movement 1 — the market right now**
 1. framing sentence (numbers as context only);
-2. **the roles being hired** — `roles-offered.top_specializations` → `RankedBarList`
-   (specialization, not the fragmented `top_titles`; `unknown`/`other` excluded);
+2. **the roles being hired** — `roles-offered.top_specializations` → `RankedBarList` (top 10;
+   specialization, not `top_titles`; `unknown`/`other` excluded). Once the API sends
+   `prior_share`/`delta_pp` on these items, each row also carries its `±N pp` delta; until
+   then the delta column is simply absent.
 3. **what employers ask for** — `employer-mentioned-skills.skills` → `RankedBarList`, must-have
    rows in the full-opacity hue;
 4. **pay transparency** — `compensation-coverage.coverage_by_confidence` → `StoryFigure` +
    `Meter` (the story's one Hero Figure);
 5. **where the roles are** — `geographic-coverage` → `RankedBarList`, normalised-location caveat.
 
-Two distinct form components (`RankedBarList`, `StoryFigure`+`Meter`) → clears the ≥2 minimum.
-Shows **none** of the welcome's inventory. Provenance stays in the Reasoning Panel ("No
-language model was used", the owned-data aggregates).
+**Movement 2 — how it's shifting (year on year)** — a short intro line naming the windows,
+then:
+6. **how the role mix is shifting** — `role-mix-shift` → `YearOnYearBars`;
+7. **how seniority is shifting** — `seniority-shift` → `YearOnYearBars`;
+8. **IC vs. management** — `track-shift` → `YearOnYearBars`.
+
+At launch and through the platform's first year, sections 6–8 arrive with
+`comparison_available: false` — `YearOnYearBars` shows each current window + the "comparison
+starts …" line. Distinct form components: `RankedBarList`, `StoryFigure`+`Meter`,
+`YearOnYearBars` → three, well past the ≥2 minimum. Shows none of the welcome's *current*
+figures. Provenance in the Reasoning Panel.
 
 ### Catalogue and response state
 
