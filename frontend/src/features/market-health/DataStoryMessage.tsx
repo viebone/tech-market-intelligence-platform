@@ -1,6 +1,7 @@
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
 import { Meter } from "./Meter";
+import { YearOnYearBars, type YearOnYearContent } from "./YearOnYearBars";
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -63,11 +64,28 @@ function blockProps(sec: DataStorySection | undefined, hasData: boolean) {
   };
 }
 
+/** The eyebrow label that opens each movement of a two-movement story. */
+function MovementLabel({ children }: { children: string }) {
+  return (
+    <p className="text-[10px] font-medium uppercase tracking-widest text-gray-500">{children}</p>
+  );
+}
+
+function yoyContent(sec: DataStorySection | undefined): YearOnYearContent | undefined {
+  const c = sec?.content;
+  return c && Array.isArray((c as { rows?: unknown }).rows)
+    ? (c as unknown as YearOnYearContent)
+    : undefined;
+}
+
 export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   const roles = section(story, "roles-offered");
   const skills = section(story, "employer-mentioned-skills");
   const pay = section(story, "compensation-coverage");
   const geo = section(story, "geographic-coverage");
+  const roleMixShift = section(story, "role-mix-shift");
+  const seniorityShift = section(story, "seniority-shift");
+  const trackShift = section(story, "track-shift");
 
   // The roles being hired — specialization is the meaningful "role", not the fragmented raw title.
   const roleRows: RankedBarRow[] = listFrom(roles, "top_specializations")
@@ -112,6 +130,8 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
       </div>
 
+      <MovementLabel>The market right now</MovementLabel>
+
       {/* Framing line — no inventory figures; the welcome already carries those. */}
       <p className="text-sm leading-relaxed text-gray-300">
         Past the headcount, this is what the tech postings the platform tracks are actually
@@ -139,6 +159,25 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
       <StoryBlock heading="Where the roles are" {...blockProps(geo, cityRows.length > 0)}>
         <RankedBarList rows={cityRows} />
       </StoryBlock>
+
+      <MovementLabel>How it&rsquo;s shifting — year on year</MovementLabel>
+
+      {([
+        [roleMixShift, "How the role mix is shifting"],
+        [seniorityShift, "How seniority is shifting"],
+        [trackShift, "IC vs. management"],
+      ] as const).map(([sec, heading]) => {
+        const content = yoyContent(sec);
+        return (
+          <StoryBlock
+            key={heading}
+            heading={heading}
+            {...blockProps(sec, !!content && content.rows.length > 0)}
+          >
+            {content ? <YearOnYearBars content={content} /> : null}
+          </StoryBlock>
+        );
+      })}
     </article>
   );
 }

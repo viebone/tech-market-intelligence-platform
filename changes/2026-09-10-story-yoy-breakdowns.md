@@ -4,7 +4,7 @@ date: 2026-09-10
 trigger-type: stakeholder-request
 change-type: ux-change, api-change
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Year-on-year market breakdowns in "What we know about the market"
@@ -172,10 +172,18 @@ the experience/data-stories spec work, not here.
       `status: "ready"`, `comparison_available: false`, `prior_window: null`, "comparison
       starts 2027-08-03" in the qualifier; role-mix shares sum to 1.0 over Designer/PM/Engineer.
       New `backend/tests/test_story_yoy.py` (3 asserts, DB-gated) — all pass.
-- [ ] Step 8: `/implement-frontend` — `DataStoryMessage.tsx` new blocks + the comparison
-      component + the insufficient-history render. `npm run build` + `tsc`; eyeball.
-- [ ] Step 9: Commit + push; mark `complete` when specs and the shipped story match (in its
-      insufficient-history state — the year-on-year path can't be exercised until ~2027-08).
+- [x] Step 8: `/implement-frontend` (2026-09-10) — new `YearOnYearBars.tsx` (shared-track
+      ghost/current bars + `▲/▼ ±N pp` delta with no colour carrying direction; the
+      `comparison_available: false` branch renders a plain `RankedBarList` of current shares
+      + a compact window line). `DataStoryMessage.tsx` split into two labelled movements via a
+      `MovementLabel` eyebrow; the three YoY blocks render from `role-mix-shift` /
+      `seniority-shift` / `track-shift` (their "what this means" + "comparison starts" text
+      comes from the backend `qualifier` via `StoryBlock`). `tsc --noEmit` clean; `vite build`
+      clean (170 modules). Local endpoint verified: all 3 sections `status: "ready"` in the
+      no-prior-window state.
+- [x] Step 9: Commit + push. Marked `complete` — specs and the shipped story match, in the
+      insufficient-history state (the year-on-year comparison path is specced and dormant
+      until ~2027-08).
 
 ## Decision Log
 
