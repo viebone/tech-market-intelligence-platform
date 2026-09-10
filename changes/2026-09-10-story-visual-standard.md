@@ -110,10 +110,17 @@ pass each time.
         (provenance lives in the Reasoning Panel); "Future catalogue direction" now requires
         the standard and notes a single-number/single-list question belongs in the curated
         engine, not dressed up as a story.
-- [ ] Step 5: `/new-frontend-spec` — update `frontend/specs/market-health/architecture.md`:
-      shared component set, the story acceptance checklist, the `DataStoryLayout` decision.
-      Decide the `render_hint` question (default: no backend change).
-- [ ] Step 6: `/new-backend-spec` — only if Step 5 decides `render_hint` is needed (expected: skip).
+- [x] Step 5: `/new-frontend-spec` (2026-09-10) — `frontend/specs/market-health/architecture.md`:
+      new "Every story: the shared build" subsection — the shared component set
+      (`DataStoryMessage` renderer, new `StoryBlock`, existing `RankedBarList`, new
+      `StoryFigure`, new `Meter`, reuse of share bar / trend), a frontend story-acceptance
+      checklist, and the decision that `DataStoryMessage` stays a per-story renderer (not a
+      generic `DataStoryLayout`) while the catalogue is small. "First story" renamed to
+      "Reference story". Component Breakdown table updated. No `render_hint` — the renderer
+      maps section ids to forms.
+- [x] Step 6: `/new-backend-spec` — **no-change**. `backend/specs/market-health/api.md` Data
+      stories section got a "Reviewed 2026-09-10" note: the standard is a frontend composition
+      concern; `render_hint` considered and rejected; the existing `sections[]` shape suffices.
 - [ ] Step 7: `/implement-frontend` — bring `DataStoryMessage.tsx` to the checklist, extract
       the shared Figure / Meter components, verify against the running story and the welcome
       (no duplication). `npm run build` + `tsc`.

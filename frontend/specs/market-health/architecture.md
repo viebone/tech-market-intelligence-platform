@@ -66,7 +66,9 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `TopBar` | Fixed header. Product title only. No navigation in v1. | `frontend/src/features/market-health/TopBar.tsx` |
 | `TaskPanel` *(catalogue-driven, added 2026-09-04)* | Left-column navigation. Renders one pinned welcome item ("About this platform"), then one item per entry in `GET /api/market-health/stories` (label = that entry's `display_name`, in catalogue order), then pinned feature tasks (currently just "Tech market hiring status"). A new backend story needs no change here — the list is fetched, not hardcoded. | `frontend/src/features/market-health/TaskPanel.tsx` |
 | `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/WelcomeMessage.tsx` |
-| `DataStoryMessage` *(existing, undocumented until now)* | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
+| `DataStoryMessage` | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Composes a framing line + `StoryBlock`s from the shared story component set (see Data stories → "Every story: the shared build"). Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
+| `StoryBlock` *(added 2026-09-10)* | The fixed data-story block anatomy — heading → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/StoryBlock.tsx` |
+| `RankedBarList` / `StoryFigure` / `Meter` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. | `frontend/src/features/market-health/{RankedBarList,StoryFigure,Meter}.tsx` |
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
@@ -384,40 +386,62 @@ absorbed by existing generic frontend infrastructure.
 
 ## Data stories
 
-See `design/market-health/data-stories.md` for the product-facing catalogue and first story
-contract. The frontend treats a story as a normal assistant turn with additional structured
-content, not as a separate page.
+See `design/market-health/data-stories.md` for the product-facing catalogue, the per-story
+**"Visual standard every story must meet"** checklist, and the first story contract; and
+`design/visual-design.md` — **Data Story composition** for the aesthetic. The frontend treats
+a story as a normal assistant turn with additional structured content, not as a separate page.
 
-### First story: market data briefing
+### Every story: the shared build (added 2026-09-10 — `changes/2026-09-10-story-visual-standard.md`)
 
-The first story is the Task Panel item **"What we know about the market"** (in the story
-catalogue, below the pinned welcome). Selecting it loads the canonical story id and renders
-`DataStoryMessage` from `POST /api/market-health/stories/market-data-briefing`.
+A story's renderer is bespoke per catalogue entry ("add one entry, its deterministic
+renderer"), but it **composes from a shared component set** so every story looks and reads
+like the last one. No new backend field: the renderer maps its own known section ids to
+visual forms; a generic `render_hint` in the API would only pay off if stories shared one
+fully generic component, which the catalogue model deliberately avoids.
 
-**Chart-first, de-duplicated from the welcome (rewritten 2026-09-06 —
-`changes/2026-09-06-market-story-visual-and-dedup.md`).** `DataStoryMessage` renders, in
-order:
+| Component | Responsibility | Location |
+|---|---|---|
+| `DataStoryMessage` | The per-story renderer. Composes the framing line + `StoryBlock`s from the story's resolved `sections`. One per catalogue entry, or a `switch` on `story_id` inside one file while the catalogue is small. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
+| `StoryBlock` | The fixed block anatomy: heading (`text-sm font-semibold text-gray-200`) → one visual (child) → honesty qualifier (`text-xs text-gray-500`), with the `border-t border-gray-800 pt-4` divider. Renders the section's "not enough data yet" line instead of the child when `status === "insufficient_data"` or the child has no data. Enforces the anatomy so a story can't drift. | `frontend/src/features/market-health/StoryBlock.tsx` (extract from `DataStoryMessage`'s current inline `Block`) |
+| `RankedBarList` | Generic `{ label, value, emphasis? }[]` magnitude list — one muted hue, length = value, direct-labelled, capped (no scroll). | `frontend/src/features/market-health/RankedBarList.tsx` (exists) |
+| `StoryFigure` | The one Hero Figure a story may lead a block with — `text-3xl`/`text-4xl font-bold text-gray-100` value + `text-sm text-gray-400` caption. Never an accent colour. | `frontend/src/features/market-health/StoryFigure.tsx` (new — generalise the inline figure in `DataStoryMessage`) |
+| `Meter` | One share as a part-to-whole bar: the `StoryFigure` percentage + an `h-2` track (`bg-gray-800`) with an `indigo-500` fill at that width + a plain complement line below. Per `design/visual-design.md` — Meter. | `frontend/src/features/market-health/Meter.tsx` (new) |
+| Category Share Bar / Trend line | Reuse `WelcomeMessage`'s share bar and the opening chart's trend rendering when a story's data is part-to-whole or time-series. Not built ahead of a story that needs them. | — |
 
-1. a one-line framing sentence (numbers as context only);
-2. **the roles being hired** — `roles-offered.top_specializations`, as a **Ranked bar list**
-   (`design/visual-design.md`) — specialization, not the fragmented `top_titles`;
-   `unknown`/`other` excluded;
-3. **what employers ask for** — `employer-mentioned-skills.skills`, Ranked bar list, must-have
+The framing line is plain `text-sm leading-relaxed text-gray-300` markup in `DataStoryMessage`
+— not a component.
+
+**Story acceptance checklist (frontend / review time).** Before a story ships, its
+`DataStoryMessage` output must satisfy `design/market-health/data-stories.md` — "Visual
+standard every story must meet". In frontend terms:
+- framing line first, then 3–6 `StoryBlock`s, nothing else at the top level;
+- every `StoryBlock` child is a `RankedBarList` / `StoryFigure` / `Meter` / share bar / trend —
+  never a bare `<p>`;
+- **≥2 distinct** of those form components across the story;
+- **≤1** `StoryFigure` in the whole story;
+- no block renders total postings, company count, collection start, or the role-category
+  split (those are `WelcomeMessage`'s);
+- `npm run build` + `tsc` clean; eyeball against the running welcome to confirm no duplication
+  and consistent rhythm.
+
+### Reference story: market data briefing
+
+The Task Panel item **"What we know about the market"** — `DataStoryMessage` from
+`POST /api/market-health/stories/market-data-briefing`. It is the reference implementation of
+the standard above. In order:
+
+1. framing sentence (numbers as context only);
+2. **the roles being hired** — `roles-offered.top_specializations` → `RankedBarList`
+   (specialization, not the fragmented `top_titles`; `unknown`/`other` excluded);
+3. **what employers ask for** — `employer-mentioned-skills.skills` → `RankedBarList`, must-have
    rows in the full-opacity hue;
-4. **pay transparency** — one figure + a bar from `compensation-coverage.coverage_by_confidence`
-   (share of postings stating a salary);
-5. **where the roles are** — `geographic-coverage` (country or city), Ranked bar list, with
-   the normalised-location caveat.
+4. **pay transparency** — `compensation-coverage.coverage_by_confidence` → `StoryFigure` +
+   `Meter` (the story's one Hero Figure);
+5. **where the roles are** — `geographic-coverage` → `RankedBarList`, normalised-location caveat.
 
-It shows **none** of the inventory the welcome shows (total postings, companies, collection
-start, role-category split) — see `design/market-health/data-stories.md` — Visible answer
-shape. Each block keeps its section `qualifier`; a section that is `insufficient_data` or has
-an empty list renders its "not enough data yet" line, never an empty bar. Provenance stays in
-the Reasoning Panel ("No language model was used", the owned-data aggregates).
-
-The `RankedBarList` component (`frontend/src/features/market-health/RankedBarList.tsx`) is
-generic — `{ label, value }[]` + an optional `emphasised` predicate — and reusable by future
-stories.
+Two distinct form components (`RankedBarList`, `StoryFigure`+`Meter`) → clears the ≥2 minimum.
+Shows **none** of the welcome's inventory. Provenance stays in the Reasoning Panel ("No
+language model was used", the owned-data aggregates).
 
 ### Catalogue and response state
 

@@ -1736,6 +1736,14 @@ Gemini adapter — implementation detail of the exact method signature is left t
 See `design/market-health/data-stories.md` for the user-facing catalogue and first story
 contract. Data stories are resolved before any model call.
 
+**Reviewed 2026-09-10** (`changes/2026-09-10-story-visual-standard.md` — data-story visual
+standard) — **no backend change.** The standard is entirely a frontend composition concern:
+each story's renderer maps its own `sections` to visual forms from a shared component set. A
+per-section `render_hint` in the story response was considered and rejected — stories don't
+share one generic renderer (the catalogue model gives each entry its own), so a hint would
+carry no weight. The existing `sections[]` shape (`id`, `title`, `status`, typed `content`,
+`qualifier`) already gives the frontend everything it needs.
+
 ### GET /api/market-health/stories
 
 **Purpose**: Return the predefined story catalogue used to offer fast, common questions.
