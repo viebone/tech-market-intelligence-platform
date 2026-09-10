@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-09-04
+updated: 2026-09-10
 ---
 
 # Market Health — Frontend Architecture Spec

@@ -1,6 +1,13 @@
-import type { ReactNode } from "react";
-
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
+import { StoryBlock } from "./StoryBlock";
+import { Meter } from "./Meter";
+
+// Per-story renderer. Composes a framing line + StoryBlocks from the shared
+// data-story component set (RankedBarList / StoryFigure / Meter), so every
+// catalogue entry looks and reads like the last one. Standard:
+// design/visual-design.md - Data Story composition; checklist:
+// design/market-health/data-stories.md - Visual standard every story must meet;
+// frontend/specs/market-health/architecture.md - Every story: the shared build.
 
 export interface DataStorySection {
   id: string;
@@ -47,36 +54,13 @@ function num(value: unknown): number {
 
 const HIDDEN_ROLE_LABELS = new Set(["other", "unknown", ""]);
 
-/** A block heading + its honesty qualifier, wrapping either a chart or its "not enough data" line. */
-function Block({
-  heading,
-  section: sec,
-  hasData,
-  children,
-}: {
-  heading: string;
-  section: DataStorySection | undefined;
-  hasData: boolean;
-  children: ReactNode;
-}) {
-  const insufficient = sec?.status === "insufficient_data" || !hasData;
-  return (
-    <section className="border-t border-gray-800 pt-4">
-      <h3 className="text-sm font-semibold text-gray-200">{heading}</h3>
-      <div className="mt-3">
-        {insufficient ? (
-          <p className="text-sm text-gray-400">
-            {sec?.message ?? "Not enough data yet."}
-          </p>
-        ) : (
-          children
-        )}
-      </div>
-      {sec?.qualifier ? (
-        <p className="mt-2 text-xs text-gray-500">{sec.qualifier}</p>
-      ) : null}
-    </section>
-  );
+/** Bridges a resolved section to StoryBlock's props: empty when insufficient_data or no rows. */
+function blockProps(sec: DataStorySection | undefined, hasData: boolean) {
+  return {
+    qualifier: sec?.qualifier,
+    insufficient: sec?.status === "insufficient_data" || !hasData,
+    emptyMessage: sec?.message,
+  };
 }
 
 export function DataStoryMessage({ story }: { story: DataStoryResult }) {
@@ -85,13 +69,13 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   const pay = section(story, "compensation-coverage");
   const geo = section(story, "geographic-coverage");
 
-  // 2. The roles being hired — specialization is the meaningful "role", not the fragmented raw title.
+  // The roles being hired — specialization is the meaningful "role", not the fragmented raw title.
   const roleRows: RankedBarRow[] = listFrom(roles, "top_specializations")
     .map((row) => ({ label: str(row.specialization), value: num(row.posting_count) }))
     .filter((row) => !HIDDEN_ROLE_LABELS.has(row.label.toLowerCase()))
     .slice(0, 7);
 
-  // 3. What employers ask for — one row per skill group, must-have mentions emphasised.
+  // What employers ask for — one row per skill group, must-have mentions emphasised.
   const skillAgg = new Map<string, { value: number; mustHave: boolean }>();
   for (const row of listFrom(skills, "skills")) {
     const group = str(row.skill_group);
@@ -107,16 +91,15 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  // 4. Pay transparency — share of postings that state a salary (structured + parsed).
+  // Pay transparency — share of postings that state a salary (structured + parsed).
   const payRows = listFrom(pay, "coverage_by_confidence");
   const disclosed = payRows
     .filter((row) => str(row.confidence) === "structured" || str(row.confidence) === "parsed")
     .reduce((sum, row) => sum + num(row.posting_count), 0);
   const payTotal = payRows.reduce((sum, row) => sum + num(row.posting_count), 0);
   const disclosedPct = payTotal > 0 ? (disclosed / payTotal) * 100 : 0;
-  const pctLabel = disclosedPct > 0 && disclosedPct < 1 ? "<1%" : `${Math.round(disclosedPct)}%`;
 
-  // 5. Where the roles are — top cities among the minority that carry a normalised location.
+  // Where the roles are — top cities among the minority that carry a normalised location.
   const cityRows: RankedBarRow[] = listFrom(geo, "cities")
     .map((row) => ({ label: str(row.city), value: num(row.posting_count) }))
     .filter((row) => row.label !== "")
@@ -129,42 +112,33 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
       </div>
 
-      {/* 1. Framing line — no inventory figures; the welcome already carries those. */}
+      {/* Framing line — no inventory figures; the welcome already carries those. */}
       <p className="text-sm leading-relaxed text-gray-300">
         Past the headcount, this is what the tech postings the platform tracks are actually
         asking for — the roles on offer, the skills employers name, how often pay is disclosed,
         and where the work sits.
       </p>
 
-      <Block heading="The roles being hired" section={roles} hasData={roleRows.length > 0}>
+      <StoryBlock heading="The roles being hired" {...blockProps(roles, roleRows.length > 0)}>
         <RankedBarList rows={roleRows} />
-      </Block>
+      </StoryBlock>
 
-      <Block heading="What employers ask for" section={skills} hasData={skillRows.length > 0}>
+      <StoryBlock heading="What employers ask for" {...blockProps(skills, skillRows.length > 0)}>
         <RankedBarList rows={skillRows} limit={8} />
         <p className="mt-2 text-xs text-gray-500">Solid bars are must-have mentions.</p>
-      </Block>
+      </StoryBlock>
 
-      <Block heading="Pay transparency" section={pay} hasData={payTotal > 0}>
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold text-gray-100">{pctLabel}</span>
-          <span className="text-sm text-gray-400">of postings state a salary range</span>
-        </div>
-        <span className="mt-3 block h-2 w-full overflow-hidden rounded-full bg-gray-800">
-          <span
-            className="block h-full rounded-full bg-indigo-500"
-            style={{ width: `${Math.max(disclosedPct, 1)}%` }}
-          />
-        </span>
-        <p className="mt-2 text-sm text-gray-400">
-          The other {payTotal > 0 ? `${Math.round(100 - disclosedPct)}%` : "majority"} don't
-          disclose compensation.
-        </p>
-      </Block>
+      <StoryBlock heading="Pay transparency" {...blockProps(pay, payTotal > 0)}>
+        <Meter
+          percent={disclosedPct}
+          caption="of postings state a salary range"
+          complement={`The other ${payTotal > 0 ? `${Math.round(100 - disclosedPct)}%` : "majority"} don't disclose compensation.`}
+        />
+      </StoryBlock>
 
-      <Block heading="Where the roles are" section={geo} hasData={cityRows.length > 0}>
+      <StoryBlock heading="Where the roles are" {...blockProps(geo, cityRows.length > 0)}>
         <RankedBarList rows={cityRows} />
-      </Block>
+      </StoryBlock>
     </article>
   );
 }

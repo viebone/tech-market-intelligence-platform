@@ -4,7 +4,7 @@ date: 2026-09-10
 trigger-type: stakeholder-request
 change-type: visual-change, ux-change
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: A visual standard every data story must meet
@@ -121,10 +121,15 @@ pass each time.
 - [x] Step 6: `/new-backend-spec` — **no-change**. `backend/specs/market-health/api.md` Data
       stories section got a "Reviewed 2026-09-10" note: the standard is a frontend composition
       concern; `render_hint` considered and rejected; the existing `sections[]` shape suffices.
-- [ ] Step 7: `/implement-frontend` — bring `DataStoryMessage.tsx` to the checklist, extract
-      the shared Figure / Meter components, verify against the running story and the welcome
-      (no duplication). `npm run build` + `tsc`.
-- [ ] Step 8: Commit + push; mark `complete` when specs and the shipped story match.
+- [x] Step 7: `/implement-frontend` (2026-09-10) — extracted `StoryBlock.tsx` (from the inline
+      `Block`), `StoryFigure.tsx`, and `Meter.tsx` (figure + track + complement, per
+      visual-design). `DataStoryMessage.tsx` now composes from them via a `blockProps` bridge.
+      Behaviour-preserving refactor — same DOM output. `tsc --noEmit` clean; `vite build`
+      clean (168 modules, +3). The reference story already satisfies the checklist: framing
+      line + 4 `StoryBlock`s, 2 distinct form components (`RankedBarList` ×3, `StoryFigure`+
+      `Meter` ×1), ≤1 Hero Figure, no welcome-inventory duplication.
+- [x] Step 8: Commit + push. Also fixed stale `CLAUDE.md` spec-chain line (visual-design
+      v1.1 → v1.4) and bumped the frontend spec's `updated`.
 
 ## Decision Log
 
