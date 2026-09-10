@@ -125,10 +125,25 @@ the experience/data-stories spec work, not here.
       the heading; a required "what this means" sentence; and the **"No prior window yet"**
       state — current window only + a muted "comparison starts {Month Year}" line, reading as
       "coming soon", not "broken".
-- [ ] Step 4: `/new-experience` — `design/market-health/experience.md` (snapshot vs trend)
-      and `design/market-health/data-stories.md` (Story 1's four new blocks, the reworded
-      de-dup / checklist item, the data contract, the insufficient-history `no_data_state`,
-      the specialization-overlap decision).
+- [x] Step 4: `/new-experience` (2026-09-10) —
+      - `design/market-health/experience.md` — Data stories: the story divides from the
+        welcome by **time, not topic** (welcome = snapshot, story = substance + YoY shift);
+        two-movements structure; the two-window / "coming soon" rule; two "Revised
+        2026-09-10" notes.
+      - `design/market-health/data-stories.md` — checklist reworded (blocks → movements for a
+        both-themes story, ~8 allowed; "no *current-snapshot* duplication" replaces "no
+        inventory duplication"; a year-on-year checklist item). Story 1 "Visible answer
+        shape" restructured into **Movement 1 (the market right now)** = framing + roles
+        (top 10, delta column dormant) + skills + pay + locations, and **Movement 2 (how it's
+        shifting)** = role mix / seniority / IC-vs-management, each a Year-on-year comparison,
+        all in the "no prior window yet" state at launch. Specialization overlap resolved by
+        **merging** — one "roles being hired" block, top 10, gains the delta column later.
+        Data contract: two new rows (windowed distribution keyed on `fetched_at`; YoY
+        availability from `min(fetched_at)`). Honesty & empty states: the "no prior window"
+        state is distinct from "not enough data"; never estimate/zero-fill the prior year;
+        `other`'s own YoY trend is never a signal.
+      - `design/visual-design.md` — Reference implementation line + rules-out reworded for
+        the two movements and snapshot-vs-shift.
 - [ ] Step 5: `/new-backend-spec` — `backend/specs/market-health/api.md`: the new
       `market-data-briefing` sections and their `content` shape (current + prior window +
       delta, or an `insufficient_history` flag); the windowed distribution aggregate and its

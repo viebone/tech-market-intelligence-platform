@@ -409,15 +409,21 @@ data story" before reading a word.
 - A block rendered as an empty chart — an `insufficient_data` block shows its "not enough
   data yet" line (`design/market-health/data-stories.md` — Honesty and empty states), never
   an empty track.
-- Repeating the "About this platform" welcome's *inventory* (job count, company count,
-  collection start, role-category split). The welcome carries inventory; a story carries
-  substance. No figure appears in both.
+- Repeating the "About this platform" welcome's *current-snapshot* figures (job count,
+  company count, collection start, current role-category split). A story may show a
+  *year-on-year shift* in the same dimension — that is a different question (change, not
+  state). It never repeats the welcome's current numbers as-is.
 - More than one Hero Figure per story.
 - A new accent hue, or any entrance animation on the data (Motion rules unchanged).
 
-**Reference implementation:** `market-data-briefing` (`DataStoryMessage.tsx`) — framing line
-→ roles being hired (ranked bars) → what employers ask for (ranked bars, must-have emphasised)
-→ pay transparency (Hero Figure + Meter) → where the roles are (ranked bars).
+**Reference implementation:** `market-data-briefing` (`DataStoryMessage.tsx`), two labelled
+movements (revised 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`):
+- *The market right now* — framing line → roles being hired (ranked bars) → what employers ask
+  for (ranked bars, must-have emphasised) → pay transparency (Hero Figure + Meter) → where the
+  roles are (ranked bars).
+- *How it's shifting (year on year)* — role mix / seniority / IC vs. management, each a
+  Year-on-year comparison. In the "no prior window yet" state until the product's data spans a
+  year.
 
 ### Reasoning Panel toggle — "View thinking / Hide thinking"
 

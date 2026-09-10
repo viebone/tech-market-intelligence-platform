@@ -24,21 +24,33 @@ market" (answering "What do we currently know about the tech job market?") is th
 first example, not its ceiling; future entries can cover narrower questions the same way (see
 `design/market-health/data-stories.md` — Future catalogue direction).
 
-A story is **chart-first and composed** — a short visual piece, not a report — and shows only
-what the "About this platform" welcome does not: the welcome carries the data *inventory* (how
-much data, how many companies, since when, the role-category split); a story carries the
-*substance* (the actual roles, skills, pay transparency, locations). No figure appears in
-both.
+A story is **chart-first and composed** — a short visual piece, not a report. It divides
+cleanly from the "About this platform" welcome by **time, not topic** (revised 2026-09-10 —
+`changes/2026-09-10-story-yoy-breakdowns.md`): the welcome shows the *current snapshot* (how
+much data, how many companies, since when, the current role-category split); a story shows
+the *substance* (the actual roles, skills, pay, locations) **and how the mix is shifting year
+on year**. The same dimension can appear in both — the welcome's current split, the story's
+year-on-year change in it — because they answer different questions. A story never repeats
+the welcome's *current* figures as-is.
 
 **How a story looks is a standard, not the builder's choice** (revised 2026-09-10 —
 `changes/2026-09-10-story-visual-standard.md`). Every catalogue entry's renderer follows the
-same composition: a framing line, then 3–6 blocks each with a heading, one chart or figure,
-and its honesty qualifier; at least one chart and a mix of visual forms; consistent rhythm,
+same composition: a framing line, then blocks each with a heading, one chart or figure, and
+its honesty qualifier; at least one chart and a mix of visual forms; consistent rhythm,
 palette and type across every story; engaging by composition, never by animating the data. A
-reader recognises "this is a data story" before reading a word, and a new entry lands with
-the same impact as the last one without a bespoke design pass. The full standard is
+story rich enough to cover both current state and year-on-year change groups its blocks into
+two labelled movements — "the market right now", then "how it's shifting". A reader
+recognises "this is a data story" before reading a word, and a new entry lands with the same
+impact as the last one without a bespoke design pass. The full standard is
 `design/visual-design.md` — Data Story composition; the per-story checklist is
 `design/market-health/data-stories.md` — Visual standard every story must meet.
+
+**A year-on-year block shows exactly two 12-month windows** — the trailing year and the year
+before it, no further back — and states both date ranges in plain words, plus one sentence on
+what a shift in that mix means for the reader. Until the platform has ~13 months of data
+there is no year-earlier window: the block shows the current window only and says plainly
+that the comparison starts later (it reads as "coming soon", never as an error). This is the
+state at launch and for the product's first year.
 
 Task Panel order, front to back:
 
@@ -659,12 +671,19 @@ chart, summary, and prompt untouched.
 
 **Revised (2026-09-10 — `changes/2026-09-10-story-visual-standard.md`):** How a data story
 *looks* is now a standard, not the builder's choice — every catalogue entry's renderer
-follows one composition (framing line → 3–6 heading/visual/qualifier blocks, chart-first, a
-mix of visual forms, consistent rhythm) so a new story lands with the same impact as the
-last. Engaging by composition only; no entrance animation on the data (Motion rules
-unchanged). Scoped to the story surface (professional audience) — not a product-wide design
-goal, not extended to operator surfaces. Full standard in `design/visual-design.md` — Data
-Story composition; per-story checklist in `design/market-health/data-stories.md`.
+follows one composition (framing line → heading/visual/qualifier blocks, chart-first, a mix
+of visual forms, consistent rhythm) so a new story lands with the same impact as the last.
+Engaging by composition only; no entrance animation on the data (Motion rules unchanged).
+Scoped to the story surface (professional audience) — not a product-wide design goal, not
+extended to operator surfaces. Full standard in `design/visual-design.md` — Data Story
+composition; per-story checklist in `design/market-health/data-stories.md`.
+
+**Revised (2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`):** A story divides from
+the welcome by **time, not topic** — welcome = current snapshot, story = substance + how the
+mix is shifting **year on year** (role category, seniority, track, specializations). Exactly
+two 12-month windows, one year back, both dates stated plainly, each with a "what this means"
+line. Until ~13 months of data exists each year-on-year block shows the current window only
+and says the comparison starts later ("coming soon", not an error) — the launch state.
 
 **Resolved (2026-08-11):** `design/market-health/job-classification.md` underwent a full
 taxonomy redesign (`changes/2026-08-11-classification-taxonomy-redesign.md`) — the old

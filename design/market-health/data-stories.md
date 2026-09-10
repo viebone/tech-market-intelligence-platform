@@ -52,21 +52,30 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
 
 - [ ] Opens with a **framing line** — one sentence naming what's summarised, numbers as
       context only, not a heading.
-- [ ] **3–6 blocks**, each: a fixed heading → **one** chart or figure → its honesty qualifier
-      (sample size / coverage caveat). No prose-only block except the framing line.
+- [ ] **Blocks**, each: a fixed heading → **one** chart or figure → its honesty qualifier
+      (sample size / coverage caveat). No prose-only block except the framing line. **3–6
+      blocks** for a single-theme story; a story that covers both current state and
+      year-on-year change groups its blocks into **two labelled movements** ("the market
+      right now", then "how it's shifting") and may run to ~8.
 - [ ] **At least one chart**, and **≥2 distinct visual forms** across the story (3+
       preferred) — drawn from the vocabulary in `visual-design.md` (Ranked bar list, Hero
-      Figure, Stat Tile, Meter, Category Share Bar, Trend line). A story that is five ranked
-      bar lists in a row is under-composed.
+      Figure, Stat Tile, Meter, Category Share Bar, Trend line, Year-on-year comparison). A
+      story that is five ranked bar lists in a row is under-composed.
 - [ ] **Chart-first** — the visual carries the point; heading and qualifier are labels.
 - [ ] **At most one Hero Figure.**
 - [ ] Consistent block anatomy, divider rhythm, palette (one muted hue for magnitude; only
       the three role accents for categorical), and type scale — identical across every story.
 - [ ] Every block keeps its honesty qualifier. An `insufficient_data` block shows its "not
       enough data yet" line (Honesty and empty states, below), never an empty chart.
-- [ ] **No inventory duplication of the welcome** — job count, company count, collection
-      start, role-category split all belong to "About this platform". A story shows
-      substance; no figure appears in both.
+- [ ] **A year-on-year block** shows exactly two 12-month windows (current, and one year
+      back — never more), states both date ranges in words, and carries one plain sentence on
+      what a shift in that mix means. Before ~13 months of data exists it shows the current
+      window only + a muted "comparison starts {Month Year}" line — "coming soon", not an
+      error (`visual-design.md` — Year-on-year comparison; Honesty and empty states, below).
+- [ ] **No *current-snapshot* duplication of the welcome** — job count, company count,
+      collection start, and the *current* role-category split all belong to "About this
+      platform". A story may show a *year-on-year shift* in the same dimension (a different
+      question — change, not state); it never repeats the welcome's current figures as-is.
 - [ ] No visible source-adapter names, database fields, query names, model names, or
       extraction mechanics — those stay in the Reasoning Panel.
 - [ ] Engaging by composition only — no entrance animation on the data
@@ -104,40 +113,48 @@ question or commit to a search.
 
 ### Visible answer shape
 
-Revised 2026-09-06 (`changes/2026-09-06-market-story-visual-and-dedup.md`); this story is the
-**reference implementation** of the "Visual standard every story must meet" checklist above
-(2026-09-10). It shows what a well-composed catalogue entry looks like — chart-first,
-de-duplicated from the "About this platform" welcome, a mix of visual forms.
+Revised 2026-09-06 (`changes/2026-09-06-market-story-visual-and-dedup.md`), then 2026-09-10
+(`changes/2026-09-10-story-yoy-breakdowns.md` — the year-on-year movement). This story is the
+**reference implementation** of the "Visual standard every story must meet" checklist above.
+It never repeats the welcome's *current* figures as-is; where a dimension overlaps (role
+category), the story shows how it's *shifting*, not what it is.
 
-The welcome (`design/market-health/experience.md` — Opening Welcome) already shows the
-*inventory*: how many job openings, how many companies, since when, the role-category split,
-the largest role group. **This story shows none of that again.** It moves past the inventory
-to the market's shape, and every block is a chart, not a paragraph.
+Two labelled movements. Fixed order; values live; headings fixed.
 
-Fixed order; values live; headings fixed. Two distinct visual forms — Ranked bar list (×3)
-and a Hero Figure + Meter (×1) — clears the ≥2 minimum; a future story with time-series or
-part-to-whole data should reach for a Trend line or Category Share Bar rather than adding
-more ranked lists.
+**Movement 1 — "The market right now"**
 
-1. **Framing line** — one sentence naming what's being summarised (e.g. "What the ~N tracked
-   Engineer, Product, and Design postings are hiring for"). Numbers appear only as context
-   here, never as the point.
-2. **The roles being hired** — the top specializations (normalised roles such as "Machine
-   Learning Engineer", "Security Engineer", "Solutions Engineer"), as a **Ranked bar list**
-   (`design/visual-design.md`). New information: the welcome only shows the three category
-   buckets; this shows the actual roles. Specialization is used rather than raw job title —
-   raw titles are too fragmented to rank meaningfully (`unknown`/`other` stay excluded, not
-   relabelled).
+1. **Framing line** — one sentence naming what's being summarised. Numbers as context only.
+2. **The roles being hired** — top 10 specializations (normalised roles such as "Machine
+   Learning Engineer", "Security Engineer"), as a **Ranked bar list**. Once a year-earlier
+   window exists, each row also carries its "+N pp" year-on-year delta; until then the delta
+   column is absent. Specialization, not raw title (too fragmented); `unknown`/`other`
+   excluded, not relabelled.
 3. **What employers ask for** — top skill groups, Ranked bar list, must-have rows emphasised.
-4. **Pay transparency** — a **Hero Figure + Meter** (`design/visual-design.md`): the share of
-   postings that state a salary (structured + parsed), with "the rest don't disclose" stated
-   plainly. The story's one Hero Figure.
-5. **Where the roles are** — top locations (country or city), Ranked bar list, carrying the
-   "only N postings have a normalised location" caveat.
+4. **Pay transparency** — a **Hero Figure + Meter**: the share of postings that state a salary
+   (structured + parsed), "the rest don't disclose" stated plainly. The story's one Hero
+   Figure.
+5. **Where the roles are** — top locations (country or city), Ranked bar list, with the "only
+   N postings have a normalised location" caveat.
 
-Every block keeps its honesty qualifier (sample size, coverage caveat). A block with too
-little data shows its "not enough data yet" line, not an empty chart. Which job boards the
-data came from is provenance — it lives in the Reasoning Panel, not as a visible block.
+**Movement 2 — "How it's shifting" (year on year)**
+
+A short intro line names the two windows in plain words. Each block below is a **Year-on-year
+comparison** (`design/visual-design.md`) with one "what this means" sentence. **At launch and
+for the product's first year all three are in the "no prior window yet" state** — current
+window only + "comparison starts {Month Year}".
+
+6. **How the role mix is shifting** — `role_category` shares (Designer / Product Manager /
+   Engineer; `other` shown as context, its own trend never presented as a signal). *Meaning:*
+   which of the three areas is taking a bigger or smaller slice of new roles.
+7. **How seniority is shifting** — `level` shares across the ladder. *Meaning:* whether the
+   market is opening more junior or more senior roles than a year ago.
+8. **IC vs. management** — `track` shares (`ic` / `management`; `unknown` excluded).
+   *Meaning:* whether more of the new roles are for people who lead teams or do the work.
+
+Every block keeps its honesty qualifier (sample size, coverage caveat, both window dates for
+Movement 2). A block with too little data shows its "not enough data yet" line, not an empty
+chart. Which job boards the data came from is provenance — Reasoning Panel, not a visible
+block.
 
 ### Data contract
 
@@ -156,6 +173,8 @@ external search, or unstated market assumptions to fill a value.
 | Skills | `posting_skills` grouped by `skill_group` and `requirement_level` | Posting sample size; mentions are interpreted extraction, not verified facts |
 | Compensation | `salary_confidence` grouped by `structured` and `parsed` | Structured and parsed figures are never blended |
 | Geography | Non-null `country` and `city` grouped separately | Normalized-location coverage; null locations are not guessed |
+| **Year-on-year shift** (role_category, level, track, specialization) | The admin's per-dimension distribution (`classification.get_classification_distribution`) computed for two windows: `[now − 12mo, now]` and `[now − 24mo, now − 12mo]`, keyed on `raw_postings.fetched_at`. Per category: current share, prior share, delta in percentage points. | Both window date ranges stated; shares carry their denominators; the two windows are never blended into one number. Windowed on `fetched_at` (when we observed the posting), which is the only date this platform can trust — same rule as the trend chart. |
+| **Year-on-year availability** | `min(raw_postings.fetched_at)` — the prior window is only computable once it is ≥ 12 months before now | Below the availability threshold each shift block renders the current window only and states when the comparison begins; a prior-year figure is never estimated or zero-filled |
 
 ### Honesty and empty states
 
@@ -163,8 +182,18 @@ external search, or unstated market assumptions to fill a value.
 - Percentages use the relevant denominator and state the sample size.
 - A section with too little data says **"Not enough data yet"** and explains what coverage is
   missing. It does not disappear silently and it does not borrow from external sources.
+- **A year-on-year shift block before the prior window exists** is a distinct state from "not
+  enough data yet": the current window *does* have data and *is* shown (as a plain share bar
+  / ranked list, no ghost bar, no delta column). Only the comparison is unavailable, and the
+  block says so plainly — "Year-on-year comparison starts {Month Year}. Tracking since {date}."
+  It reads as pending, not broken. This is the state at launch and for the product's first
+  year of operation.
+- A year-on-year block never estimates, interpolates, or zero-fills the prior-year window. If
+  the prior window has data but is thin, the delta is shown with its sample size and a
+  "small sample" caveat, not suppressed.
 - `unknown`, `other`, null, and unclassified records are not silently converted into a known
-  role, title, skill, company, or location.
+  role, title, skill, company, or location. `other`'s own year-on-year trend is never
+  presented as a market signal (it tracks sourcing breadth, not the market).
 - The story must distinguish "no rows exist" from "rows exist but this field is not yet
   populated".
 - The response includes a provenance entry naming the queried platform tables/aggregates and
