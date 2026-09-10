@@ -4,7 +4,7 @@ date: 2026-09-10
 trigger-type: stakeholder-request
 change-type: visual-change, ux-change
 outcome: understand-market-health-before-searching
-status: triaged
+status: in-progress
 ---
 
 # Change Request: A visual standard every data story must meet
@@ -54,8 +54,10 @@ Every story, on open, is a short **composed piece**, not a report:
 3. **Chart-first** — the visual carries the point; prose is a caption, not the content.
 4. **Consistent rhythm** — the same vertical spacing, the same block anatomy (heading →
    visual → honesty qualifier), the same validated palette and type scale across every story.
-5. **A touch of delight** — subtle, purposeful motion (bars grow in on load, a figure counts
-   up once) within the existing Motion rules. Never gratuitous, never blocking the read.
+5. **Engaging by composition, not motion** (stakeholder call, 2026-09-10) — the "bit of fun"
+   comes from strong visual rhythm, varied elements, chart-first hierarchy and generous
+   spacing. **No entrance animation on data** — the existing Motion rule ("charts render
+   immediately") stands unchanged.
 6. **Honest by construction** — every block keeps its sample-size / coverage qualifier; an
    `insufficient_data` block shows its "not enough data yet" line, never an empty chart.
 7. **De-duplicated** — a story shows the *substance*; it never repeats the "About this
@@ -70,9 +72,9 @@ pass each time.
 | Layer | File | Action |
 |---|---|---|
 | Outcome | `outcomes/understand-market-health-before-searching.md` | review — expected no-change (criteria are about comprehension speed, which this serves); note only |
-| Design Foundations | `design/foundations.md` | review — the paradigm is operator/serious; the *consumer* market-health surface can carry a light "inviting, worth reading" note without a whole new design goal. Update only if that reads as genuinely product-wide. |
+| Design Foundations | `design/foundations.md` | **no-change** (stakeholder call, 2026-09-10) — "engaging / worth finishing" stays scoped to the market-health story surface, not a product-wide design goal. The rationale lives in `visual-design.md`'s new section. |
 | Information Architecture | `design/information-architecture.md` | no-change — no nav or taxonomy change |
-| Visual Design | `design/visual-design.md` | **update** — new "Data Story composition" section under Component Aesthetics: required vocabulary, combination rule, block anatomy, rhythm, the delight/motion allowance, what it rules out |
+| Visual Design | `design/visual-design.md` | **update** — new "Data Story composition" section under Component Aesthetics: required vocabulary, combination rule, block anatomy, rhythm, scoped rationale, what it rules out. **Motion section: no-change** — no entrance animation on data. |
 | Experience Spec | `design/market-health/experience.md` | **update** — Data stories section: a story is chart-first, composed, and engaging *by standard*, not builder discretion |
 | Data Stories Spec | `design/market-health/data-stories.md` | **update** — Catalogue rules: add "Visual standard every story must meet" (a checklist referencing `visual-design.md`); "Future catalogue direction" points to it; Story 1's "Visible answer shape" reframed as the reference implementation of the standard |
 | Frontend Spec | `frontend/specs/market-health/architecture.md` | **update** — the shared component set a story composes from (`RankedBarList`, a story **Figure**, a **Meter/ShareBar**, the framing line), a `DataStoryMessage` "story acceptance checklist", and whether a thin `DataStoryLayout` wrapper is worth extracting |
@@ -82,28 +84,39 @@ pass each time.
 
 ## Execution Plan
 
-- [ ] Step 1: Read the chain — `outcomes/understand-market-health-before-searching.md`,
-      `design/foundations.md` (Design Goals, Paradigm), `design/visual-design.md`
-      (Component Aesthetics, Motion), `design/market-health/experience.md` (Data stories),
-      `design/market-health/data-stories.md`, `frontend/specs/market-health/architecture.md`,
-      and the current `DataStoryMessage.tsx` / `RankedBarList.tsx` (the reference).
-- [ ] Step 2: `design/foundations.md` review (manual) — add a one-line consumer-surface
-      "inviting, worth finishing" note only if it's genuinely product-wide; otherwise record
-      "no-change" with the reasoning.
-- [ ] Step 3: `/new-visual-design` — add the "Data Story composition" standard to
-      `design/visual-design.md` (vocabulary, combination rule, block anatomy, rhythm,
-      delight/motion, rules-out). Bump the version.
-- [ ] Step 4: `/new-experience` — update `design/market-health/experience.md` (Data stories:
-      chart-first, composed, engaging by standard) and `design/market-health/data-stories.md`
-      (Catalogue rules → "Visual standard every story must meet" checklist; Story 1 as the
-      reference implementation; Future direction points to the standard).
+- [x] Step 1: Read the chain (2026-09-10) — outcome, foundations (Paradigm + Design Goals),
+      visual-design (Component Aesthetics + Motion), experience (Data stories), data-stories,
+      frontend spec, `DataStoryMessage.tsx` / `RankedBarList.tsx`. Two decisions taken:
+      **engaging by composition only, no data-entrance motion**; **no foundations change**
+      (scoped to the story surface).
+- [x] Step 2: `design/foundations.md` — **no-change**, per the stakeholder call. Recorded here.
+- [x] Step 3: `/new-visual-design` (2026-09-10) — `design/visual-design.md` → v1.4. New
+      "Data Story composition" section under Component Aesthetics: composed-piece structure
+      (framing line → 3–6 blocks of heading/visual/qualifier), the visual vocabulary table
+      (ranked bar list / Hero Figure / Stat Tile / Meter / Category Share Bar / Trend line),
+      a new **Meter** spec, the ≥2-distinct-forms combination rule, chart-first rule,
+      consistency requirements, scoped rationale (professional audience; not operator
+      surfaces; not a product-wide goal), and a story-specific rules-out list. Motion section
+      untouched.
+- [x] Step 4: `/new-experience` (2026-09-10) —
+      - `design/market-health/experience.md` — Data stories section: a story is chart-first
+        AND composed, its look is a standard not the builder's choice, pointer to the
+        visual-design section + the per-story checklist; "Revised 2026-09-10" note; `updated`
+        bumped.
+      - `design/market-health/data-stories.md` — new "Visual standard every story must meet"
+        checklist under Catalogue rules; Story 1's "Visible answer shape" reframed as the
+        reference implementation (with a note that it clears the ≥2-form minimum and future
+        stories should reach for Trend/Share forms); dropped the optional prose "block 6"
+        (provenance lives in the Reasoning Panel); "Future catalogue direction" now requires
+        the standard and notes a single-number/single-list question belongs in the curated
+        engine, not dressed up as a story.
 - [ ] Step 5: `/new-frontend-spec` — update `frontend/specs/market-health/architecture.md`:
-      shared component set, the story acceptance checklist, the `DataStoryLayout` decision,
-      the load-in motion. Decide the `render_hint` question (default: no backend change).
-- [ ] Step 6: `/new-backend-spec` — only if Step 5 decides `render_hint` is needed.
+      shared component set, the story acceptance checklist, the `DataStoryLayout` decision.
+      Decide the `render_hint` question (default: no backend change).
+- [ ] Step 6: `/new-backend-spec` — only if Step 5 decides `render_hint` is needed (expected: skip).
 - [ ] Step 7: `/implement-frontend` — bring `DataStoryMessage.tsx` to the checklist, extract
-      the shared Figure / Meter components, add subtle load-in motion, verify against the
-      running story and the welcome (no duplication). `npm run build` + `tsc`.
+      the shared Figure / Meter components, verify against the running story and the welcome
+      (no duplication). `npm run build` + `tsc`.
 - [ ] Step 8: Commit + push; mark `complete` when specs and the shipped story match.
 
 ## Decision Log
@@ -119,6 +132,12 @@ pass each time.
   carry enough for the frontend to pick a visual form per a documented convention. A
   `render_hint` field is only added if the frontend spec proves it's needed for consistency —
   not upfront.
-- 2026-09-10: "A bit fun" is scoped to *subtle, purposeful* motion + a strong visual rhythm,
-  staying inside `visual-design.md`'s existing Motion rules and the product's serious
-  intelligence-tool character. Not animations for their own sake.
+- 2026-09-10 (stakeholder): **"A bit fun" comes from composition, not motion.** The
+  visual-design Motion section already bans entrance animation on data ("the user is
+  processing data under stress") — that stays. Engagement is delivered by chart-first
+  hierarchy, a varied element mix, consistent rhythm, and generous spacing. No count-ups, no
+  bars growing in.
+- 2026-09-10 (stakeholder): **No foundations change.** "Engaging / worth finishing" is scoped
+  to the market-health story surface (a professional audience, not an operator), documented
+  in `visual-design.md`'s new section — it does not become a product-wide design goal and
+  does not extend to operator surfaces.

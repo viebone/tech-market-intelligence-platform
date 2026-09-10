@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.3
+version: 1.4
 status: active
 created: 2026-06-21
-updated: 2026-09-06
+updated: 2026-09-10
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -301,6 +301,84 @@ labels:        every row is directly labelled with its value (a short list, so t
 zero/empty:    a list with no data renders its section's "not enough data yet" line,
                never an empty track
 ```
+
+### Data Story composition (added 2026-09-10 — `changes/2026-09-10-story-visual-standard.md`)
+
+The standard **every data-story renderer must follow**, so a new catalogue entry looks and
+reads like the last one shipped ("What we know about the market") without a bespoke design
+pass. A data story is the fixed-structure, no-model answer a catalogue entry produces when
+its Task Panel item is selected (`design/market-health/data-stories.md`).
+
+**Why this surface gets composition polish.** The market-health story surface faces a
+*professional audience* deciding whether the market is worth engaging — not an operator
+supervising a pipeline. A story people find inviting is a story they finish, so they get the
+market read (`outcomes/understand-market-health-before-searching.md`). This rationale is
+**scoped to data stories and the Welcome**. It does not extend to operator surfaces (admin
+dashboard, reasoning panels), it does not relax any Motion rule, and it is not a product-wide
+design goal.
+
+**A story is a composed piece, not a report.** In order:
+
+1. **Framing line** — one sentence naming what's being summarised. `text-sm leading-relaxed
+   text-gray-300`. Numbers appear only as context here, never as the point. Not a heading.
+2. **3–6 blocks**, each with the same anatomy:
+   ```
+   heading   text-sm font-semibold text-gray-200        (what this block answers)
+   visual    one element from the vocabulary below      (carries the point)
+   qualifier text-xs text-gray-500, mt-2                 (sample size / coverage caveat)
+   ```
+   A block is separated from the next by `border-t border-gray-800 pt-4` — the same divider
+   rhythm the reference story uses. The whole story is wrapped `space-y-5`.
+
+**Visual vocabulary** — a block's `visual` is one of these, never free prose:
+
+| Element | Use it for | Spec |
+|---|---|---|
+| **Ranked bar list** | a "top N" magnitude comparison (roles, skills, locations) | "Ranked bar list", above |
+| **Hero Figure** | the single number the story leads with — **at most one per story** | "Hero Figure" (Entry-point components), above |
+| **Stat Tile** | a supporting number beside/below the Hero Figure | "Stat Tile", above |
+| **Meter** | one share as a part-to-whole bar (e.g. "6% of postings state a salary") | below |
+| **Category Share Bar** | a part-to-whole split across the 3 tracked Role Categories | "Category Share Bar", above |
+| **Trend line** | a value over time, where the block's data is genuinely time-series | Chart Specification, `design/market-health/experience.md` (compact variant) |
+
+**Meter** (new here):
+```
+figure:   the share as a percentage — text-3xl font-bold text-gray-100, with a
+          text-sm text-gray-400 caption beside it ("of postings state a salary range")
+track:    h-2 w-full rounded-full bg-gray-800
+fill:     h-full rounded-full bg-indigo-500, width = the share (min 1% so it's visible)
+below:    one text-sm text-gray-400 line stating the complement plainly
+          ("The other 94% don't disclose compensation.")
+```
+
+**Combination rule.** At least **two distinct visual forms** across a story (3+ preferred) —
+a story that is five ranked bar lists in a row is under-composed. Where a form repeats, each
+instance stays visually distinct through its heading and values, and the author should check
+whether a different form fits some of the data better (a share where it's part-to-whole, a
+trend where it's time-series).
+
+**Chart-first.** The visual carries the point; the heading and qualifier are labels, not the
+content. No block is prose-only except the framing line.
+
+**Consistent across every story:** the block anatomy and divider rhythm above; the validated
+palette (magnitude = one muted hue by length; categorical = only the three role accents);
+the type scale in this table; `space-y-5` outer rhythm. A reader should recognise "this is a
+data story" before reading a word.
+
+**Rules out** (in addition to the product-wide list at the end of this doc):
+- A story that is one undifferentiated block, or all prose.
+- A block rendered as an empty chart — an `insufficient_data` block shows its "not enough
+  data yet" line (`design/market-health/data-stories.md` — Honesty and empty states), never
+  an empty track.
+- Repeating the "About this platform" welcome's *inventory* (job count, company count,
+  collection start, role-category split). The welcome carries inventory; a story carries
+  substance. No figure appears in both.
+- More than one Hero Figure per story.
+- A new accent hue, or any entrance animation on the data (Motion rules unchanged).
+
+**Reference implementation:** `market-data-briefing` (`DataStoryMessage.tsx`) — framing line
+→ roles being hired (ranked bars) → what employers ask for (ranked bars, must-have emphasised)
+→ pay transparency (Hero Figure + Meter) → where the roles are (ranked bars).
 
 ### Reasoning Panel toggle — "View thinking / Hide thinking"
 

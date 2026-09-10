@@ -43,6 +43,35 @@ router, source adapter interface, or frontend conversation shell. It also must n
 changing the Welcome (below) — the Welcome reads this catalogue at request time, so a new
 entry here appears there automatically.
 
+## Visual standard every story must meet
+
+Added 2026-09-10 — `changes/2026-09-10-story-visual-standard.md`. So a new catalogue entry
+looks and reads like the last one shipped without a bespoke design pass. The full aesthetic
+is `design/visual-design.md` — Data Story composition; this is the checklist a new entry's
+**Visible answer shape** must satisfy:
+
+- [ ] Opens with a **framing line** — one sentence naming what's summarised, numbers as
+      context only, not a heading.
+- [ ] **3–6 blocks**, each: a fixed heading → **one** chart or figure → its honesty qualifier
+      (sample size / coverage caveat). No prose-only block except the framing line.
+- [ ] **At least one chart**, and **≥2 distinct visual forms** across the story (3+
+      preferred) — drawn from the vocabulary in `visual-design.md` (Ranked bar list, Hero
+      Figure, Stat Tile, Meter, Category Share Bar, Trend line). A story that is five ranked
+      bar lists in a row is under-composed.
+- [ ] **Chart-first** — the visual carries the point; heading and qualifier are labels.
+- [ ] **At most one Hero Figure.**
+- [ ] Consistent block anatomy, divider rhythm, palette (one muted hue for magnitude; only
+      the three role accents for categorical), and type scale — identical across every story.
+- [ ] Every block keeps its honesty qualifier. An `insufficient_data` block shows its "not
+      enough data yet" line (Honesty and empty states, below), never an empty chart.
+- [ ] **No inventory duplication of the welcome** — job count, company count, collection
+      start, role-category split all belong to "About this platform". A story shows
+      substance; no figure appears in both.
+- [ ] No visible source-adapter names, database fields, query names, model names, or
+      extraction mechanics — those stay in the Reasoning Panel.
+- [ ] Engaging by composition only — no entrance animation on the data
+      (`visual-design.md` — Motion, unchanged).
+
 ## Relationship to the Welcome
 
 Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`. **"About this
@@ -75,17 +104,20 @@ question or commit to a search.
 
 ### Visible answer shape
 
-Revised 2026-09-06 (`changes/2026-09-06-market-story-visual-and-dedup.md`) — **chart-first,
-and de-duplicated from the "About this platform" welcome.**
+Revised 2026-09-06 (`changes/2026-09-06-market-story-visual-and-dedup.md`); this story is the
+**reference implementation** of the "Visual standard every story must meet" checklist above
+(2026-09-10). It shows what a well-composed catalogue entry looks like — chart-first,
+de-duplicated from the "About this platform" welcome, a mix of visual forms.
 
 The welcome (`design/market-health/experience.md` — Opening Welcome) already shows the
 *inventory*: how many job openings, how many companies, since when, the role-category split,
 the largest role group. **This story shows none of that again.** It moves past the inventory
 to the market's shape, and every block is a chart, not a paragraph.
 
-Fixed order; values live; headings fixed. No source adapter names, database fields, query
-names, model names, or extraction mechanics in the visible story — those stay in the
-Reasoning Panel.
+Fixed order; values live; headings fixed. Two distinct visual forms — Ranked bar list (×3)
+and a Hero Figure + Meter (×1) — clears the ≥2 minimum; a future story with time-series or
+part-to-whole data should reach for a Trend line or Category Share Bar rather than adding
+more ranked lists.
 
 1. **Framing line** — one sentence naming what's being summarised (e.g. "What the ~N tracked
    Engineer, Product, and Design postings are hiring for"). Numbers appear only as context
@@ -97,14 +129,15 @@ Reasoning Panel.
    raw titles are too fragmented to rank meaningfully (`unknown`/`other` stay excluded, not
    relabelled).
 3. **What employers ask for** — top skill groups, Ranked bar list, must-have rows emphasised.
-4. **Pay transparency** — one figure + a bar: the share of postings that state a salary
-   (structured + parsed), with "the rest don't disclose" stated plainly.
+4. **Pay transparency** — a **Hero Figure + Meter** (`design/visual-design.md`): the share of
+   postings that state a salary (structured + parsed), with "the rest don't disclose" stated
+   plainly. The story's one Hero Figure.
 5. **Where the roles are** — top locations (country or city), Ranked bar list, carrying the
    "only N postings have a normalised location" caveat.
-6. Optional, low priority — the job boards the data comes from, one line.
 
 Every block keeps its honesty qualifier (sample size, coverage caveat). A block with too
-little data shows its "not enough data yet" line, not an empty chart.
+little data shows its "not enough data yet" line, not an empty chart. Which job boards the
+data came from is provenance — it lives in the Reasoning Panel, not as a visible block.
 
 ### Data contract
 
@@ -148,8 +181,14 @@ Panel and Output Panel reference pattern as other market-health outputs.
 ## Future catalogue direction
 
 Later entries can cover narrower questions such as role demand, skills by specialization,
-compensation coverage, source coverage, layoff activity, or market changes over time. New
-ingestion types (company websites, layoff portals, papers, and other sources) add source
+compensation coverage, source coverage, layoff activity, or market changes over time. **Every
+one must meet "Visual standard every story must meet" (above)** — a new entry that can't be
+composed into 3–6 heading/visual/qualifier blocks with a real mix of chart forms is a sign
+the question is too narrow or too broad to be a story, not a reason to relax the standard. A
+question well suited to a single number or a single list is better answered by the curated
+instant-answer engine (`backend/specs/market-health/api.md`) than dressed up as a story.
+
+New ingestion types (company websites, layoff portals, papers, and other sources) add source
 adapters and source-specific aggregates; they do not change the meaning of this story's
 source-aware contract. A future story may use those sources only after its own data contract
 defines what they can support and how provenance is shown.
