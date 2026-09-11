@@ -86,3 +86,137 @@ def insert_new_events(source: str, events: list[FetchedEmploymentEvent]) -> list
             )
 
     return [eid for eid, _ in new]
+
+
+# ---------------------------------------------------------------------------
+# Read/aggregate functions — pipeline-visibility admin dashboard.
+# See backend/specs/pipeline-visibility/api.md — GET /admin/employment-events,
+# GET /admin/employment-events/{event_id}, and the Overview
+# employment_events_summary block. Read-only; never joined to raw_postings or
+# any other job-postings table (backend/EMPLOYMENT_EVENTS.md's core rule).
+# ---------------------------------------------------------------------------
+
+_SORT_COLUMNS = {"event_date", "company_raw", "source", "event_type", "jobs_affected", "ingested_at"}
+
+_LIST_COLUMNS = (
+    "id, source, company_raw, event_type, direction, event_date, "
+    "jobs_affected, country, confidence"
+)
+
+_DETAIL_COLUMNS = (
+    "id, source, source_ref, source_url, company_raw, sector, country, region, "
+    "event_date, event_type, direction, jobs_affected, confidence, source_type, "
+    "superseded_by, raw_response, ingested_at, created_at"
+)
+
+
+def list_events(
+    source: str | None = None,
+    event_type: str | None = None,
+    direction: str | None = None,
+    confidence: str | None = None,
+    country: str | None = None,
+    sort: str = "event_date",
+    dir: str = "desc",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    """Filtered/sorted/paginated employment_events rows, for
+    GET /admin/employment-events. Same closed-set validation discipline as
+    raw_postings.list_postings()."""
+    if sort not in _SORT_COLUMNS:
+        sort = "event_date"
+    order_dir = "ASC" if dir == "asc" else "DESC"
+
+    conditions: list[str] = []
+    params: list = []
+    for column, value in (
+        ("source", source), ("event_type", event_type),
+        ("direction", direction), ("confidence", confidence), ("country", country),
+    ):
+        if value:
+            conditions.append(f"{column} = %s")
+            params.append(value)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn:
+        total = conn.execute(
+            f"SELECT count(*) FROM employment_events {where_clause}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT {_LIST_COLUMNS} FROM employment_events
+            {where_clause}
+            ORDER BY {sort} {order_dir} NULLS LAST
+            LIMIT %s OFFSET %s
+            """,
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+        columns = [c.strip() for c in _LIST_COLUMNS.split(",")]
+        events = [dict(zip(columns, row)) for row in rows]
+
+    return {"events": events, "total": total}
+
+
+def get_event(event_id: str) -> dict | None:
+    """Full stored record for one employment event, for
+    GET /admin/employment-events/{event_id}. Returns None if not found."""
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT {_DETAIL_COLUMNS} FROM employment_events WHERE id = %s", (event_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        columns = [c.strip() for c in _DETAIL_COLUMNS.split(",")]
+        return dict(zip(columns, row))
+
+
+def get_distinct_countries() -> list[str]:
+    """Distinct non-null countries present in employment_events, for the
+    Employment Events filter dropdown — same "build filter options from real
+    stored values" pattern as classification.get_distinct_specializations()."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT country FROM employment_events WHERE country IS NOT NULL ORDER BY country"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_summary() -> dict:
+    """Overview's employment_events_summary block — total count, per-source
+    breakdown (count, last ingested, cursor position when the source is
+    streaming-style), and per-direction split. See backend/specs/
+    pipeline-visibility/api.md — Business Logic — Employment events summary."""
+    from employment_events.base import SOURCE_DISPLAY_NAMES
+
+    with get_connection() as conn:
+        total = conn.execute("SELECT count(*) FROM employment_events").fetchone()[0]
+
+        source_rows = conn.execute(
+            "SELECT source, count(*), max(ingested_at) FROM employment_events GROUP BY source"
+        ).fetchall()
+        cursors = dict(
+            conn.execute("SELECT source, cursor FROM employment_event_cursors").fetchall()
+        )
+        by_source = [
+            {
+                "source": source,
+                "display_name": SOURCE_DISPLAY_NAMES.get(source, source),
+                "count": count,
+                "last_ingested_at": last_ingested_at,
+                "cursor": cursors.get(source),
+            }
+            for source, count, last_ingested_at in source_rows
+        ]
+
+        direction_counts = dict(
+            conn.execute(
+                "SELECT direction, count(*) FROM employment_events GROUP BY direction"
+            ).fetchall()
+        )
+        by_direction = [
+            {"direction": d, "count": direction_counts.get(d, 0)}
+            for d in ("contraction", "expansion")
+        ]
+
+    return {"total": total, "by_source": by_source, "by_direction": by_direction}

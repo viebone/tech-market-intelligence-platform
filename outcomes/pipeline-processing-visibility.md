@@ -30,6 +30,15 @@ This is a distinct audience and need from `understand-market-health-before-searc
 outcome is job seekers reading aggregate market trends; this one is the person operating the
 platform verifying and drilling into what the system actually did, per run and per posting.
 
+**Extended 2026-09-11** (`changes/2026-09-11-employment-events-admin-visibility.md`): the
+platform now runs a second, independent ingestion pipeline — employment events (layoffs,
+closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements; see
+`backend/EMPLOYMENT_EVENTS.md`). The same operator need applies to it: seeing what's been
+ingested, from which sources, without querying the database directly. This outcome now covers
+both pipelines, read independently — visibility into one is not evidence about the other,
+matching the pipelines' own data independence
+(`changes/2026-09-11-employment-events-no-company-matching.md`).
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)
@@ -40,6 +49,9 @@ platform verifying and drilling into what the system actually did, per run and p
   touched it, and any errors encountered
 - The operator can tell, without querying the database, whether a batch of postings is fully
   processed, partially processed, or failed
+- The operator can see, at a glance, how many employment events exist per source, per
+  direction (contraction/expansion), and when each source last ingested — and drill into any
+  single event's full stored record
 - Only the operator — not end users or the public — can access this view
 - Using this view answers "what has the pipeline actually done" faster than writing a
   one-off SQL query would

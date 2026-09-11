@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Employment Events — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Employment Events</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  A separate pipeline from job postings — never joined or cross-referenced with them.
+  See <a class="row-link" href="/admin/">Overview</a> for the summary, or
+  <code>backend/EMPLOYMENT_EVENTS.md</code> for the full data model.
+</div>
+
+<form class="filter-form" method="get" action="/admin/employment-events">
+  <div>
+    <label for="source">Source</label>
+    <select id="source" name="source">
+      <option value="">All</option>
+      {% for v in filter_options.sources %}
+      <option value="{{ v }}" {{ 'selected' if filters.source == v }}>{{ filter_options.source_display_names.get(v, v) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="event_type">Event Type</label>
+    <select id="event_type" name="event_type">
+      <option value="">All</option>
+      {% for v in filter_options.event_types %}
+      <option value="{{ v }}" {{ 'selected' if filters.event_type == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="direction">Direction</label>
+    <select id="direction" name="direction">
+      <option value="">All</option>
+      {% for v in filter_options.directions %}
+      <option value="{{ v }}" {{ 'selected' if filters.direction == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="confidence">Confidence</label>
+    <select id="confidence" name="confidence">
+      <option value="">All</option>
+      {% for v in filter_options.confidences %}
+      <option value="{{ v }}" {{ 'selected' if filters.confidence == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="country">Country</label>
+    <select id="country" name="country">
+      <option value="">All</option>
+      {% for v in filter_options.countries %}
+      <option value="{{ v }}" {{ 'selected' if filters.country == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/employment-events">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching event{{ '' if total == 1 else 's' }}</div>
+
+{% if events %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th><a href="{{ sort_links.event_date }}">Event Date{% if sort == 'event_date' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.source }}">Source{% if sort == 'source' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.company_raw }}">Company{% if sort == 'company_raw' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.event_type }}">Event Type{% if sort == 'event_type' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Direction</th>
+      <th><a href="{{ sort_links.jobs_affected }}">Jobs Affected{% if sort == 'jobs_affected' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Country</th>
+      <th>Confidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.event_date }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ filter_options.source_display_names.get(e.source, e.source) }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.company_raw }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.event_type }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">
+        {% if e.direction == 'contraction' %}<span class="badge error">Contraction</span>
+        {% else %}<span class="badge success">Expansion</span>{% endif %}
+      </a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.jobs_affected if e.jobs_affected is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.country or '—' }}</a></td>
+      <td><a class="row-link" href="/admin/employment-events/{{ e.id }}">{{ e.confidence }}</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/employment-events?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/employment-events?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No employment events match these filters.</div></div>
+{% endif %}
+{% endblock %}

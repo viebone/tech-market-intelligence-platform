@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ event.id }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/employment-events">← Back to Employment Events</a>
+<h1>{{ event.company_raw }}</h1>
+
+<div class="card">
+  <h2>Event</h2>
+  <div class="field-row"><div class="field-label">ID</div><div class="field-value">{{ event.id }}</div></div>
+  <div class="field-row"><div class="field-label">Source</div><div class="field-value">{{ event.source_display_name }}</div></div>
+  <div class="field-row"><div class="field-label">Source ref</div><div class="field-value">{{ event.source_ref }}</div></div>
+  <div class="field-row"><div class="field-label">Source URL</div><div class="field-value">
+    {% if event.source_url %}<a href="{{ event.source_url }}" target="_blank" rel="noopener">{{ event.source_url }}</a>{% else %}—{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Company (as reported)</div><div class="field-value">{{ event.company_raw }}</div></div>
+  <div class="field-row"><div class="field-label">Sector</div><div class="field-value">{{ event.sector or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Country</div><div class="field-value">{{ event.country or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Region</div><div class="field-value">{{ event.region or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Event date</div><div class="field-value">{{ event.event_date }}</div></div>
+  <div class="field-row"><div class="field-label">Event type</div><div class="field-value">{{ event.event_type }}</div></div>
+  <div class="field-row"><div class="field-label">Direction</div><div class="field-value">
+    {% if event.direction == 'contraction' %}<span class="badge error">Contraction</span>
+    {% else %}<span class="badge success">Expansion</span>{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Jobs affected</div><div class="field-value">{{ event.jobs_affected if event.jobs_affected is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Confidence</div><div class="field-value">{{ event.confidence }}</div></div>
+  <div class="field-row"><div class="field-label">Source type</div><div class="field-value">{{ event.source_type }}</div></div>
+  <div class="field-row"><div class="field-label">Superseded by</div><div class="field-value">
+    {% if event.superseded_by %}<a class="row-link" href="/admin/employment-events/{{ event.superseded_by }}">{{ event.superseded_by }}</a>{% else %}—{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Ingested at</div><div class="field-value">{{ event.ingested_at }}</div></div>
+  <div class="field-row"><div class="field-label">Created at</div><div class="field-value">{{ event.created_at }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Raw Source Response</h2>
+  <pre class="raw-json">{{ event.raw_response_json }}</pre>
+</div>
+{% endblock %}

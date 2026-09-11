@@ -101,6 +101,7 @@ h2 { font-size: 14px; font-weight: 500; color: #f3f4f6; margin: 0 0 8px; }
 .bar-fill.neutral { background: #d1d5db; }
 .bar-fill.flag { background: #d97706; }      /* amber-600 — Stable / neutral */
 .bar-fill.success { background: #059669; }   /* emerald-600 — Rising / positive */
+.bar-fill.error { background: #dc2626; }      /* red-600 — Declining / negative — added 2026-09-11 for the Employment Events contraction/expansion split, same token badge.error already uses */
 .bar-fill.role-designer { background: #6366f1; }
 .bar-fill.role-product-manager { background: #a855f7; }
 .bar-fill.role-engineer { background: #10b981; }

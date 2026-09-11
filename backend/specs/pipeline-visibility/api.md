@@ -69,6 +69,13 @@ backlog & batch status line and per-run batch activity per
 `design/pipeline-visibility/experience.md`. See that spec for full field
 definitions — not repeated here.
 
+**Added 2026-09-11** (`changes/2026-09-11-employment-events-admin-visibility.md`): also
+READ-only over `employment_events` and `employment_event_cursors`, both owned and fully
+documented by `backend/EMPLOYMENT_EVENTS.md` (schema, immutability, dedup, per-source field
+coverage) — not repeated here. This dashboard never joins either table to any job-postings
+table, matching the product-wide rule that employment events are independent of the
+job-postings pipeline (`changes/2026-09-11-employment-events-no-company-matching.md`).
+
 **One additive column, needed to honestly answer the experience spec's "which ingestion run
 touched it" requirement (`design/pipeline-visibility/experience.md`, User Flow step 5):**
 
@@ -194,9 +201,16 @@ breakdown, requirements coverage, and the most recent ingestion run, per
     "batch": { "state": "running", "item_count": 500, "submitted_at": "2026-09-03T06:05:00Z", "est_cost_usd": 0.42, "expected_by": "2026-09-04T06:05:00Z" }
   },
   "skill_group_distribution": [{ "value": "Frontend", "count": 340 }, "..."],
-  "latest_run": { "id": 412, "started_at": "2026-08-15T06:00:00Z", "status": "success", "total_fetched": 340, "total_inserted": 12, "total_classified": 1314, "budget_reached": true, "requirements_phase": "ok", "batch_collected": 0, "batch_submitted_id": 51 }
+  "latest_run": { "id": 412, "started_at": "2026-08-15T06:00:00Z", "status": "success", "total_fetched": 340, "total_inserted": 12, "total_classified": 1314, "budget_reached": true, "requirements_phase": "ok", "batch_collected": 0, "batch_submitted_id": 51 },
+  "employment_events_summary": {
+    "total": 79,
+    "by_source": [{ "source": "companies_house_insolvency", "display_name": "UK Companies House (insolvency register)", "count": 45, "last_ingested_at": "2026-09-11T07:04:00Z", "cursor": "3654082" }, "..."],
+    "by_direction": [{ "direction": "contraction", "count": 79 }, { "direction": "expansion", "count": 0 }]
+  }
 }
 ```
+
+**Added 2026-09-11**: `employment_events_summary` — see Business Logic, below.
 
 `requirements_backlog` (added 2026-09-01, per `design/pipeline-visibility/experience.md`
 — Overview backlog & batch status line):
@@ -302,6 +316,48 @@ without the database, per `design/pipeline-visibility/experience.md` — Edge Ca
 
 ---
 
+### GET /admin/employment-events
+**Added 2026-09-11** (`changes/2026-09-11-employment-events-admin-visibility.md`).
+**Purpose**: Filterable, sortable, paginated employment-events table, per
+`design/pipeline-visibility/experience.md` User Flow step 8. Same List pattern as
+`GET /admin/postings`, applied to `employment_events` — never joined to any
+job-postings table (Data Models, above).
+**Auth required**: yes
+**Query params**:
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `source` | `str` | none | Exact match — closed set, `employment_events.base.SOURCE_DISPLAY_NAMES` keys |
+| `event_type` | `str` | none | Exact match — closed set, `EVENT_TYPES` |
+| `direction` | `"contraction" \| "expansion"` | none | Exact match |
+| `confidence` | `"confirmed" \| "reported"` | none | Exact match |
+| `country` | `str` | none | Exact match against normalized `country` |
+| `sort` | `str` | `"event_date"` | Whitelisted closed set: `event_date`, `company_raw`, `source`, `event_type`, `jobs_affected`, `ingested_at` — same closed-set discipline as `GET /admin/postings`' `sort` |
+| `dir` | `"asc" \| "desc"` | `"desc"` | |
+| `page` | `int` | `1` | |
+| `page_size` | `int` | `50` | |
+**Response**: `employment_events.html`, rendered with the filtered/sorted/paginated row list
+(`id`, `source`, `company_raw`, `event_type`, `direction`, `event_date`, `jobs_affected`,
+`country`, `confidence`), active filter chips, total match count, and pagination controls.
+**No display-time filtering of placeholder company names** (unlike the consumer-facing
+Employment Risk story's `is_real_company_name()`) — this view shows the row exactly as
+stored, per `design/pipeline-visibility/experience.md`'s Edge Cases. Each row links to
+`/admin/employment-events/{id}`.
+
+### GET /admin/employment-events/{event_id}
+**Added 2026-09-11**. **Purpose**: Full detail for a single employment event, per
+`design/pipeline-visibility/experience.md` User Flow step 8.
+**Auth required**: yes
+**Response**: `employment_event_detail.html`, rendered with every column of the
+`employment_events` row (`backend/EMPLOYMENT_EVENTS.md` has the full field list) plus
+`raw_response` pretty-printed, same treatment `posting_detail.html` already gives
+`raw_response`. `superseded_by`, when set, links to the superseding event's own detail view.
+**Errors**:
+| Code | Reason |
+|---|---|
+| 404 | No employment event with that id |
+
+---
+
 ## Business Logic
 
 **Auth** — see Auth decision above. `verify_password(plain, hash)` via `passlib[bcrypt]`;
@@ -378,6 +434,25 @@ rather than to validate business data.
 `backend/specs/market-health/api.md`), this needs no cursor-based pagination or
 virtualization; revisit only if that changes materially.
 
+**Employment events summary (added 2026-09-11)** — `employment_events_summary`:
+- `total` — `SELECT count(*) FROM employment_events`.
+- `by_source` — one row per source present in the data (not per registered adapter — a
+  registered-but-never-run adapter simply doesn't appear, which is itself informative, not
+  hidden): `count`, `MAX(ingested_at)` as `last_ingested_at`, `display_name` from
+  `employment_events.base.SOURCE_DISPLAY_NAMES`, and — only when a row exists for that source
+  in `employment_event_cursors` — its `cursor` value verbatim (a polling source like
+  `us_warn`/`sec_edgar_8k` has no cursor row and `cursor` is `null`).
+- `by_direction` — `GROUP BY direction`, always both `contraction` and `expansion` present
+  (zero-filled if a direction has no rows yet, so the dashboard never has to special-case a
+  missing key).
+- This block triggers/schedules nothing — read-only, same as every other Overview block. The
+  employment-events cron service (`backend/railway.employment-events.json`) is entirely
+  independent of this dashboard.
+
+**Employment events query construction (added 2026-09-11)** — same closed-set-validated
+`WHERE`/`ORDER BY` discipline as Postings, above, applied to `source`, `event_type`,
+`direction`, `confidence`, `country`, and the `sort` whitelist.
+
 ---
 
 ## External Dependencies
@@ -414,6 +489,10 @@ already produced by the existing pipeline.
   `get_classification_distribution()`, `get_taxonomy_version_breakdown()`;
   `requirements.py` gains `get_requirements_coverage()`, `get_skill_group_distribution()`;
   `ingestion_runs.py` gains `list_runs(page, page_size)`, `get_run(run_id)`.
+  **Added 2026-09-11**: `employment_events_storage.py` (the existing module for this table —
+  no new module, same "one module per table" rule) gains `list_events(filters, sort, dir,
+  page, page_size)`, `get_event(event_id)`, `get_summary()` — read-only additions alongside
+  its existing `insert_new_events()`/`existing_ids()` write-path functions.
 - **Migrations** (both in `db.py`'s `init_schema()`, same idempotent-guarded pattern as every
   existing migration there):
   `ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS ingestion_run_id INTEGER REFERENCES

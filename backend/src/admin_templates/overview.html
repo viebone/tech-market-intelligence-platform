@@ -140,5 +140,45 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <h2>Employment Events</h2>
+  {% set ees = employment_events_summary %}
+  {% if ees.total == 0 %}
+    <div class="stat-label">No employment events ingested yet — this is a separate pipeline
+      from job postings, never joined to it. See <a class="row-link" href="/admin/employment-events">Employment Events</a>.</div>
+  {% else %}
+    <div class="stat-value">{{ ees.total }}</div>
+    <div class="stat-label">Total employment events (independent of job postings)</div>
+
+    <div style="margin-top: 12px;">
+      {% for row in ees.by_source %}
+      <div class="field-row">
+        <div class="field-label">{{ row.display_name }}</div>
+        <div class="field-value">
+          {{ row.count }} event{{ '' if row.count == 1 else 's' }}
+          {% if row.last_ingested_at %} · last ingested {{ row.last_ingested_at }}{% endif %}
+          {% if row.cursor %} · cursor {{ row.cursor }}{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="bar-row" style="margin-top: 12px;">
+      {% set contraction = (ees.by_direction | selectattr('direction', 'equalto', 'contraction') | first).count %}
+      <div class="bar-label">Contraction</div>
+      <div class="bar-track"><div class="bar-fill error" style="width: {{ (contraction / ees.total * 100) | round(1) }}%;"></div></div>
+      <div class="bar-count">{{ contraction }}</div>
+    </div>
+    <div class="bar-row">
+      {% set expansion = (ees.by_direction | selectattr('direction', 'equalto', 'expansion') | first).count %}
+      <div class="bar-label">Expansion</div>
+      <div class="bar-track"><div class="bar-fill success" style="width: {{ (expansion / ees.total * 100) | round(1) }}%;"></div></div>
+      <div class="bar-count">{{ expansion }}</div>
+    </div>
+
+    <a class="btn-ghost" style="margin-top: 8px;" href="/admin/employment-events">View all employment events →</a>
+  {% endif %}
+</div>
+
 {% endif %}
 {% endblock %}

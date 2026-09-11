@@ -34,9 +34,11 @@ from fastapi.templating import Jinja2Templates
 
 import batch_jobs
 import classification
+import employment_events_storage
 import ingestion_runs
 import raw_postings
 import requirements
+from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
 from admin_auth import (
     SESSION_COOKIE_NAME,
@@ -153,6 +155,7 @@ def overview(request: Request):
             "taxonomy_version_breakdown": classification.get_taxonomy_version_breakdown(),
             "skill_group_distribution": requirements.get_skill_group_distribution(),
             "latest_run": runs[0] if runs else None,
+            "employment_events_summary": employment_events_storage.get_summary(),
         },
     )
 
@@ -289,6 +292,90 @@ def run_detail(request: Request, run_id: int):
     return templates.TemplateResponse(
         request, "run_detail.html",
         {"active_page": "runs", "run": run, "submitted_batch": submitted_batch},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Employment events — added 2026-09-11, changes/2026-09-11-employment-events-
+# admin-visibility.md. Read-only over employment_events/employment_event_cursors;
+# never joined to raw_postings or any other job-postings table — see
+# backend/EMPLOYMENT_EVENTS.md and backend/specs/pipeline-visibility/api.md.
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/employment-events", dependencies=[Depends(require_admin_session)])
+def employment_events_list(
+    request: Request,
+    source: str | None = None,
+    event_type: str | None = None,
+    direction: str | None = None,
+    confidence: str | None = None,
+    country: str | None = None,
+    sort: str = "event_date",
+    dir: str = "desc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = {
+        "source": source, "event_type": event_type, "direction": direction,
+        "confidence": confidence, "country": country,
+    }
+    result = employment_events_storage.list_events(**filters, sort=sort, dir=dir, page=page, page_size=page_size)
+
+    active_filters = _clean_query(filters)
+    page_base_query = urlencode({**active_filters, "sort": sort, "dir": dir})
+
+    active_filter_chips = [
+        {
+            "label": f"{key.replace('_', ' ')}: {value}",
+            "remove_href": "/admin/employment-events?" + urlencode({k: v for k, v in active_filters.items() if k != key}),
+        }
+        for key, value in active_filters.items()
+    ]
+
+    sort_links = {}
+    for column in ("event_date", "company_raw", "source", "event_type", "jobs_affected"):
+        next_dir = ("asc" if dir == "desc" else "desc") if sort == column else "desc"
+        sort_links[column] = "/admin/employment-events?" + urlencode({**active_filters, "sort": column, "dir": next_dir})
+
+    total_pages = max(1, math.ceil(result["total"] / page_size))
+
+    return templates.TemplateResponse(
+        request, "employment_events.html",
+        {
+            "active_page": "employment_events",
+            "events": result["events"],
+            "total": result["total"],
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "sort": sort,
+            "dir": dir,
+            "filters": filters,
+            "active_filter_chips": active_filter_chips,
+            "page_base_query": page_base_query,
+            "sort_links": sort_links,
+            "filter_options": {
+                "sources": sorted(SOURCE_DISPLAY_NAMES.keys()),
+                "source_display_names": SOURCE_DISPLAY_NAMES,
+                "event_types": sorted(EVENT_TYPES),
+                "directions": ["contraction", "expansion"],
+                "confidences": ["confirmed", "reported"],
+                "countries": employment_events_storage.get_distinct_countries(),
+            },
+        },
+    )
+
+
+@app.get("/admin/employment-events/{event_id:path}", dependencies=[Depends(require_admin_session)])
+def employment_event_detail(request: Request, event_id: str):
+    event = employment_events_storage.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="No employment event with that id")
+    event["raw_response_json"] = json.dumps(event["raw_response"], indent=2, default=str)
+    event["source_display_name"] = SOURCE_DISPLAY_NAMES.get(event["source"], event["source"])
+    return templates.TemplateResponse(
+        request, "employment_event_detail.html",
+        {"active_page": "employment_events", "event": event},
     )
 
 

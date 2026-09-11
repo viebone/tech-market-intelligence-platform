@@ -53,8 +53,8 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs. Always visible. |
-| Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's detail. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, **Employment Events** (added 2026-09-11 — `changes/2026-09-11-employment-events-admin-visibility.md`). Always visible. |
+| Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
 
@@ -113,6 +113,16 @@ data read directly from the pipeline's own stored results.
 7. The operator refreshes any view on demand to see the latest state. Nothing here
    auto-updates or streams live — matching `outcomes/pipeline-processing-visibility.md`'s
    explicit "periodic/on-demand refresh is sufficient" scope.
+8. **(Added 2026-09-11.)** Independently of the job-postings pipeline above, the operator can
+   navigate to **Employment Events** from the sidebar to see the employment-events pipeline —
+   a genuinely separate pipeline, never joined or cross-referenced with postings data (per
+   `backend/EMPLOYMENT_EVENTS.md`, the same independence rule the consumer-facing product
+   itself follows). This view shows, at a glance: total events, a breakdown by source and by
+   direction (contraction/expansion), and — per source — when it last ingested anything and,
+   for a streaming source, its current stream position. The operator narrows the events table
+   by source, event type, direction, confidence, or country, and clicks a row to see that
+   event's full stored record (including the source's raw response, verbatim) — the same
+   List → Detail shape as Postings, applied to a different table.
 
 ---
 
@@ -209,6 +219,8 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator clicks "Refresh" on any view | Re-fetches current view's data; skeleton pulse shown during the fetch; view updates in place |
 | Operator hovers a chart bar/segment | Tooltip shows exact count and percentage for that value |
 | Operator clicks a chart bar for a specific value (e.g. `unknown` Level) | Navigates to Postings, pre-filtered to that exact value |
+| Operator applies a filter on the Employment Events table (source, event type, direction, confidence, country) | Table re-queries and re-renders with the filtered set, same filter-chip/pagination pattern as Postings |
+| Operator clicks an Employment Events row | Navigates to that event's Detail view, showing every stored field and the source's raw response verbatim |
 
 ---
 
@@ -259,6 +271,23 @@ over unchanged. This is the same visual language, applied to a different layout 
   simply had no requirements work to do — the operator can tell "extraction broke" from
   "nothing to extract" without opening the database. (This closes an observability gap
   found during `changes/2026-08-29-chat-free-tier-key-isolation.md`.)
+- **(Added 2026-09-11.) No employment events have ever been ingested for a source, or at
+  all.** Same "No data yet" empty-state pattern as the job-postings pipeline — zero counts and
+  an explanatory message, no chart. A source with zero events reads plainly as "hasn't run
+  yet / found nothing," never as an error.
+- **(Added 2026-09-11.) An employment event's `company_raw` is a bare id, not a real company
+  name** (see `backend/EMPLOYMENT_EVENTS.md` — Companies House Streaming API rows that predate
+  the placeholder-name fix). The Detail view shows the stored value exactly as-is — it is a
+  read-only mirror of the database, so it never re-applies the consumer-facing product's
+  `is_real_company_name()` display filter to hide it. This is a deliberate difference from the
+  consumer-facing story: the admin dashboard's whole purpose is showing operators what is
+  actually stored, including known data-quality gaps.
+- **(Added 2026-09-11.) No ingestion-run history exists for employment events**, unlike job
+  postings' `ingestion_runs` table — each adapter re-fetches a trailing window (or resumes a
+  stream position) on every scheduled run, with no per-run row recorded anywhere. The
+  Employment Events view does not pretend otherwise: it shows a per-source "last ingested at"
+  timestamp (derived from the events themselves) and, for a streaming source, its current
+  cursor position — not a fabricated run history.
 
 ---
 
