@@ -4,7 +4,7 @@ date: 2026-09-11
 trigger-type: stakeholder-request
 change-type: api-change
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Eurofound ERM goes live — real EU/Norway employment-event coverage
@@ -46,7 +46,7 @@ WARN's per-state-scraper -> WARN Firehose revision and SEC EDGAR's addition, bot
 - [x] Step 3: Implement — real `fetch()` in `eurofound_erm.py`, extend `COUNTRY_NAME_TO_ISO2`
 - [x] Step 4: Verify against real live data before any production write (full CSV fetched, parsed, mapped — coverage/skip rates checked; found and fixed a real data quirk — 252 rows carry the literal string `"None"` for headcount, not an empty field)
 - [x] Step 5: Ran real ingestion against production — 31,786 new rows inserted, re-run confirmed idempotent (0 new); `market_stories.build_employment_risk_overview()` sanity-checked against the new data (real EU company/country rankings — Bosch, Nestlé, Thales, Rheinmetall; Germany/France/Spain/Poland/Italy). Updated `backend/EMPLOYMENT_EVENTS.md` and `DATA_SOURCES.md` with real counts.
-- [ ] Step 6: Commit, push, verify live (admin dashboard shows the new total + `eurofound_erm` row; weekly cron will no-op cleanly on next run since all rows are already seen)
+- [x] Step 6: Committed (`b707d26`), pushed, all 5 Railway services (job-sync, web, api, employment-events, romantic-presence) redeployed successfully on this commit; admin dashboard confirmed still correctly auth-gated post-deploy (`/admin/employment-events` → 303)
 
 ## Decision Log
 - 2026-09-11: Full-file refetch every run, not a trailing date window — the export endpoint is
