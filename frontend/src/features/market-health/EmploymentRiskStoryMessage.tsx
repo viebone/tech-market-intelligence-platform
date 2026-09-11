@@ -87,15 +87,27 @@ export function EmploymentRiskStoryMessage({ story }: { story: DataStoryResult }
         />
       </StoryBlock>
 
-      <StoryBlock heading="Companies with the most reported impact" {...blockProps(companiesSection, companyRows.length > 0)}>
+      <StoryBlock
+        heading="Companies with the most reported impact"
+        subtitle="Ranked by jobs reported affected, summed across contraction events in the window."
+        {...blockProps(companiesSection, companyRows.length > 0)}
+      >
         <RankedBarList rows={companyRows} limit={10} />
       </StoryBlock>
 
-      <StoryBlock heading="By country" {...blockProps(countriesSection, countryRows.length > 0)}>
+      <StoryBlock
+        heading="By country"
+        subtitle="Jobs reported affected, summed by country, over the trailing 12 months."
+        {...blockProps(countriesSection, countryRows.length > 0)}
+      >
         <RankedBarList rows={countryRows} limit={10} />
       </StoryBlock>
 
-      <StoryBlock heading="By sector" {...blockProps(sectorsSection, sectorRows.length > 0)}>
+      <StoryBlock
+        heading="By sector"
+        subtitle="Jobs reported affected, summed by sector — only events whose source reports one."
+        {...blockProps(sectorsSection, sectorRows.length > 0)}
+      >
         <RankedBarList rows={sectorRows} limit={10} />
       </StoryBlock>
     </article>

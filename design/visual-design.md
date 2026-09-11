@@ -339,11 +339,17 @@ design goal.
 2. **3–6 blocks**, each with the same anatomy:
    ```
    heading   text-sm font-semibold text-gray-200        (what this block answers)
+   subtitle  text-xs text-gray-400, mt-0.5               (what's being measured and its unit —
+                                                           present whenever the heading alone
+                                                           doesn't make that obvious; see Data
+                                                           Legibility, below)
    visual    one element from the vocabulary below      (carries the point)
    qualifier text-xs text-gray-500, mt-2                 (sample size / coverage caveat)
    ```
    A block is separated from the next by `border-t border-gray-800 pt-4` — the same divider
-   rhythm the reference story uses. The whole story is wrapped `space-y-5`.
+   rhythm the reference story uses. The whole story is wrapped `space-y-5`. Subtitle and
+   qualifier read differently on purpose: subtitle states **what the numbers are**, qualifier
+   states **how much to trust them** — never merge the two into one line.
 
 **Visual vocabulary** — a block's `visual` is one of these, never free prose:
 
@@ -376,6 +382,13 @@ multi-year sparkline, not a rolling series.
 ```
 windows:  both date ranges stated in words, once, directly under the block heading —
           text-xs text-gray-500 (e.g. "Sep 2026 – Sep 2027, compared with the year before")
+legend:   one line naming what the two bar colours mean — text-xs text-gray-500, directly
+          below the windows line — e.g. "Lighter bar: a year ago. Solid bar: now." Required
+          whenever the comparison is available (two colours are on screen); omitted in the
+          "no prior window yet" state below, where only one colour appears. Added 2026-09-11
+          (`changes/2026-09-11-data-legibility-market-health.md`) — found missing during a
+          data-legibility audit: the two-colour encoding was documented here but never
+          explained to the end user.
 row:      one per category, ordered by current-window share, descending. Each row:
             label   text-sm text-gray-300, left, truncate
             bars    a shared track (bg-gray-800, rounded, h-1.5). Two fills on it:
@@ -587,6 +600,42 @@ font:          text-xs font-medium
 treatment — both mean "not yet resolved," not "broken." Only "Failed" states use red. This
 matches the amber/red distinction `design/pipeline-visibility/experience.md`'s Chart
 Specification and Edge Cases sections already rely on.
+
+---
+
+## Data Legibility
+
+Added 2026-09-11 — `changes/2026-09-11-data-legibility-market-health.md`, applying the
+framework-level `data-legibility` skill (workspace root `CLAUDE.md`, Rules for AI #10) to this
+product. Every chart, data-story block, ranked list, meter, and badge in this product follows
+these conventions — decided once here, not reinvented per experience spec.
+
+### Titles & subtitles
+A data-story block's `heading` names what it answers; its `subtitle` (new slot, "Data Story
+composition" below) states what's being measured and its unit whenever the heading alone
+doesn't make that obvious — e.g. heading "Companies with the most reported impact", subtitle
+"Ranked by jobs reported affected, summed across contraction events in the window." A subtitle
+is required unless the heading is already fully self-contained (e.g. a Meter's own caption
+already states the unit inline — see Meter, above — so its `StoryBlock` doesn't need a
+separate subtitle too).
+
+### Units
+- Counts (postings, mentions, jobs affected): plain `toLocaleString()` numbers, unit named
+  once in the block's subtitle — never repeated on every row of a `RankedBarList`.
+- Percentages: `N%` (or `<1%` below one point), via `RankedBarList`'s `formatValue`.
+- Percentage-point deltas (year-on-year): `+N pp` / `−N pp` / "no change" — `pp` always
+  spelled out, never bare.
+- Dates/windows: stated in words ("Sep 2026 – Sep 2027"), never a raw ISO string in visible copy.
+
+### Colour & shape legends
+Colour or shape carrying meaning is always paired with a text label — this product's existing
+"Colour as the sole encoding" rule (What this rules out, below) already required this; treat
+it as covering every new use, not only the ones enumerated when that rule was written (trend
+arrows, chart lines, status tags). Concretely: a semantic colour states its direction in a
+caption or subtitle at least once per view; an opacity/shape distinction (e.g. `RankedBarList`'s
+`emphasis` — full opacity vs. ~70%) gets an inline caption naming what the two states mean
+(e.g. "Solid bars are must-have mentions."); `YearOnYearBars`'s two bar colours get a legend
+line stating which is which (Year-on-year comparison, above).
 
 ---
 

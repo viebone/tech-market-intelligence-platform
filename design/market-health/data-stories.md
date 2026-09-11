@@ -52,11 +52,14 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
 
 - [ ] Opens with a **framing line** — one sentence naming what's summarised, numbers as
       context only, not a heading.
-- [ ] **Blocks**, each: a fixed heading → **one** chart or figure → its honesty qualifier
-      (sample size / coverage caveat). No prose-only block except the framing line. **3–6
-      blocks** for a single-theme story; a story that covers both current state and
-      year-on-year change groups its blocks into **two labelled movements** ("the market
-      right now", then "how it's shifting") and may run to ~8.
+- [ ] **Blocks**, each: a fixed heading (+ a subtitle stating what's measured and its unit,
+      whenever the heading alone doesn't make that obvious — added 2026-09-11,
+      `changes/2026-09-11-data-legibility-market-health.md`, see `design/visual-design.md` —
+      Data Legibility) → **one** chart or figure → its honesty qualifier (sample size /
+      coverage caveat). No prose-only block except the framing line. **3–6 blocks** for a
+      single-theme story; a story that covers both current state and year-on-year change
+      groups its blocks into **two labelled movements** ("the market right now", then "how
+      it's shifting") and may run to ~8.
 - [ ] **At least one chart**, and **≥2 distinct visual forms** across the story (3+
       preferred) — drawn from the vocabulary in `visual-design.md` (Ranked bar list, Hero
       Figure, Stat Tile, Meter, Category Share Bar, Trend line, Year-on-year comparison). A
@@ -68,10 +71,12 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
 - [ ] Every block keeps its honesty qualifier. An `insufficient_data` block shows its "not
       enough data yet" line (Honesty and empty states, below), never an empty chart.
 - [ ] **A year-on-year block** shows exactly two 12-month windows (current, and one year
-      back — never more), states both date ranges in words, and carries one plain sentence on
-      what a shift in that mix means. Before ~13 months of data exists it shows the current
-      window only + a muted "comparison starts {Month Year}" line — "coming soon", not an
-      error (`visual-design.md` — Year-on-year comparison; Honesty and empty states, below).
+      back — never more), states both date ranges in words, names what its two bar colours
+      mean (added 2026-09-11 — the two-colour encoding was documented but never explained to
+      the end user until this fix), and carries one plain sentence on what a shift in that mix
+      means. Before ~13 months of data exists it shows the current window only + a muted
+      "comparison starts {Month Year}" line — "coming soon", not an error (`visual-design.md`
+      — Year-on-year comparison; Honesty and empty states, below).
 - [ ] **No *current-snapshot* duplication of the welcome** — job count, company count,
       collection start, and the *current* role-category split all belong to "About this
       platform". A story may show a *year-on-year shift* in the same dimension (a different
@@ -124,34 +129,44 @@ Two labelled movements. Fixed order; values live; headings fixed.
 **Movement 1 — "The market right now"**
 
 1. **Framing line** — one sentence naming what's being summarised. Numbers as context only.
-2. **The roles being hired** — top 10 specializations (normalised roles such as "Machine
-   Learning Engineer", "Security Engineer"), as a **Ranked bar list**. Once a year-earlier
-   window exists, each row also carries its "+N pp" year-on-year delta; until then the delta
-   column is absent. Specialization, not raw title (too fragmented); `unknown`/`other`
-   excluded, not relabelled.
-3. **What employers ask for** — top skill groups, Ranked bar list, must-have rows emphasised.
+2. **The roles being hired** — subtitle: "Open postings currently tracked, by specialization."
+   Top 10 specializations (normalised roles such as "Machine Learning Engineer", "Security
+   Engineer"), as a **Ranked bar list**. Once a year-earlier window exists, each row also
+   carries its "+N pp" year-on-year delta; until then the delta column is absent.
+   Specialization, not raw title (too fragmented); `unknown`/`other` excluded, not relabelled.
+3. **What employers ask for** — subtitle: "Postings mentioning each skill group." Top skill
+   groups, Ranked bar list, must-have rows emphasised (full-opacity hue), with its existing
+   inline caption "Solid bars are must-have mentions" as the opacity legend.
 4. **Pay transparency** — a **Hero Figure + Meter**: the share of postings that state a salary
    (structured + parsed), "the rest don't disclose" stated plainly. The story's one Hero
-   Figure.
-5. **Where the roles are** — top locations (country or city), Ranked bar list, with the "only
-   N postings have a normalised location" caveat.
+   Figure. The Meter's own caption already states the unit inline — no separate subtitle
+   needed (Data Legibility, `visual-design.md`).
+5. **Where the roles are** — subtitle: "Open postings currently tracked, by city." Top
+   locations (country or city), Ranked bar list, with the "only N postings have a normalised
+   location" caveat.
 
 **Movement 2 — "How it's shifting" (year on year)**
 
 A short intro line names the two windows in plain words. Each block below is a **Year-on-year
-comparison** (`design/visual-design.md`) with one "what this means" sentence. **At launch and
-for the product's first year all three are in the "no prior window yet" state** — current
-window only + "comparison starts {Month Year}".
+comparison** (`design/visual-design.md`) — subtitle: "Share of postings by {dimension}, this
+year vs. the year before" — with one "what this means" sentence and, once a comparison is
+available, a legend naming the two bar colours (lighter = a year ago, solid = now — Data
+Legibility, `visual-design.md`). **At launch and for the product's first year all three are in
+the "no prior window yet" state** — current window only + "comparison starts {Month Year}",
+no legend needed (only one colour is on screen).
 
-6. **How the role mix is shifting** — `role_category` shares over the **three tracked areas
-   only** (Designer / Product Manager / Engineer), matching the trend chart and the welcome's
-   Category Share Bar. `other` / `unknown` are coverage, not rows here, and their own trend
-   is never a signal. *Meaning:* which of the three areas is taking a bigger or smaller slice
-   of new roles.
-7. **How seniority is shifting** — `level` shares across the ladder. *Meaning:* whether the
-   market is opening more junior or more senior roles than a year ago.
-8. **IC vs. management** — `track` shares (`ic` / `management`; `unknown` excluded).
-   *Meaning:* whether more of the new roles are for people who lead teams or do the work.
+6. **How the role mix is shifting** — subtitle: "Share of postings by role category, this year
+   vs. the year before." `role_category` shares over the **three tracked areas only** (Designer
+   / Product Manager / Engineer), matching the trend chart and the welcome's Category Share
+   Bar. `other` / `unknown` are coverage, not rows here, and their own trend is never a
+   signal. *Meaning:* which of the three areas is taking a bigger or smaller slice of new
+   roles.
+7. **How seniority is shifting** — subtitle: "Share of postings by seniority level, this year
+   vs. the year before." `level` shares across the ladder. *Meaning:* whether the market is
+   opening more junior or more senior roles than a year ago.
+8. **IC vs. management** — subtitle: "Share of postings by track, this year vs. the year
+   before." `track` shares (`ic` / `management`; `unknown` excluded). *Meaning:* whether more
+   of the new roles are for people who lead teams or do the work.
 
 Every block keeps its honesty qualifier (sample size, coverage caveat, both window dates for
 Movement 2). A block with too little data shows its "not enough data yet" line, not an empty
@@ -256,22 +271,28 @@ to absorb that lag while still being a bounded "recent activity" window, not all
 2. **Contraction vs. expansion** — a **Hero Figure + Meter**: total roles reported affected by
    contraction events (layoff/closure/restructuring/bankruptcy/offshoring) in the window (Hero
    Figure), with a Meter showing what share of *events* (not roles) were contraction vs.
-   expansion.
-3. **Companies with the most reported impact** — top 10 companies by roles affected, Ranked
-   bar list. `company_raw` as reported (never assumed to be a tracked company). **Revised
-   2026-09-11** (`changes/2026-09-11-employment-risk-hide-placeholder-names.md`) — a source
-   that gives no real company name, only a bare id (UK Companies House's Streaming API, so
-   far), is excluded from this specific block: a numeric id is never displayed as if it were
-   a company. The underlying events still count in every other block (contraction/expansion,
-   by country, by sector) — only the name-specific ranking omits them, with an honest
-   qualifier stating how many were excluded and why.
-4. **By country** — every country with a reported event, ranked by roles affected, Ranked bar
-   list. **Revised 2026-09-11** (`changes/2026-09-11-employment-risk-country-dimension.md`) —
+   expansion. The Meter's own caption already states the unit inline ("of reported events were
+   contraction…") — no separate subtitle needed (Data Legibility, `visual-design.md`).
+3. **Companies with the most reported impact** — subtitle: "Ranked by jobs reported affected,
+   summed across contraction events in the window." (Added 2026-09-11,
+   `changes/2026-09-11-data-legibility-market-health.md` — the heading alone didn't state a
+   unit; found via real user feedback.) Top 10 companies by roles affected, Ranked bar list.
+   `company_raw` as reported (never assumed to be a tracked company). **Revised 2026-09-11**
+   (`changes/2026-09-11-employment-risk-hide-placeholder-names.md`) — a source that gives no
+   real company name, only a bare id (UK Companies House's Streaming API, so far), is excluded
+   from this specific block: a numeric id is never displayed as if it were a company. The
+   underlying events still count in every other block (contraction/expansion, by country, by
+   sector) — only the name-specific ranking omits them, with an honest qualifier stating how
+   many were excluded and why.
+4. **By country** — subtitle: "Jobs reported affected, summed by country, over the trailing 12
+   months." Every country with a reported event, ranked by roles affected, Ranked bar list.
+   **Revised 2026-09-11** (`changes/2026-09-11-employment-risk-country-dimension.md`) —
    originally specified as region (US state, or country for non-US sources), which conflated
    two different granularities into one ranking the moment a second country's data existed.
    State-level detail is deferred (still stored in `region`, not dropped), not built into this
    block.
-5. **By sector** — top sectors by roles affected, Ranked bar list, **only for events whose
+5. **By sector** — subtitle: "Jobs reported affected, summed by sector — only events whose
+   source reports one." Top sectors by roles affected, Ranked bar list, **only for events whose
    source reports a sector** — the qualifier states what share of events that covers (today:
    Eurofound ERM and some WARN records report it; Companies House never does).
 
@@ -284,7 +305,7 @@ deduplicated, stored) but sourced from external registries, not observed posting
 
 | Story fact | Aggregate | Required qualifier |
 |---|---|---|
-| Window | Trailing 90 days from `event_date`, `superseded_by IS NULL` | Stated in the framing line |
+| Window | Trailing 12 months from `event_date`, `superseded_by IS NULL` | Stated in the framing line |
 | Contraction total | `sum(jobs_affected)` where `direction = 'contraction'` | Roles reported, not roles actually eliminated (some sources don't size every event) |
 | Direction split | `count(*)` grouped by `direction` | Event count share, not role-count share — stated explicitly, the two can diverge |
 | Top companies | `company_raw` grouped, `sum(jobs_affected)`, events missing a jobs-affected figure excluded from the sum but the qualifier states how many events had no figure | Company names are exactly as the source registry reported them, not normalized |

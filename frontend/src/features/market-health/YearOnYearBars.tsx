@@ -42,8 +42,25 @@ function monthYear(isoDate: string): string {
 function WindowLine({ current, prior }: { current: YoYWindow; prior: YoYWindow | null }) {
   const cur = `${monthYear(current.start_date)} – ${monthYear(current.end_date)}`;
   return (
-    <p className="mb-3 text-xs text-gray-500">
+    <p className="mb-1 text-xs text-gray-500">
       {prior ? `${cur}, compared with the 12 months before it` : `${cur} — comparison window only`}
+    </p>
+  );
+}
+
+// Names what the two bar colours mean — added 2026-09-11,
+// changes/2026-09-11-data-legibility-market-health.md. The ghost/solid encoding
+// was documented in design/visual-design.md but never explained to the end
+// user; only rendered when a comparison is on screen (two colours present) —
+// the "no prior window yet" state below has only one colour, so no legend
+// needed there. See design/visual-design.md — Data Legibility.
+function ColourLegend() {
+  return (
+    <p className="mb-3 text-xs text-gray-500">
+      <span className="mr-1 inline-block h-1.5 w-3 rounded-full bg-gray-700 align-middle" />{" "}
+      a year ago &nbsp;
+      <span className="mr-1 inline-block h-1.5 w-3 rounded-full bg-indigo-500 align-middle" />{" "}
+      now
     </p>
   );
 }
@@ -89,6 +106,7 @@ export function YearOnYearBars({ content }: { content: YearOnYearContent }) {
   return (
     <div>
       <WindowLine current={current_window} prior={prior_window} />
+      <ColourLegend />
       <ol className="flex flex-col gap-2">
         {rows.map((row, i) => (
           <li key={`${row.value}-${i}`} className="flex items-center gap-3">

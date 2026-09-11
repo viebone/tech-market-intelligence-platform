@@ -148,11 +148,19 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         and where the work sits.
       </p>
 
-      <StoryBlock heading="The roles being hired" {...blockProps(roles, roleRows.length > 0)}>
+      <StoryBlock
+        heading="The roles being hired"
+        subtitle="Open postings currently tracked, by specialization."
+        {...blockProps(roles, roleRows.length > 0)}
+      >
         <RankedBarList rows={roleRows} />
       </StoryBlock>
 
-      <StoryBlock heading="What employers ask for" {...blockProps(skills, skillRows.length > 0)}>
+      <StoryBlock
+        heading="What employers ask for"
+        subtitle="Postings mentioning each skill group."
+        {...blockProps(skills, skillRows.length > 0)}
+      >
         <RankedBarList rows={skillRows} limit={8} />
         <p className="mt-2 text-xs text-gray-500">Solid bars are must-have mentions.</p>
       </StoryBlock>
@@ -165,22 +173,27 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         />
       </StoryBlock>
 
-      <StoryBlock heading="Where the roles are" {...blockProps(geo, cityRows.length > 0)}>
+      <StoryBlock
+        heading="Where the roles are"
+        subtitle="Open postings currently tracked, by city."
+        {...blockProps(geo, cityRows.length > 0)}
+      >
         <RankedBarList rows={cityRows} />
       </StoryBlock>
 
       <MovementLabel>How it&rsquo;s shifting — year on year</MovementLabel>
 
       {([
-        [roleMixShift, "How the role mix is shifting"],
-        [seniorityShift, "How seniority is shifting"],
-        [trackShift, "IC vs. management"],
-      ] as const).map(([sec, heading]) => {
+        [roleMixShift, "How the role mix is shifting", "Share of postings by role category, this year vs. the year before."],
+        [seniorityShift, "How seniority is shifting", "Share of postings by seniority level, this year vs. the year before."],
+        [trackShift, "IC vs. management", "Share of postings by track, this year vs. the year before."],
+      ] as const).map(([sec, heading, subtitle]) => {
         const content = yoyContent(sec);
         return (
           <StoryBlock
             key={heading}
             heading={heading}
+            subtitle={subtitle}
             {...blockProps(sec, !!content && content.rows.length > 0)}
           >
             {content ? <YearOnYearBars content={content} /> : null}
