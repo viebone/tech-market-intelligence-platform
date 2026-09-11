@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-09-04
+updated: 2026-09-11
 ---
 
 # Market Health — Backend Architecture Spec
@@ -292,6 +292,70 @@ exists because the failure mode is "silent double charge".)
 
 ---
 
+### EmploymentEvent (`employment_events` table) — added 2026-09-11
+
+`changes/2026-09-11-employment-event-ingestion.md` — implements Layoff Signal
+(`design/market-health/experience.md` — User Flow 7d, the trend chart's "Employment events
+strip") and fulfils `DATA_SOURCES.md`'s "Layoff events — planned" row. **A new table,
+explicitly *not* `raw_postings` and *not* classified** — same reasoning `DATA_SOURCES.md` §2
+already gave: an employment event is a fact reported by an external registry about a company
+or sector, not a job posting our own pipeline observed, so it doesn't belong in the
+posting/classification shape.
+
+Immutable, same discipline as `RawPosting`: a registry's published record is the only chance
+to capture it as reported; nothing here is ever mutated after insert. If a registry later
+corrects or retracts a record, that arrives as a new ingestion pass superseding the old row
+logically (via `superseded_by`, below) — never an in-place edit that would erase what was
+actually reported at the time.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` (PK) | Dedupe key, same shape as `raw_postings.id` — `f"{source}:{source_ref}"`, e.g. `"eurofound_erm:ERM-2026-04871"`. Uniqueness enforced at the database level via this `PRIMARY KEY`, same load-bearing pattern as `raw_postings.id`. |
+| `source` | `str` | Which adapter produced this row: `"eurofound_erm"`, `"us_warn"`, or `"companies_house_insolvency"` (closed set, validated in application code the same way `raw_postings.source` is). **`"uk_ons_hr1"` is deliberately not a value here** — see Business Logic — Employment event ingestion — UK ONS HR1 (descoped) for why. |
+| `source_ref` | `str` | The event's identifier within its source — the registry's own record id (Eurofound ERM's case reference), or a deterministic composite the adapter builds when the source has no native id of its own (US state WARN notices frequently don't — see the adapter contract, below). |
+| `source_url` | `str \| None` | A direct link back to the source record, when the source exposes one, for the experience spec's click-through event detail (Chart Specification — "Event marker click"). `NULL` when the source has no stable per-record URL (common for a state WARN filing published only inside a PDF/table, not at its own address). |
+| `company_raw` | `str` | The company/employer name exactly as the source reported it — never normalized or guessed at ingestion time, same "store the source's own shape" discipline as `raw_postings.raw_response`. **This is the only company identity this table ever carries** — see the "No company matching" note below. |
+| `sector` | `str \| None` | The source's own reported industry/sector for this event (e.g. Eurofound ERM's `sector` field), passed through verbatim — **not** the platform's `COMPANY_INDUSTRY` taxonomy and not reconciled with it (different vocabularies, different coverage; conflating them would misrepresent both). `NULL` when the source doesn't report one (true for most US WARN notices and the Companies House insolvency endpoint). |
+| `country` | `str \| None` | Normalized via the same `normalize_country()` / `COUNTRY_NAME_TO_ISO2` util `raw_postings.country` already uses (Tech Decisions, below) — one shared normalization path, not a second one. `NULL` when the source's own location text doesn't normalize cleanly. |
+| `region` | `str \| None` | Sub-national detail where the source provides it — a US state code (`"CA"`, `"TX"`) for US WARN, `NULL` for Eurofound ERM (country-level) and Companies House (UK-only, no finer region captured). |
+| `event_date` | `date` | The date the source itself attaches to the event — Eurofound ERM's announcement date, a WARN notice's filing or effective date (whichever the state's own record designates as primary — the adapter records which, see its contract), a Companies House insolvency filing's date. Never the date our ingestion pipeline happened to fetch it (that's `ingested_at`, below) — this is what the trend chart plots the marker against. |
+| `event_type` | `"layoff" \| "closure" \| "restructuring" \| "bankruptcy" \| "offshoring" \| "expansion" \| "hiring_announcement"` | Closed set, matching `design/market-health/experience.md`'s Chart Specification and the broadened `Layoff Signal` IA term. Mapped from each source's own event-type vocabulary by that source's adapter (Business Logic, below) — never left as the source's raw string. |
+| `direction` | `"contraction" \| "expansion"` | **Derived, not independently input** — `contraction` for `layoff`/`closure`/`restructuring`/`bankruptcy`/`offshoring`, `expansion` for `expansion`/`hiring_announcement`. Computed once at insert time from `event_type` (a fixed lookup, never a second signal that could disagree with it) so the chart's marker colour (Rising/Declining semantic tokens) and any `direction`-filtered query never need to re-derive it. |
+| `jobs_affected` | `int \| None` | The headcount figure the source reports, when it reports one. `NULL` when the source doesn't state a number (common for a Companies House insolvency filing, which confirms an event happened without sizing it) — never estimated. |
+| `confidence` | `"confirmed" \| "reported"` | **Load-bearing for the Layoff Signal honesty rule** (User Flow 7d): `"confirmed"` = a legally-filed or official-registry record (US WARN notices are statutory filings; Companies House insolvency is the official UK company register) — `"reported"` = compiled by the registry from public announcements/press rather than a legal filing (Eurofound ERM's own methodology). Never presented with the same certainty in a Layoff Signal answer — mirrors the `structured`/`parsed` distinction `RawPosting.salary_confidence` already draws for Compensation Signal. |
+| `source_type` | `"registry"` | Fixed at `"registry"` for every source this change adds — reserved as a field (rather than hardcoding the assumption elsewhere) because a future source could plausibly be a different shape (e.g. `"aggregate_index"`, if a macro-only source like UK ONS HR1 is ever integrated on its own terms — see Business Logic, below). |
+| `superseded_by` | `str \| None` (FK → `employment_events.id`) | Set when a later ingestion pass finds the source has corrected or retracted this record. The old row is kept (immutability, above) but excluded from chart/query results in favour of the row it points to. `NULL` for the normal case. |
+| `raw_response` | `JSON` | The source's own record, stored verbatim — same "never project down, it's the only chance to capture it" discipline as `raw_postings.raw_response`. |
+| `ingested_at` | `datetime` | When this platform's ingestion captured the record. |
+| `created_at` | `datetime` | Row insert timestamp (server clock). |
+
+`UNIQUE (id)` via the `PRIMARY KEY`. No foreign key to `raw_postings`, and — as of the
+"No company matching" revision below — **no relationship to `raw_postings` at all**, direct or
+inferred.
+
+**No company matching — added 2026-09-11, removed the same day
+(`changes/2026-09-11-employment-events-no-company-matching.md`).** An earlier revision this
+same day added a `matched_company` column (resolved via a hand-curated alias map against
+`raw_postings.company`) so the trend chart could overlay tracked-company-matched events. The
+user directed, firmly and repeatedly, that employment events must be independent of the
+platform's tracked job-posting companies **at every layer** — not scoped anywhere, not even
+as one surface among several. `matched_company` is dropped entirely (migration — Tech
+Decisions, below); the company-alias map (`employment_events/company_aliases.py`) is deleted;
+every consumer of `employment_events` (the story, the chat tool) reads `company_raw` only and
+never joins or compares against `raw_postings` in any way.
+
+**Story 2 (`changes/2026-09-11-employment-events-independent-scope.md`).** "Employment risk
+across the market" (`design/market-health/data-stories.md`) is a data story built entirely
+from this table — deliberately **not** joined to `raw_postings` — now the **only** surface for
+employment events (the tracked-company-scoped chart endpoint that briefly existed alongside it
+is removed, see below). No dedicated endpoint: it reuses the existing generic
+`GET /api/market-health/stories` (catalogue metadata) and `POST /api/market-health/stories/{story_id}`
+(resolves any story by id) already documented below for `market-data-briefing` — adding a
+story is a catalogue operation (`design/market-health/data-stories.md`'s own "Catalogue
+rules"), not a new route. See `market_stories.py` — `build_employment_risk_overview()`.
+
+---
+
 ## API Endpoints
 
 ### GET /api/market-health/summary
@@ -410,6 +474,16 @@ after the baseline date.
 |---|---|
 | 400 | Invalid `range` or `granularity` value |
 | 503 | Database unavailable |
+
+---
+
+### ~~GET /api/market-health/employment-events~~ — added 2026-09-11, removed same day
+
+Existed briefly to feed the trend chart's tracked-company-scoped "Employment events strip."
+Removed along with that chart feature — `changes/2026-09-11-employment-events-no-company-matching.md`.
+Employment events are read only via the generic story endpoints (`POST /api/market-health/stories/employment-risk-overview`)
+and the `query_employment_events_data` chat tool, both already independent of tracked
+companies. No replacement endpoint needed.
 
 ---
 
@@ -1137,6 +1211,48 @@ The design gives the model three tools and a fixed decision order:
    hasn't reached yet). This is also the field a synthesis question's "sample too small"
    check (`design/market-health/experience.md` — Edge Cases) is computed from.
 
+1c. **`query_employment_events_data` tool (added 2026-09-11, tried alongside the other three,
+   same stage).** A fourth read-only, parameterised tool, backing Layoff Signal
+   (`design/market-health/experience.md` — User Flow 7d). Unlike the other three tools, its
+   `company` filter is **not** restricted to the platform's tracked-company list, and — unlike
+   the other three — its underlying table (`employment_events`) has **no relationship of any
+   kind to `raw_postings`** (Data Models — EmploymentEvent, "No company matching"). A Layoff
+   Signal question can ask about any company or sector the ingested registries cover; this
+   tool reads `company_raw` only. Parameters:
+   - `company`: optional, matched case-insensitively against `company_raw` (a plain text
+     match, not fuzzy — same "no guessing" discipline as everywhere else in this pipeline; a
+     misspelled or unusual company name simply returns no rows rather than a wrong guess)
+   - `sector`: optional, matched against the source-reported `sector` field (present mainly
+     for Eurofound ERM rows — see Data Models); a sector query is honestly scoped to whichever
+     source(s) actually report sector, and the tool's response says so
+   - `country`, `date_from`, `date_to`: optional, same shape as the other tools
+   Excludes rows with `superseded_by` set. **Never joins or compares against `raw_postings` in
+   any way** — added 2026-09-11, revised the same day
+   (`changes/2026-09-11-employment-events-no-company-matching.md`) to remove an earlier
+   `hiring_trend` field that cross-referenced the platform's own tracked-company hiring data;
+   employment events are answered as a fully independent dataset. Returns:
+   ```json
+   {
+     "events": [
+       { "company_raw": "Acme Corp", "event_date": "2026-08-26", "event_type": "restructuring",
+         "direction": "contraction", "jobs_affected": 110, "confidence": "reported",
+         "source": "Eurofound European Restructuring Monitor" }
+     ],
+     "sources_checked": ["eurofound_erm", "us_warn", "companies_house_insolvency"],
+     "total_matching": 2
+   }
+   ```
+   `events` is ordered oldest-first, same convention as this pipeline's other backlog/history
+   orderings, so a synthesis answer can describe them "in order" naturally. `sources_checked`
+   is always the full list of live adapters, regardless of whether any returned a row — this is
+   what lets the model say "we checked Eurofound ERM, US WARN, and UK Companies House; none
+   report an event for this company" rather than staying silent, per the Edge Case "a queried
+   company or sector isn't covered by any employment-event source." **This tool never computes
+   a pattern classification itself** — it returns the raw event history; the two-part
+   data-then-judgment split (User Flow 7d) is composed by the synthesis stage, the same
+   division of responsibility `query_requirements_data` already has with the "should I learn
+   X" synthesis answer (Business Logic — step 3, below).
+
 2. **No external step (revised 2026-09-06).** The "Google Search grounding" second call is
    removed. When steps 1/1a/1b can't answer — the question falls outside `data_range`, names
    a company/place the dataset doesn't cover, or is categorically outside what job postings
@@ -1164,7 +1280,15 @@ The design gives the model three tools and a fixed decision order:
    threshold is an implementation/prompt-tuning detail, not spec'd as a precise number here).
    A synthesis question like "should I learn Rust?" is answered *from* the data — query the
    relevant `raw_skill` / skill-group frequencies and requirement levels, then reason from
-   those — not from outside knowledge.
+   those — not from outside knowledge. **Layoff Signal's own synthesis case (added
+   2026-09-11)**: a pattern-vs-isolated-event question is answered from
+   `query_employment_events_data`'s `events` array alone — a judgment is offered only when
+   there are **at least two** events for the queried company/sector; a single event, or zero,
+   gets the data (or its absence) stated plainly with no pattern judgment attempted, per
+   `design/market-health/experience.md` User Flow 7d ("too early to call a pattern"). Exact
+   spacing/frequency reasoning beyond that floor (how close together events need to be to read
+   as sustained) is a prompt-tuning detail, same "policy spec'd, exact threshold tuned"
+   precedent as Requirements Signal's own sample-size floor, not a precise number fixed here.
 
 **Curated instant-answer engine — tried before any model call (added 2026-09-06 — Steps 13/15
 of `changes/2026-09-03-chat-resilience-and-instant-answers.md`).** Before Stage 1 runs, the
@@ -1315,8 +1439,14 @@ conversational answer, not a multi-section report.
 pre-LLM... input context and sources are known before the LLM call." That premise no longer
 holds for `/api/chat`: `sources_and_tools` must now be built from whichever data tool(s) were
 actually called (`query_market_data`; `query_compensation_data`, added 2026-08-04;
-`query_requirements_data`, added 2026-08-09 — any combination), in real order, not assembled
-beforehand. The trace-building code must not hardcode a single tool name/purpose string the
+`query_requirements_data`, added 2026-08-09; `query_employment_events_data`, added
+2026-09-11 — any combination), in real order, not assembled beforehand. A
+`query_employment_events_data` call's trace entry names which registries were checked
+(`sources_checked`), so the accordion's Sources section can name Eurofound ERM / US WARN / UK
+Companies House individually, the same way it already names Greenhouse/Lever/Ashby by name
+rather than a generic label — and so the accordion's "layoff event count" context item
+(`design/market-health/experience.md` — Visual Design, already anticipated in this spec's
+earlier revisions) is finally backed by a real number. The trace-building code must not hardcode a single tool name/purpose string the
 way it could when only one data tool existed — it now needs to reflect whichever tool(s) the
 model actually invoked. As of 2026-09-06 there are **no external-source entries** — chat is
 DB-only, so `sources_and_tools` is always owned-data queries and the reasoning steps never
@@ -1380,6 +1510,114 @@ true — `ingest.py` has never been called from any request path) but in deploym
   it must propose changes for human review, never edit `job-classification.md` or an adapter's
   company list directly.
 
+**Employment event ingestion (added 2026-09-11 — `changes/2026-09-11-employment-event-ingestion.md`).**
+Runs as its own scheduled step, separate from the job-posting ingestion/classification pipeline
+above — different tables, different adapters, no shared failure surface. Populates
+`employment_events` (Data Models, above) from three registries, in this priority order
+(source evaluation: `research/2026-09-11-employment-event-data-sources.md`):
+
+1. **Eurofound European Restructuring Monitor (ERM)** — EU + Norway, company-level, covers
+   both contraction and expansion, reports `sector` directly.
+2. **US state WARN notices** — US, company-level, legally mandated, no unified federal
+   endpoint.
+3. **UK Companies House — insolvency endpoint** — UK-only, company-level enrichment.
+
+Each is a separate `EmploymentEventAdapter` (Tech Decisions, below) — one source failing (a
+registry's endpoint down, a format change, a quota) never blocks the other two, same
+per-adapter fault-isolation principle already proven for Greenhouse/Lever/Ashby (Business
+Logic — Ingestion — Fault isolation), applied to this pipeline's own adapters. Failure of any
+employment-event adapter never touches `raw_postings`, classification, or requirements
+extraction — genuinely separate tables, separate code paths, separate schedule.
+
+- **Eurofound ERM adapter contract.** Maps ERM's `company`/`country`/`date`/`sector`/
+  `restructuring type`/`employment_change` fields (research file's example shape) onto
+  `EmploymentEvent`: `event_type` from a fixed lookup of ERM's own restructuring-type
+  vocabulary (e.g. its "Internal restructuring," "Closure," "Bankruptcy/liquidation,"
+  "Offshoring/Delocalisation," "Business expansion" categories map onto this spec's closed
+  `event_type` set — the exact ERM-string-to-`event_type` table is an implementation
+  deliverable, validated against real fetched records, not invented here), `jobs_affected`
+  from `employment_change` (absolute value; `direction` is derived from `event_type`, not
+  from the sign of `employment_change`, so the two can be cross-checked rather than blindly
+  trusted), `sector` passed through verbatim, `confidence: "reported"` (ERM compiles from
+  public announcements, not a legal filing — Business Logic, EmploymentEvent field above).
+  **Access mechanism not yet empirically confirmed** — the research file notes an explicit
+  "Request data access (.csv)" option on Eurofound's site; whether that resolves to a public,
+  no-key bulk download or a gated request requiring manual approval is unverified as of this
+  spec. Confirming which, and the real endpoint/file shape, is `/implement-backend`'s first
+  task for this adapter — same "confirm empirically, don't assume" discipline this spec
+  already applies to every other source's access method (Tech Decisions — Company-list
+  curation). If it turns out to require a manual, non-automatable request step, `ingest.py`'s
+  daily schedule can't drive it directly — see Tech Decisions, below, for the fallback.
+- **US WARN adapter contract — revised 2026-09-11 (`changes/2026-09-11-employment-events-independent-scope.md`
+  research pass).** This spec originally scoped a per-state scraper (each state its own
+  fetcher/parser, verified one at a time) because no unified federal API was known to exist.
+  Live research the same day found **WARN Firehose** (warnfirehose.com) — a single aggregated
+  REST API covering WARN notices for all 50 states, free tier (25 calls/day, email-verified
+  signup, no credit card), documented as updated daily. This replaces the per-state design
+  entirely: one adapter, one API, no per-state curated list to maintain. Confirmed live via the
+  provider's own `/developers` docs page: `GET https://warnfirehose.com/api/records` with
+  header `X-API-Key`, params `state`/`company`/`city`/`date_from`/`date_to`/`limit`(max
+  5000)/`offset`. The adapter queries a small trailing date window each run (a few days, not
+  "since last run" tracked externally) — `insert_new_events()`'s id-based dedupe makes
+  re-checking already-seen notices free, so a lagging filing that appeared late is still
+  caught. **Response field names are not yet live-verified** (the docs page didn't render a
+  full example payload in this research pass) — `employment_events/us_warn.py`'s field mapping
+  is a best-effort guess that fails loudly (logs the raw record, skips it) rather than
+  guessing, so the first real authenticated run surfaces the true shape. `source_ref` is a
+  deterministic composite (state + employer + notice date) when the API provides no native
+  record id. `confidence: "confirmed"` (a WARN notice is a statutory filing). `region` = the
+  two-letter state code; `country` = `"US"`. WARN Firehose also bundles SEC filings and
+  bankruptcy datasets on the same platform — out of scope for this adapter, a candidate for a
+  future adapter if pursued (would need its own `source` value and event-type mapping, not
+  folded into `us_warn`).
+- **UK Companies House insolvency adapter contract — revised 2026-09-11
+  (`changes/2026-09-11-employment-events-no-company-matching.md`).** The original design
+  (`GET /company/{company_number}/insolvency` for a curated candidate-company list) was built
+  by construction from the platform's own tracked-company list — itself a form of
+  company-matching the user's direction rules out. Replaced with the **Companies House
+  Streaming API** (`stream.companieshouse.gov.uk/insolvency-cases`, found via the same live
+  research pass that found WARN Firehose): a real-time feed of insolvency events across **all**
+  UK companies, no company targeting needed at all — same free API key, different base URL
+  from the REST API. A long-running connection, not a simple request/response, so the adapter
+  connects with a `timepoint` cursor (persisted between runs — see Data Models, below) to
+  resume from where the previous run left off, reads until the stream goes idle (caught up to
+  "live"), then disconnects — a scheduled batch job's version of tailing a stream, not a
+  permanent connection. `event_type` is always `"bankruptcy"` for a row this stream produces
+  (insolvency-specific, no broader restructuring vocabulary). `confidence: "confirmed"` (the
+  official UK company register). `jobs_affected: NULL` always — insolvency events aren't sized
+  by headcount. `sector: NULL` (not part of this stream's payload). **Response field names not
+  yet live-verified** (no authenticated key used to confirm the payload shape yet) — same
+  "fails loudly, not guessed" discipline already proven correct for WARN Firehose.
+
+**Employment-event source cursors (`employment_event_cursors` table) — added 2026-09-11.** A
+small, generic table (`source TEXT PRIMARY KEY, cursor TEXT, updated_at TIMESTAMPTZ`) any
+streaming-style adapter can use to resume from its last position — not specific to Companies
+House, reusable if a future source is also stream-based. A polling/full-refetch adapter (like
+WARN Firehose's trailing-window approach) doesn't need it.
+
+**UK ONS HR1 — deliberately descoped, not implemented (added 2026-09-11).** The research
+file's own framing already flags why: HR1 is a **macro/aggregate risk index — week/region/
+industry potential-redundancy counts — with no company names at all**. It cannot produce an
+`EmploymentEvent` row (`company_raw` has no source), so it doesn't fit this table, and
+`design/market-health/experience.md`'s new Layoff Signal behavior (User Flow 7d, Chart
+Specification) was scoped entirely around company/sector-level events — nothing in that spec
+asked for a UK macro risk-index widget. Building one would be designing for a hypothetical
+requirement, not the one actually specified (`new-backend-spec` anti-pattern). If a future
+outcome wants a UK-specific market-health index, it needs its own experience-spec extension
+first, informed by what HR1 can actually support — not a data model bolted on here because
+the source was on the original candidate list. Recorded here (not silently dropped) so a
+future change doesn't have to re-discover this reasoning; `DATA_SOURCES.md` reflects the same
+decision (see the end of this spec update).
+
+**No company matching — added 2026-09-11, removed the same day
+(`changes/2026-09-11-employment-events-no-company-matching.md`).** A `matched_company` alias
+map briefly existed here (`employment_events/company_aliases.py`, mapping `company_raw`
+spellings to tracked `raw_postings.company` keys). Deleted in full — the user directed that
+employment events must be independent of the platform's tracked job-posting companies at every
+layer, so no matching mechanism, however careful (this one was never fuzzy, always an exact
+alias lookup), belongs in this pipeline at all. `employment_events` carries only `company_raw`;
+nothing joins or compares it against `raw_postings`.
+
 ---
 
 ## External Dependencies
@@ -1393,6 +1631,11 @@ true — `ingest.py` has never been called from any request path) but in deploym
 | Ashby Job Board API (`api.ashbyhq.com/posting-api/job-board/{jobBoardName}`) | Source of live job postings for `raw_postings` (`source: "ashby"`). Public, unauthenticated GET, no credentials. No documented rate limit (confirmed against Ashby's own API docs, 2026-08-03); paced conservatively regardless. No filtering support at all on this endpoint — every company's full board is fetched. |
 | ~~Adzuna Jobs API (UK)~~ | **Retired 2026-08-03** — license no longer permits use. No longer called; existing `raw_postings` rows sourced from it are kept as historical data (`source: "adzuna"`, backfilled). See `changes/2026-07-28-multi-source-job-data-ingestion.md`. |
 | Railway (cron-scheduled service) | Runs the daily ingestion agent independently of local dev — see Tech Decisions |
+| Eurofound European Restructuring Monitor (ERM) | Source of `employment_events` rows (`source: "eurofound_erm"`) — EU + Norway, company-level restructuring/expansion events. **Access mechanism not yet empirically confirmed** — see Business Logic — Employment event ingestion. Added 2026-09-11. |
+| WARN Firehose (`warnfirehose.com/api/records`) | Source of `employment_events` rows (`source: "us_warn"`) — US, all 50 states, company-level, statutory filings. Free tier (25 calls/day), keyed (`WARN_FIREHOSE_API_KEY`). **Live and verified 2026-09-11** — real data flowing. Added 2026-09-11, revised same day (replaced an original per-state scraping design once this aggregator was found — see Business Logic). |
+| UK Companies House Streaming API (`stream.companieshouse.gov.uk/insolvency-cases`) | Source of `employment_events` rows (`source: "companies_house_insolvency"`) — UK-wide, all companies, real-time insolvency events, no company targeting. Requires a free Streaming-type API key (Companies House Developer Hub — not interchangeable with a REST-type key). **Live and verified 2026-09-11** — real data flowing; field mapping corrected against the real payload (three fields differed from the initial guess — see Business Logic). **No company name in this stream, only a company number** — `company_raw` is the bare id; resolving a real name needs a separate REST-type key, not pursued yet. Events with no real company name are excluded from the Employment Risk story's company ranking but still count toward every other aggregate (`is_real_company_name()`, `employment_events/base.py` — `changes/2026-09-11-employment-risk-hide-placeholder-names.md`). |
+| SEC EDGAR full-text search (`efts.sec.gov/LATEST/search-index`) | Source of `employment_events` rows (`source: "sec_edgar_8k"`) — US-listed companies, 8-K Item 2.05 filings ("Costs Associated with Exit or Disposal Activities"), added 2026-09-11. **No API key at all** — free, unauthenticated, but SEC's fair-access policy requires a real, descriptive `User-Agent` (`SEC_EDGAR_CONTACT` env var). **Live and verified 2026-09-11** — 9 real filings on first run, real company names straight from the record (the only source so far that has them). `event_type` is always `"restructuring"`; `jobs_affected` and `sector` are always `NULL` (not in this index's metadata — not sized/mapped rather than guessed). Full-text search terms are a recall net; the structured `items` field containing `"2.05"` is the actual filter (see `employment_events/sec_edgar.py`). |
+| ~~UK ONS HR1~~ | **Deliberately not integrated** — macro/aggregate only, no company names, doesn't fit `EmploymentEvent`'s shape and no experience-spec behavior calls for a macro index. See Business Logic — UK ONS HR1 (descoped). |
 
 PostgreSQL (already in the project's tech stack) backs `raw_postings`, `classifications`, and
 now `ingestion_runs`. `MarketHealthSignal` / `SearchImplication` remain mocked in-memory; no
@@ -1620,6 +1863,78 @@ change is scoped to job-posting sources only (Greenhouse, Lever, Ashby); enrichm
 a genuinely different shape (not a job posting, shouldn't be forced through classification) and
 is deferred to its own follow-on change once a concrete enrichment source is chosen, per the
 outcome's scope boundary.
+
+**`EmploymentEventAdapter` — a separate protocol from `SourceAdapter`, added 2026-09-11.**
+Same "no business logic cares which source produced a row" principle (Business Logic —
+Employment event ingestion), but **not** the same protocol as job-posting adapters — the
+output shape is genuinely different (`EmploymentEvent`, not `FetchedPosting`; no title/
+description to classify), so reusing `SourceAdapter` would mean stretching its
+`FetchedPosting` return type to cover a fundamentally different fact, matching this spec's own
+precedent of keeping `BatchProvider` a separate protocol from `LLMProvider` rather than
+bolting an unrelated capability onto an existing one. Defined in
+`backend/src/employment_events/base.py`:
+
+```python
+@dataclass
+class FetchedEmploymentEvent:
+    source_ref: str
+    company_raw: str
+    event_date: date
+    event_type: str          # validated against the closed set at insert time
+    jobs_affected: int | None = None
+    country: str | None = None
+    region: str | None = None
+    sector: str | None = None
+    source_url: str | None = None
+    confidence: str = "reported"   # "reported" | "confirmed" — each adapter sets its own fixed value
+    raw_response: dict = field(default_factory=dict)
+
+class EmploymentEventAdapter(Protocol):
+    name: str  # "eurofound_erm" | "us_warn" | "companies_house_insolvency"
+    def fetch(self) -> list[FetchedEmploymentEvent]:
+        """
+        Never raises for a single record's failure to parse — logged and skipped,
+        the adapter continues (same per-record tolerance job-posting adapters give
+        per-company). Only a whole-adapter-level failure propagates, for
+        orchestration to catch without aborting the other employment-event
+        adapters (Business Logic — Employment event ingestion).
+        """
+        ...
+```
+
+`direction` and `id` are **not** adapter output — they're computed once at insert time from
+`event_type` and `(source, source_ref)` respectively (Data Models — EmploymentEvent), so every
+adapter produces the same shape without each having to re-derive platform-level logic. There
+is no company-matching step of any kind — added 2026-09-11, removed the same day
+(`changes/2026-09-11-employment-events-no-company-matching.md`); see Business Logic — "No
+company matching."
+
+**Scheduling — a separate cron step, not folded into `ingest.py`'s daily run.** Employment
+event ingestion runs on its own schedule (Railway cron, same mechanism as the existing daily
+job — a second scheduled service or a second script triggered independently, an
+`/implement-backend` deliverable either way), deliberately decoupled from job-posting
+ingestion/classification: the two pipelines write to different tables, have no shared
+back-pressure, and — critically — a registry that turns out to require a manual/gated access
+step (Eurofound ERM's access mechanism is unconfirmed, Business Logic above) can't share a
+single automated daily trigger with sources that are fully automatable (US WARN, UK Companies
+House) without either blocking on the slowest one or silently skipping it. If Eurofound ERM
+does turn out to need a manual step, its adapter runs on-demand (a documented manual command,
+same "run now, safe to re-run" pattern already established for `reprocess_taxonomy.py` and
+`reclassify_unknowns.py`) rather than being force-fit into an automated schedule it can't
+actually meet — an honest reflection of that source's real access constraints, not a spec
+promising automation the source doesn't support. US WARN and UK Companies House, both
+confirmed-automatable in shape (a fetchable endpoint / a keyed API), run on a real cron
+schedule from day one.
+
+**Migration.** `CREATE TABLE IF NOT EXISTS employment_events (...)` plus
+`CREATE TABLE IF NOT EXISTS employment_event_cursors (...)`, same idempotent `init_schema()`
+discipline as every other table in this spec. `employment_events.matched_company` — added
+2026-09-11, dropped the same day (`changes/2026-09-11-employment-events-no-company-matching.md`)
+— is removed via `ALTER TABLE employment_events DROP COLUMN IF EXISTS matched_company`,
+the deliberate non-additive exception this spec's migration file already has precedent for
+(`classifications.seniority`, 2026-08-11) — the column's entire purpose was company-matching,
+which no longer exists in this pipeline, so keeping a dead, always-NULL column would be worse
+than dropping it.
 
 **Provider abstraction layer**
 All AI calls go through a shared `LLMProvider` protocol defined in `backend/src/llm/base.py`.

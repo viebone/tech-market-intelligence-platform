@@ -1,9 +1,9 @@
 ---
 id: information-architecture
-version: 2.3
+version: 2.4
 status: active
 created: 2026-06-11
-updated: 2026-09-04
+updated: 2026-09-11
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
@@ -167,7 +167,7 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Demand Signal** | A data point representing job posting volume trend for a given role or skill. | Working Space, Output Panel |
 | **Compensation Signal** | A data point representing salary range trend for a given role, seniority, or location. | Working Space, Output Panel |
 | **Requirements Signal** | A data point representing the skills (must-have vs. nice-to-have), responsibilities, education level, and language requirements extracted from a single job posting, with a freeform catch-all for anything outside that standard structure. | Future tasks |
-| **Layoff Signal** | A reported or confirmed layoff event affecting a company or sector. | Future tasks |
+| **Layoff Signal** (broadened 2026-09-11 — `changes/2026-09-11-employment-event-ingestion.md`; scope clarified same day — `changes/2026-09-11-employment-events-no-company-matching.md`) | A reported employment event affecting a company or sector, sourced from an external registry — **never the platform's own job-posting data, and never matched or compared against it**: a layoff, closure, restructuring, bankruptcy, or offshoring (contraction), or an expansion or hiring announcement (growth). The name stays `Layoff Signal` — it was the only term already reserved for this concept — but its scope now spans both directions, not layoffs alone. | Working Space ("Employment risk across the market" data story; conversational answers in "Tech market hiring status"), Reasoning Panel (source + event detail on drill-down) |
 | **Data Freshness** | The age and source of the data behind any given output. | Shown as a label on all data-backed claims |
 | **Exception** | A signal or event that crosses a threshold and requires the user's attention. | Future: Alert Centre |
 | **Reasoning Panel** | The expandable inline section beneath any AI message. Shows inputs, tools accessed, data sources, and reasoning steps. Collapsed by default; expanded on demand. Never absent. | Every AI message in Working Space |

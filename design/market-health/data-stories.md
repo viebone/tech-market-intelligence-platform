@@ -209,10 +209,118 @@ content with the concise briefing. It does not replace the hiring-status task or
 dashboard. The resulting story is an AI-turn-shaped output so it can use the same Reasoning
 Panel and Output Panel reference pattern as other market-health outputs.
 
+## Story 2 - What does employment risk look like across the market?
+
+Added 2026-09-11 — `changes/2026-09-11-employment-events-independent-scope.md`. The first
+catalogue entry built from `employment_events` (`changes/2026-09-11-employment-event-ingestion.md`)
+rather than `raw_postings`/`classifications` — and, deliberately, **not scoped to the 35
+tracked job-posting companies** at all. This is what "Future catalogue direction" (below)
+already anticipated as "layoff activity," now concrete.
+
+### Display name
+
+**Employment risk across the market** — the Task Panel item label.
+
+### User question
+
+> What does layoff and hiring activity look like across the market right now?
+
+### Example phrasings
+- "Is the market seeing more layoffs or hiring?"
+- "What's happening with layoffs right now?"
+- "Show me employment risk"
+
+### Audience job
+
+Show a professional **what's happening market-wide** — contraction and expansion signals
+across any company or sector the platform's employment-event registries cover — independent
+of which 35 companies this platform happens to track job postings for. This is the
+company-independent half of Layoff Signal's promise
+(`outcomes/understand-market-health-before-searching.md`); the trend chart's events strip
+(`design/market-health/experience.md`) remains the tracked-company-scoped half — two
+different questions, two surfaces, not one trying to do both.
+
+### Visible answer shape
+
+One movement (no year-on-year split — event data is sparse and recent-news-oriented, not a
+12-month-comparable time series the way posting volume is). Trailing 12-month window, fixed
+(revised 2026-09-11 from an initial 90 days — `changes/2026-09-11-employment-risk-12-month-window.md`:
+a source-registry "event" date and its underlying case's own date can diverge — e.g. UK
+Companies House's Streaming API can push a live update about a case that itself started many
+months earlier — so a window tied to *when the platform observed* the update would silently
+drop real, recently-surfaced events whose underlying date is older; 12 months is wide enough
+to absorb that lag while still being a bounded "recent activity" window, not all-time).
+
+1. **Framing line** — one sentence naming what's being summarised, and that this is
+   independent of the platform's own tracked companies.
+2. **Contraction vs. expansion** — a **Hero Figure + Meter**: total roles reported affected by
+   contraction events (layoff/closure/restructuring/bankruptcy/offshoring) in the window (Hero
+   Figure), with a Meter showing what share of *events* (not roles) were contraction vs.
+   expansion.
+3. **Companies with the most reported impact** — top 10 companies by roles affected, Ranked
+   bar list. `company_raw` as reported (never assumed to be a tracked company). **Revised
+   2026-09-11** (`changes/2026-09-11-employment-risk-hide-placeholder-names.md`) — a source
+   that gives no real company name, only a bare id (UK Companies House's Streaming API, so
+   far), is excluded from this specific block: a numeric id is never displayed as if it were
+   a company. The underlying events still count in every other block (contraction/expansion,
+   by country, by sector) — only the name-specific ranking omits them, with an honest
+   qualifier stating how many were excluded and why.
+4. **By country** — every country with a reported event, ranked by roles affected, Ranked bar
+   list. **Revised 2026-09-11** (`changes/2026-09-11-employment-risk-country-dimension.md`) —
+   originally specified as region (US state, or country for non-US sources), which conflated
+   two different granularities into one ranking the moment a second country's data existed.
+   State-level detail is deferred (still stored in `region`, not dropped), not built into this
+   block.
+5. **By sector** — top sectors by roles affected, Ranked bar list, **only for events whose
+   source reports a sector** — the qualifier states what share of events that covers (today:
+   Eurofound ERM and some WARN records report it; Companies House never does).
+
+### Data contract
+
+Queries `employment_events` only — **no join to `raw_postings`, no `matched_company` filter**.
+This is the one deliberate exception to this catalogue's "platform-owned data" scope being
+job-posting data — employment events are platform-owned in the same sense (ingested,
+deduplicated, stored) but sourced from external registries, not observed postings.
+
+| Story fact | Aggregate | Required qualifier |
+|---|---|---|
+| Window | Trailing 90 days from `event_date`, `superseded_by IS NULL` | Stated in the framing line |
+| Contraction total | `sum(jobs_affected)` where `direction = 'contraction'` | Roles reported, not roles actually eliminated (some sources don't size every event) |
+| Direction split | `count(*)` grouped by `direction` | Event count share, not role-count share — stated explicitly, the two can diverge |
+| Top companies | `company_raw` grouped, `sum(jobs_affected)`, events missing a jobs-affected figure excluded from the sum but the qualifier states how many events had no figure | Company names are exactly as the source registry reported them, not normalized |
+| By country | `country`, grouped, `sum(jobs_affected)` | Only events with a non-null `country`. `region` (state-level) is deliberately not broken out here — deferred, see the "Revised 2026-09-11" note above |
+| By sector | `sector` grouped, `sum(jobs_affected)` | States the share of in-window events that report a sector at all |
+| Sources | `count(distinct source)` + names via `SOURCE_DISPLAY_NAMES` | Every registry that contributed at least one in-window event, named individually — same "name each source" discipline as Story 1's `sources` fact |
+
+### Honesty and empty states
+
+- Same base rules as Story 1 (current as of query time, sample sizes stated, `insufficient_data`
+  state per section, never estimated/zero-filled).
+- **Never states or implies a causal link between a reported event and any hiring-trend
+  figure** — this story doesn't reference `raw_postings` at all, so the risk doesn't arise
+  here the way it does for a Layoff Signal chat answer, but the same product-wide rule holds
+  if a future revision ever cross-references the two.
+- **A `"reported"`-confidence event is never presented with the same certainty as a
+  `"confirmed"` one** — if a block's ranking would visibly change confidence composition
+  (e.g. one contraction event dominates a region's total and it's `"reported"`, not
+  `"confirmed"`), that's disclosed in the block's qualifier, not silently averaged away.
+- **Zero events in the window**: the whole story reports `insufficient_data` for every
+  section rather than a misleadingly quiet "no employment risk" — genuinely no data is a
+  different message from "the market is calm," and this story must not conflate the two.
+
+### Relationship to the existing experience
+
+A dedicated Query Task, placed in the story catalogue like any entry (Task Panel order follows
+catalogue document order — this file). Selecting it replaces the working-space content with
+this briefing. Does not replace or alter the "Tech market hiring status" task or its events
+strip (`design/market-health/experience.md`) — the two surfaces answer different questions and
+stay independent, per the resolved Open Question in that spec.
+
 ## Future catalogue direction
 
 Later entries can cover narrower questions such as role demand, skills by specialization,
-compensation coverage, source coverage, layoff activity, or market changes over time. **Every
+compensation coverage, source coverage, or market changes over time — **layoff activity is
+now Story 2, above**, no longer a future direction. **Every
 one must meet "Visual standard every story must meet" (above)** — a new entry that can't be
 composed into 3–6 heading/visual/qualifier blocks with a real mix of chart forms is a sign
 the question is too narrow or too broad to be a story, not a reason to relax the standard. A

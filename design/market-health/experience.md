@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Market Health — Experience Spec
@@ -174,13 +174,25 @@ answers — **only through follow-up conversation, never in the fixed opening vi
 > a seniority level, a track, a location?" (**Demand Signal**, enriched)
 > "What does the market actually want from someone in this role — skills, education,
 > languages — and what does that mean for me?" (**Requirements Signal**, added 2026-08-09)
+> "Has this company or sector had layoffs, closures, or restructuring — and is that part of
+> a pattern or a one-off?" (**Layoff Signal**, added 2026-09-11 — see `changes/2026-09-11-employment-event-ingestion.md`)
 
-All three are reached the same way the existing example already works ("Is User Experience
+All four are reached the same way the existing example already works ("Is User Experience
 Designer or Product Designer more in demand right now?") — by asking, not by a new control
 appearing on load. Requirements Signal introduces a genuinely new *kind* of answer, not just
 a new data dimension: a **synthesis question** ("should I learn to code as a UX designer?")
 asks for a judgment, not a lookup — see User Flow step 7b and Edge Cases, below, for how
-that's handled honestly.
+that's handled honestly. Layoff Signal reuses that same synthesis shape for its own judgment
+call — pattern vs. isolated event — see User Flow step 7d.
+
+**Revised 2026-09-11** (`changes/2026-09-11-employment-events-no-company-matching.md`): Layoff
+Signal is conversation-only, no exception — an earlier revision this same day added a
+tracked-company-matched marker layer to the opening trend chart, then the user directed that
+employment events must never be matched or related to the platform's tracked job-posting
+companies in any way, at any layer. That marker layer is removed; Layoff Signal is reached
+purely through follow-up conversation, and the independent-of-tracked-companies market view
+lives entirely in the **"Employment risk across the market"** data story
+(`design/market-health/data-stories.md`).
 
 ### What we want to achieve — a fluent, data-only conversation (added 2026-09-03, expanded 2026-09-06)
 
@@ -288,8 +300,10 @@ The user interprets and decides what to do with it.
    asking for?", "How often do Product Manager roles require SQL?", "What education level do
    most Engineering roles require?"), to a synthesis question that asks for a judgment, not
    a lookup ("Should I learn to code as a UX Designer?", "What should I focus on learning to
-   move from Mid to Senior?"), to something the platform's data can't possibly cover ("What
-   was demand like in 2019?").
+   move from Mid to Senior?"), to an employment-risk question ("Has Company X had layoffs
+   recently?", "Is the SaaS sector contracting or growing right now?", "Is Company X's
+   restructuring part of a pattern or a one-off?"), to something the platform's data can't
+   possibly cover ("What was demand like in 2019?").
 7. The AI answers by actually analysing the platform's own data for that specific question —
    not repeating a fixed canned summary. It states the answer's time window plainly, grounded
    in when live data collection actually began (e.g. "since we started tracking on 20 July
@@ -338,9 +352,27 @@ The user interprets and decides what to do with it.
    says so and gives the data alone rather than a shaky recommendation.
 7c. **An instant answer to a common question is held to exactly the same bar.** It analyses
    the platform's own data for that specific question, states the time window, and obeys the
-   Compensation and Requirements honesty rules (7a, 7b) — the numbers are always current as
-   of when it's asked, never stored or stale. The only thing different is that no AI model
-   composed it, and the drill-down says so.
+   Compensation, Requirements, and Layoff Signal honesty rules (7a, 7b, 7d) — the numbers are
+   always current as of when it's asked, never stored or stale. The only thing different is
+   that no AI model composed it, and the drill-down says so.
+7d. **Layoff Signal answers carry their own honesty requirement, and its own synthesis
+   shape** (added 2026-09-11 — `changes/2026-09-11-employment-event-ingestion.md`, **revised
+   same day** — `changes/2026-09-11-employment-events-no-company-matching.md`, to remove all
+   cross-reference to the platform's own job-posting/hiring data): a reported employment event
+   (layoff, closure, restructuring, bankruptcy, offshoring, expansion, or hiring announcement)
+   is a fact from an external registry, not the platform's own observation — the AI states
+   which registry reported it and when, exactly as Sources already does for job-board data.
+   **Whether an event is part of a pattern or an isolated one-off is always a two-part
+   answer, never blended**: first the data — every employment event on record for the
+   queried company or sector, in order (e.g. "Company X has had two restructuring
+   announcements in the past 8 months, totalling 340 roles") — then, clearly separated, the
+   AI's judgment on whether that reads as a sustained pattern or an isolated event, built only
+   on the number of events and their spacing. A single event with no prior history is plainly
+   called "one data point — too early to call a pattern," never dressed up as a trend. **The
+   AI never references the platform's own tracked job-posting/hiring data when answering a
+   Layoff Signal question** — employment events are an independent dataset, not compared or
+   matched against tracked-company hiring trends in any way. If the queried company or sector
+   isn't covered by any employment-event source, the AI says so plainly.
 8. The conversation grows downward. The user leaves with a clear directional read.
 
 ---
@@ -361,6 +393,14 @@ The user interprets and decides what to do with it.
    `design/information-architecture.md` Content Taxonomy. Sub-specializations within each,
    plus the seniority and track taxonomy used elsewhere in this feature, are defined in
    `design/market-health/job-classification.md`.
+
+   **Employment events strip — removed 2026-09-11** (`changes/2026-09-11-employment-events-no-company-matching.md`).
+   Added and removed the same day: a marker layer showing events at *tracked-company* matches
+   was built, then the user directed that employment events must never be matched to the
+   platform's tracked job-posting companies at any layer, including this one. The trend chart
+   is unchanged from its pre-2026-09-11 shape — three lines, nothing else. The independent
+   market-wide view lives in the "Employment risk across the market" data story instead
+   (`design/market-health/data-stories.md`).
 
 2. **Written summary** — directly below the chart, inside the same message bubble.
    3–4 sentences. Names direction, magnitude, and category divergence where present.
@@ -439,6 +479,7 @@ language or sentiment framing beyond what the numbers directly support.
 | Flat / single-bucket data | A genuinely flat series (every bucket the same value) renders as a straight horizontal line, not a blank chart. When only one complete bucket is in range, its values render as labelled points (no line) with a caption naming the period and stating that a trend line needs at least two. The Y axis always shows a readable scale even when the value range is zero-width. |
 | Complete periods only | The in-progress week or month is never plotted — see Written Summary Specification. The last point on the chart is always a period that has fully elapsed. |
 | Baseline exclusion | The first collection day never appears as a bucket on the chart. The X axis begins at the first full bucket after it. This is why "6 Months" can legitimately show only a few weeks of line — the window before live collection started has no data and is not drawn (updated 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`). |
+| **Employment events strip — removed 2026-09-11** | Built and removed the same day — see `changes/2026-09-11-employment-events-no-company-matching.md`. The chart has no employment-event layer; three lines only, unchanged from before 2026-09-11. |
 
 ---
 
@@ -469,6 +510,12 @@ changes (added 2026-08-22 — `changes/2026-08-22-chart-granularity.md`).
   described as a hiring surge. The baseline is identified by date (the earliest day the
   platform observed any posting), not by which ingestion run inserted a row (updated
   2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`).
+- **Employment events removed from this summary — 2026-09-11.** A same-day revision had briefly
+  added a rule letting the summary mention nearby employment events as concurrent (never
+  causal) facts. Removed along with the chart's event marker layer — the written summary never
+  references `employment_events` at all; that data surfaces only through the independent
+  "Employment risk across the market" story and follow-up Layoff Signal conversation. See
+  `changes/2026-09-11-employment-events-no-company-matching.md`.
 
 **Example outputs:**
 
@@ -504,6 +551,8 @@ concentrated in the first half of the year — the last three months have been f
 | Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
 | Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. |
 | Ask a synthesis question that asks for a judgment (e.g. "Should I learn to code as a UX Designer?") | AI answers in two clearly separated parts: the underlying data first, then its judgment built on that data — never blended into one undifferentiated statement. If the sample is too small to support a confident judgment, gives the data alone and says so. |
+| Ask a Layoff Signal question (e.g. "Has Company X had layoffs recently?", "Is the SaaS sector contracting?") (added 2026-09-11) | AI reports the company's or sector's employment-event history over the relevant window, states each event's source. Never cross-references the platform's own job-posting/hiring data — see User Flow 7d. |
+| Ask a pattern-vs-isolated-event question (e.g. "Is Company X's restructuring part of a pattern?") (added 2026-09-11) | AI answers in two clearly separated parts, same shape as a synthesis question: the event history first, then its judgment on pattern vs. isolated event, built only on event count and spacing — a coincidence in timing with anything else is never stated as causal. A single event with no history is called "too early to call a pattern," not dressed up as a trend. |
 | Pick an offered common question | It's asked as if typed. A curated question returns an instant answer from current platform data, held to the same time-window and honesty rules as any answer. |
 | Assistant is briefly unavailable (transient outage) | The AI turn shows a calm "try again shortly" message and the common questions stay available. Not a red error state; retrying a moment later normally works. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
@@ -589,6 +638,23 @@ concentrated in the first half of the year — the last three months have been f
   rather than forced into the nearest standard value or dropped. If a user's question depends
   specifically on catch-all content, the AI can surface it, but always distinguishes it from
   the standard taxonomy's closed-set values.
+- **A single employment event with no prior history for that company or sector (added
+  2026-09-11):** The AI presents the one event plainly and states there isn't enough history
+  to call it a pattern — never infers a trend from one data point, regardless of how large
+  the event is.
+- **A queried company or sector isn't covered by any employment-event source (added
+  2026-09-11, revised same day — `changes/2026-09-11-employment-events-no-company-matching.md`):**
+  The AI says so plainly — e.g. "We don't have employment-event data for this company" —
+  rather than staying silent as though the absence itself were a signal. **Never** falls back
+  to the platform's job-posting/hiring data for this company as a substitute — that cross-
+  reference was removed along with all company-matching in this pipeline (see revision note
+  above). Coverage is real and geography-bound (per-source: Eurofound ERM covers the EU and
+  Norway, US state WARN covers the US, UK Companies House covers UK insolvency only) — the
+  accordion's Sources section names which registries were checked for that answer.
+- **No employment-event data has been ingested yet for any source (added 2026-09-11):** A
+  Layoff Signal question gets the same honest "we don't track that yet" treatment as any other
+  data the platform doesn't yet hold. The trend chart is unaffected either way — it has no
+  employment-event layer to be empty or "loading" (revision note above).
 
 ---
 
@@ -606,6 +672,8 @@ concentrated in the first half of the year — the last three months have been f
 | Data-vs-judgment comprehension | Post-task question, after a synthesis answer: "Which part was factual data, and which part was the AI's opinion?" | ≥ 85% correct |
 | Instant-answer coverage | Analytics — % of follow-up questions answered by the curated no-model path | Track; expected to rise as the catalogue grows |
 | Degraded-state recovery | Analytics — % of "assistant unavailable" turns followed by a successful answer (retry or common question) in the same session | ≥ 90% |
+| Layoff Signal question rate (added 2026-09-11) | Analytics — % of sessions that include at least one employment-event or pattern-vs-isolated-event question | Track, no target yet |
+| Pattern-vs-isolated comprehension (added 2026-09-11) | Post-task question, after a Layoff Signal pattern answer: "Did the AI call this a pattern, an isolated event, or say there wasn't enough data to tell?" | ≥ 85% correct |
 
 ---
 
@@ -646,6 +714,26 @@ concentrated in the first half of the year — the last three months have been f
 - How the common questions are offered and how the transient "unavailable" message reads —
   placement, wording, styling — is deliberately left to the frontend and visual-design work,
   within the existing conversational design.
+- **(Added 2026-09-11)** The IA's `Layoff Signal` term (`design/information-architecture.md`
+  Content Taxonomy) is currently defined narrowly as "a reported or confirmed layoff event."
+  This update uses events across the full range the research identified — closures,
+  restructuring, bankruptcy, offshoring, expansion, and hiring announcements, not layoffs
+  alone — under that same term, because it's the only IA term that exists for this concept
+  today (spec discipline: use exact existing terms, never invent new ones). Broadening the
+  term's own definition (or introducing a distinct umbrella term) is IA's decision, not this
+  spec's — flagged here for `/new-information-architecture` (change-request Step 3).
+- **Resolved (2026-09-11, later same day — `changes/2026-09-11-employment-events-independent-scope.md`,
+  then superseded hours later same day — `changes/2026-09-11-employment-events-no-company-matching.md`).**
+  First pass: the user directed that employment events should also serve broader, company-
+  independent market intelligence — the resolution at that point kept the tracked-company
+  chart strip *and* added a new, separate "Employment risk across the market" data story
+  alongside it (two surfaces, one scoped, one not). **Final decision, hours later**: the user
+  clarified this more firmly — employment events must be independent of tracked companies
+  **everywhere**, not scoped anywhere, not even as one surface among several. The chart strip
+  (and its `matched_company` matching mechanism entirely) was removed. **The "Employment risk
+  across the market" data story is now the only surface for employment events** —
+  `design/market-health/data-stories.md` (Story 2) — plus follow-up Layoff Signal
+  conversation (User Flow 7d), both fully independent of the platform's tracked-company data.
 
 **Added (2026-09-03):** Two goals stated, no design change: (1) a curated, growing set of
 common questions should answer instantly from current platform data with no AI model call;
@@ -668,6 +756,30 @@ path recognises ordinary rephrasings, not just near-exact wording (#1). All of t
 product rules that hold regardless of which AI model is in use. Stale "fell back to a
 secondary model" accordion line removed (the tier list was dropped 2026-09-06). Opening
 chart, summary, and prompt untouched.
+
+**Revised again same day (2026-09-11 — `changes/2026-09-11-employment-events-no-company-matching.md`):**
+Corrects the entry directly below. That entry's "employment events strip" (a chart marker
+layer at *tracked-company-matched* events) and the Layoff Signal honesty rule's job-opening-
+trend comparison are both **removed** — the user directed, firmly and repeatedly, that
+employment events must never be matched to the platform's tracked job-posting companies at
+any layer. Layoff Signal is conversation-only (no chart addition); its pattern-vs-isolated
+judgment (7d) is built from event history alone. The independent market view lives in the
+"Employment risk across the market" data story. See the superseded "left open" items below —
+the IA term broadening still stands; "whether a dedicated data-story overview is worth adding"
+is resolved (it was built, and is now the *only* surface, per this revision).
+
+**Revised (2026-09-11 — `changes/2026-09-11-employment-event-ingestion.md`, later corrected —
+see entry above):** Introduces **Layoff Signal** as a fourth follow-up-conversation signal,
+alongside Demand, Compensation, and Requirements — reported employment events (layoffs,
+closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements) from
+external registries (Eurofound ERM, US state WARN, UK Companies House — see
+`research/2026-09-11-employment-event-data-sources.md` for source evaluation). Reuses the
+exact two-part synthesis-answer shape Requirements Signal established (User Flow 7b) for its
+core new judgment — pattern vs. isolated event (7d) — never inferring causation from a
+coincidence in timing. ~~The one non-conversational addition: a thin **employment events
+strip** beneath the opening trend chart's X axis...~~ — removed, see the correction entry
+above. Left open for the next steps in the chain: broadening the IA's `Layoff Signal`
+definition (currently layoff-only) to match the fuller event range now in scope.
 
 **Revised (2026-09-10 — `changes/2026-09-10-story-visual-standard.md`):** How a data story
 *looks* is now a standard, not the builder's choice — every catalogue entry's renderer

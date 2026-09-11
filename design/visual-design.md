@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.5
+version: 1.6
 status: active
 created: 2026-06-21
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -52,6 +52,13 @@ They are used consistently across charts, tags, and status indicators.
 | Error background | `red-950/30` | — | Error state card backgrounds |
 | Error border | `red-900/40` | — | Error state card borders |
 | Error text | `red-400` | #f87171 | Error messages |
+
+**Reviewed 2026-09-11, then reverted same day** (`changes/2026-09-11-employment-event-ingestion.md`
+Step 4, superseded by `changes/2026-09-11-employment-events-no-company-matching.md`): the trend
+chart briefly gained event markers reusing Rising/Declining/Stable, then the whole marker
+layer was removed once the user directed that employment events must never be matched to
+tracked companies at any layer, including a chart overlay. No lasting change to this section —
+kept here only so a future reader sees why this note briefly existed.
 
 ---
 
@@ -279,6 +286,14 @@ trailing icon: a small arrow, gray-500, hover gray-300
 usage:         one per story-catalogue entry in the welcome's call-to-action list;
                replaces a plain list item with a clickable, hoverable row
 ```
+
+### Chart event marker — removed 2026-09-11
+
+Added and removed the same day (`changes/2026-09-11-employment-event-ingestion.md`, then
+`changes/2026-09-11-employment-events-no-company-matching.md`) — a marker layer for the trend
+chart's tracked-company-matched employment events, retired once the user directed that
+employment events must never be matched to tracked companies at any layer. No component to
+reuse; documented here only so the removal is traceable.
 
 ### Ranked bar list (added 2026-09-06 — `changes/2026-09-06-market-story-visual-and-dedup.md`)
 

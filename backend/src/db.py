@@ -316,6 +316,62 @@ CREATE TABLE IF NOT EXISTS chat_paid_usage (
     usage_date  DATE PRIMARY KEY,
     requests    INTEGER NOT NULL DEFAULT 0
 );
+
+-- Employment events (layoffs, closures, restructuring, bankruptcy,
+-- offshoring, expansion, hiring announcements) — added 2026-09-11,
+-- changes/2026-09-11-employment-event-ingestion.md. Brand new table, plain
+-- CREATE IF NOT EXISTS — not raw_postings, not classified. See
+-- backend/specs/market-health/api.md — Data Models — EmploymentEvent.
+-- Immutable, same discipline as raw_postings: a row is inserted once and
+-- never mutated; superseded_by points at a later, correcting row instead of
+-- an in-place edit.
+CREATE TABLE IF NOT EXISTS employment_events (
+    id              TEXT PRIMARY KEY,
+    source          TEXT NOT NULL,
+    source_ref      TEXT NOT NULL,
+    source_url      TEXT,
+    company_raw     TEXT NOT NULL,
+    sector          TEXT,
+    country         TEXT,
+    region          TEXT,
+    event_date      DATE NOT NULL,
+    event_type      TEXT NOT NULL,
+    direction       TEXT NOT NULL,
+    jobs_affected   INTEGER,
+    confidence      TEXT NOT NULL,
+    source_type     TEXT NOT NULL DEFAULT 'registry',
+    superseded_by   TEXT REFERENCES employment_events(id),
+    raw_response    JSONB NOT NULL,
+    ingested_at     TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employment_events_event_date ON employment_events (event_date);
+CREATE INDEX IF NOT EXISTS idx_employment_events_company_raw ON employment_events (company_raw);
+CREATE INDEX IF NOT EXISTS idx_employment_events_source ON employment_events (source);
+
+-- No company matching — matched_company (and its index) briefly existed here,
+-- added 2026-09-11, dropped the same day
+-- (changes/2026-09-11-employment-events-no-company-matching.md). The user
+-- directed that employment events must be independent of the platform's
+-- tracked job-posting companies at every layer — this is the deliberate,
+-- non-additive migration exception this file already has precedent for
+-- (classifications.seniority, 2026-08-11): the column's entire purpose was
+-- company-matching, which no longer exists in this pipeline, so a dead,
+-- always-NULL column is worse than dropping it.
+DROP INDEX IF EXISTS idx_employment_events_matched_company;
+ALTER TABLE employment_events DROP COLUMN IF EXISTS matched_company;
+
+-- Employment-event source cursors — added 2026-09-11. A small, generic table
+-- any streaming-style adapter can use to resume from its last position (the
+-- UK Companies House Streaming API needs this; a polling/full-refetch
+-- adapter like WARN Firehose's trailing-window approach doesn't). See
+-- backend/specs/market-health/api.md — Data Models, Tech Decisions.
+CREATE TABLE IF NOT EXISTS employment_event_cursors (
+    source      TEXT PRIMARY KEY,
+    cursor      TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 

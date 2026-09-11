@@ -24,8 +24,15 @@ changes every downstream decision: urgency, salary targets, target companies, ge
 - They can set a realistic salary target before applying to anything
 - They spend less than 5 minutes to get a clear market read
 - They can see the trends clearly, how the hiring market numbers evolve through time
+- They can see employment risk alongside demand — layoffs, closures, restructuring, and
+  expansion/hiring signals at the company and sector level — not just open-role counts, so a
+  healthy-looking job count doesn't hide a company that's actively contracting
+- Every employment-risk signal shown is traceable to its source (which registry/monitor, which
+  record, when it was published) — matching the provenance bar `ai-reasoning-transparency.md`
+  already sets for AI-derived answers
 
 ## Out of scope
 - Application tracking or job pipeline management
 - Resume or portfolio advice
-- Company-specific research
+- Company-specific research beyond the employment-event signal itself (e.g. no general company
+  news aggregation, no employee reviews/ratings)

@@ -27,7 +27,28 @@ STORY_CATALOGUE = (
             "What does your job market data show?",
         ],
     },
+    {
+        "id": "employment-risk-overview",
+        "display_name": "Employment risk across the market",
+        "question": "What does layoff and hiring activity look like across the market right now?",
+        "example_phrasings": [
+            "Is the market seeing more layoffs or hiring?",
+            "What's happening with layoffs right now?",
+            "Show me employment risk",
+        ],
+    },
 )
+
+# Employment risk story window — trailing 12 months, revised 2026-09-11 from
+# an initial 90 days (changes/2026-09-11-employment-risk-12-month-window.md):
+# a source's own event date can lag well behind when it actually appeared on
+# a live feed (confirmed with real UK Companies House Streaming API data —
+# a live-pushed case update can reference a case that itself started many
+# months earlier), so a short window silently dropped real, freshly-surfaced
+# events. Not the YoY 12-month *comparison* convention Story 1 uses (this is
+# a single trailing window, not two windows compared) — same duration,
+# different purpose. See design/market-health/data-stories.md — Story 2.
+_EMPLOYMENT_RISK_WINDOW = timedelta(days=365)
 
 
 def list_stories() -> dict[str, list[dict[str, Any]]]:
@@ -442,10 +463,185 @@ def build_market_data_briefing() -> dict[str, Any]:
     }
 
 
+def build_employment_risk_overview() -> dict[str, Any]:
+    """
+    Story 2 — company-independent market employment risk, built entirely from
+    `employment_events`. Deliberately no join to raw_postings/classifications
+    and no matched_company filter — see design/market-health/data-stories.md
+    — Story 2, and changes/2026-09-11-employment-events-independent-scope.md.
+    """
+    from employment_events.base import SOURCE_DISPLAY_NAMES, is_real_company_name
+
+    query_time = datetime.now().astimezone()
+    window_start = query_time - _EMPLOYMENT_RISK_WINDOW
+
+    with get_connection() as conn:
+        base_where = "superseded_by IS NULL AND event_date >= %s"
+        params: tuple = (window_start.date(),)
+
+        direction_rows = conn.execute(
+            f"""
+            SELECT direction, count(*) AS events, COALESCE(sum(jobs_affected), 0) AS affected
+            FROM employment_events
+            WHERE {base_where}
+            GROUP BY direction
+            """,
+            params,
+        ).fetchall()
+
+        # Fetch a generous candidate set, then filter out placeholder ids in
+        # Python (is_real_company_name — same check used everywhere else in
+        # this pipeline, not duplicated as SQL) before truncating to the
+        # top 10 — see changes/2026-09-11-employment-risk-hide-placeholder-names.md.
+        # A source with no company name (UK Companies House's Streaming API,
+        # so far) still counts toward every other aggregate below (direction,
+        # country, sector) — only this company-name-specific ranking excludes it.
+        company_candidates = _rows_as_dicts(conn.execute(
+            f"""
+            SELECT company_raw, sum(jobs_affected) AS affected, count(*) AS events
+            FROM employment_events
+            WHERE {base_where} AND jobs_affected IS NOT NULL
+            GROUP BY company_raw
+            ORDER BY affected DESC, company_raw
+            LIMIT 30
+            """,
+            params,
+        ))
+        company_rows_excluded = sum(
+            1 for row in company_candidates if not is_real_company_name(row["company_raw"])
+        )
+        company_rows = [
+            row for row in company_candidates if is_real_company_name(row["company_raw"])
+        ][:10]
+
+        # By country only, not state — revised 2026-09-11
+        # (changes/2026-09-11-employment-risk-country-dimension.md). The
+        # original COALESCE(region, country) conflated US state codes and
+        # country codes in one ranking, which stops being a meaningful
+        # comparison the moment a second country's data exists. `region`
+        # (state-level) stays a stored column, deliberately not surfaced
+        # here — deferred, not dropped.
+        country_rows = _rows_as_dicts(conn.execute(
+            f"""
+            SELECT country, count(*) AS events, COALESCE(sum(jobs_affected), 0) AS affected
+            FROM employment_events
+            WHERE {base_where} AND country IS NOT NULL
+            GROUP BY country
+            ORDER BY affected DESC, country
+            LIMIT 10
+            """,
+            params,
+        ))
+
+        sector_rows = _rows_as_dicts(conn.execute(
+            f"""
+            SELECT sector, count(*) AS events, COALESCE(sum(jobs_affected), 0) AS affected
+            FROM employment_events
+            WHERE {base_where} AND sector IS NOT NULL
+            GROUP BY sector
+            ORDER BY affected DESC, sector
+            LIMIT 10
+            """,
+            params,
+        ))
+
+        total_events_row = conn.execute(
+            f"SELECT count(*), count(jobs_affected) FROM employment_events WHERE {base_where}",
+            params,
+        ).fetchone()
+        total_events, events_with_figure = total_events_row
+
+        sources_row = conn.execute(
+            f"SELECT DISTINCT source FROM employment_events WHERE {base_where}", params,
+        ).fetchall()
+        sources = sorted(SOURCE_DISPLAY_NAMES.get(s, s) for (s,) in sources_row)
+
+    direction_counts = {d: (n, a) for d, n, a in direction_rows}
+    contraction_events, contraction_affected = direction_counts.get("contraction", (0, 0))
+    expansion_events, _expansion_affected = direction_counts.get("expansion", (0, 0))
+    direction_total_events = contraction_events + expansion_events
+    contraction_share = (
+        (contraction_events / direction_total_events * 100) if direction_total_events else 0.0
+    )
+
+    has_data = total_events > 0
+
+    sections = [
+        _section(
+            "contraction-vs-expansion",
+            "Contraction vs. expansion",
+            {
+                "contraction_roles_affected": contraction_affected,
+                "contraction_share_of_events": contraction_share,
+                "contraction_events": contraction_events,
+                "expansion_events": expansion_events,
+                "events_missing_a_roles_figure": total_events - events_with_figure,
+            },
+            f"Based on {total_events} reported event(s) in the last 12 months. A roles-affected "
+            "figure isn't reported by every source, so the roles total may understate the "
+            "true count.",
+            ready=has_data,
+        ),
+        _section(
+            "employment-risk-companies",
+            "Companies with the most reported impact",
+            {"companies": company_rows},
+            "Company names are exactly as the source registry reported them, not normalized "
+            "against the platform's own tracked-company list."
+            + (
+                f" {company_rows_excluded} event(s) excluded — the source reports only a "
+                "company id, not a name."
+                if company_rows_excluded
+                else ""
+            ),
+            ready=bool(company_rows),
+        ),
+        _section(
+            "employment-risk-countries",
+            "By country",
+            {"countries": country_rows},
+            "State-level detail isn't broken out here yet — every country's events are "
+            "combined into one figure regardless of which state/region within it.",
+            ready=bool(country_rows),
+        ),
+        _section(
+            "employment-risk-sectors",
+            "By sector",
+            {"sectors": sector_rows},
+            f"Only {len(sector_rows)} sector value(s) are covered — not every source reports "
+            "an industry/sector for its events.",
+            ready=bool(sector_rows),
+        ),
+    ]
+
+    return {
+        "story_id": "employment-risk-overview",
+        "question": STORY_CATALOGUE[1]["question"],
+        "as_of": query_time.isoformat(),
+        "sections": sections,
+        "provenance": {
+            "sources": sources,
+            "model_used": False,
+            "query_time": query_time.isoformat(),
+        },
+        "limitations": [
+            "Independent of the platform's 35 tracked job-posting companies — this reflects "
+            "whatever companies the ingested employment-event registries themselves report.",
+            "Not every registry sizes an event's headcount impact or names a sector — those "
+            "figures reflect only the events that report them.",
+            "Coverage today is limited to whichever registries are currently ingesting — see "
+            "the Reasoning Panel's Sources for this response, and DATA_SOURCES.md for the "
+            "full, current adapter list.",
+        ],
+    }
+
+
 def get_story(story_id: str) -> dict[str, Any]:
-    if story_id != "market-data-briefing":
-        raise KeyError(story_id)
-    return build_market_data_briefing()
+    if story_id == "market-data-briefing":
+        return build_market_data_briefing()
+    if story_id == "employment-risk-overview":
+        return build_employment_risk_overview()
+    raise KeyError(story_id)
 
 
 def build_welcome() -> dict[str, Any]:

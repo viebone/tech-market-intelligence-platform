@@ -9,7 +9,7 @@ at runtime. To change something, edit the file this points to.
 feeds, research and articles later — all normalised into one internal model. This document
 keeps that growing surface reviewable in one place.
 
-Last reviewed: 2026-09-09.
+Last reviewed: 2026-09-11.
 
 ---
 
@@ -51,7 +51,7 @@ market-health API + chat + data stories
 |---|---|---|---|---|
 | **Job postings** | ✅ active | One `raw_postings` row per open role | `raw_postings` → classification → requirements | The only type live today. Three adapters (§3). |
 | **Company career pages / ATS portals** | 🔲 planned | Same as job postings — a new *adapter*, not a new type | `raw_postings` | For companies not on a supported ATS (custom career sites, legacy ATS). Mechanism is scraping, not a public API — needs a per-site adapter or a generic HTML/JSON-LD adapter. Same `FetchedPosting` output. |
-| **Layoff events** | 🔲 planned | A layoff record (company, count, date, source) | New table — *not* `raw_postings`, *not* classified | Different shape; feeds the market-health narrative (`Layoff Signal` in the IA). Needs its own adapter contract + data model + a `/change-request`. |
+| **Employment events** (renamed from "Layoff events" 2026-09-11 — scope broadened to match) | 🟡 code shipped, 2/3 adapters not yet functional | An `employment_events` row (company, event date, event type, direction, jobs affected, source) — layoffs **and** closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements | Table `employment_events` — *not* `raw_postings`, *not* classified | Feeds the broadened `Layoff Signal` (IA) and the trend chart's "Employment events strip". Data model, endpoint, chat tool, and three adapters implemented — see §3a below. `/change-request`: `changes/2026-09-11-employment-event-ingestion.md`. |
 | **Research / reports / articles** | 🔲 planned | Enrichment text with market commentary | New table — explicitly *not* forced through the posting/classification shape (`job-data-source-flexibility.md` — Success looks like) | Feeds narrative + context, cited as an external source in provenance. Needs its own contract + CR. |
 
 **Out of scope for now** (per the outcome): cross-source dedupe of the same posting; automatic
@@ -78,6 +78,50 @@ Shared machinery (`backend/src/sources/base.py`):
 - `PacedFetcher` — self-imposed ~1 req/s pacing + retry-with-backoff on 429/5xx (no source documents a hard rate limit)
 - `normalize_country()` / `COUNTRY_NAME_TO_ISO2` — free-text country → ISO-2 (curated from observed data)
 - `SourceFetchError` — one company failing never aborts the run or the rest of the list (fault isolation, per company)
+
+---
+
+## 3a. Employment-event adapters (spec'd 2026-09-11; code shipped 2026-09-11 — Step 7)
+
+**How the data is stored, field by field, verified against the real production schema:
+`backend/EMPLOYMENT_EVENTS.md`** — read that first if the question is "what does a stored
+employment-event row actually look like." Source evaluation:
+`research/2026-09-11-employment-event-data-sources.md`. Full data model and adapter contracts:
+`backend/specs/market-health/api.md` — Data Models (`EmploymentEvent`), Business Logic —
+Employment event ingestion, Tech Decisions — `EmploymentEventAdapter`. Priority order below is
+implementation order, not a ranking of importance.
+
+| Adapter | `name` | Access | Auth | Status |
+|---|---|---|---|---|
+| Eurofound European Restructuring Monitor | `eurofound_erm` | CSV data-access request (exact mechanism TBC) | None confirmed | ⚠️ **Scaffolded, not functional.** `fetch()` logs a notice and returns `[]` — `ACCESS_CONFIRMED = False`. See `backend/src/employment_events/eurofound_erm.py`'s module-docstring TODO for the exact next step. |
+| US state WARN notices | `us_warn` | **WARN Firehose** (warnfirehose.com) — one aggregated API, all 50 states, replaces the original per-state scraping design (found via live research 2026-09-11, same day) | API key, free tier (25 calls/day) — env var `WARN_FIREHOSE_API_KEY` (set, local `backend/.env` only, gitignored) | ✅ **Live — first real data ingested 2026-09-11.** Field mapping verified against a real authenticated response (`company_name`, `industry`→`sector`, real `source_url` per record — see `backend/src/employment_events/us_warn.py`). 25 real rows inserted on first run; re-run confirmed idempotent (0 new). **Real finding**: the feed lags ~9 days behind the actual date (an unfiltered call's `latest_notice` was 9 days stale) — the trailing window was widened from 4 to 30 days after the first run returned 0 (too narrow), same "confirm empirically" correction pattern as everywhere else in this pipeline. |
+| UK Companies House — insolvency | `companies_house_insolvency` | **Streaming API** (`stream.companieshouse.gov.uk/insolvency-cases`) — real-time, all UK companies, no company targeting (revised 2026-09-11, replacing a tracked-company candidate-list design — `changes/2026-09-11-employment-events-no-company-matching.md`) | Streaming-type API key (free registration, Companies House Developer Hub) — env var `COMPANIES_HOUSE_API_KEY`, **set 2026-09-11** | ✅ **Live — first real data ingested 2026-09-11.** Field mapping corrected against a real authenticated response (`resource_id` for company number, `data.cases[0].dates[0].date` for the case date — three fields differed from the initial guess). **Known limitation**: the stream carries no company name, only a company number (`company_raw` = the bare id, e.g. `"12028607"` — never fabricated as `"Company N"`, revised 2026-09-11) — resolving names needs a separate REST-type key, not pursued yet. Such events are excluded from the Employment Risk story's company ranking (`is_real_company_name()`) but still count toward direction/country/sector totals — `changes/2026-09-11-employment-risk-hide-placeholder-names.md`. |
+| SEC EDGAR (8-K Item 2.05) | `sec_edgar_8k` | Full-text search (`efts.sec.gov/LATEST/search-index`), filtered to structured Item 2.05 ("Costs Associated with Exit or Disposal Activities") — added 2026-09-11 | **None — no key at all, keyless and free.** Requires only a descriptive `User-Agent` (`SEC_EDGAR_CONTACT` env var; falls back to a placeholder that should be replaced with a real contact before relying on this in production) | ✅ **Live — first real data ingested 2026-09-11**, 9 real filings on first run (Veritone, TScan Therapeutics, TELA Bio, PDS Biotechnology, CVD Equipment, and others). The only source so far with a genuine company name straight from the record — see `backend/src/employment_events/sec_edgar.py`. `jobs_affected` and `sector` are `NULL` (not in this index's metadata; sizing/SIC-to-sector mapping not attempted rather than guessed). |
+| ~~UK ONS HR1~~ | — | — | — | ❌ **Deliberately not integrated** — macro/aggregate only, no company names; doesn't fit `EmploymentEvent`. See the backend spec's "UK ONS HR1 (descoped)" note. |
+
+**No company matching (added 2026-09-11, removed the same day —
+`changes/2026-09-11-employment-events-no-company-matching.md`).** A `matched_company` field
+and its alias map (`employment_events/company_aliases.py`) briefly linked events to the 35
+tracked job-posting companies. Removed entirely, per explicit, repeated user direction:
+employment events are an **independent dataset, matched or compared against tracked companies
+nowhere in this pipeline** — not the data model, not any query, not any surface. Every
+`employment_events` row carries only `company_raw`, exactly as its source reported it.
+
+**Net effect today**: `python ingest_employment_events.py` is live and verified for **US
+WARN** — 25 real rows in `employment_events` as of 2026-09-11, re-run confirmed idempotent.
+Eurofound ERM (access unconfirmed) and Companies House (no key set yet) still insert nothing,
+safely. All real employment-event data surfaces through the **"Employment risk across the
+market"** data story (`design/market-health/data-stories.md` — Story 2) and follow-up Layoff
+Signal conversation — both fully independent of the platform's 35 tracked companies, by
+design, at every layer.
+
+**Add a new employment-event source**: a 4-step recipe, documented in full in
+`backend/src/employment_events/__init__.py`'s module docstring (write one adapter file
+implementing `EmploymentEventAdapter`, register its display name, add it to
+`ALL_EMPLOYMENT_EVENT_ADAPTERS`, update this doc) — `ingest_employment_events.py`, the DB
+schema, the API endpoint, and the chat tool all already handle "however many adapters are
+registered," none of them name a specific source. Same "one adapter, one internal model"
+principle as §1's job-posting model.
 
 ---
 
@@ -215,6 +259,19 @@ Everything tunable, and where it lives. Grouped by area.
 | Curated instant answers | 6 entries + matcher thresholds | `backend/src/curated_answers.py` — `CURATED_CATALOGUE` |
 | Full explanation | — | `backend/AI_INTERACTION_SETTINGS.md` |
 
+### Employment events (added 2026-09-11)
+| Lever | Value | File |
+|---|---|---|
+| Registered adapters | Eurofound ERM, US WARN, UK Companies House, SEC EDGAR | `backend/src/employment_events/__init__.py` — `ALL_EMPLOYMENT_EVENT_ADAPTERS` |
+| SEC EDGAR contact | env var (required by SEC's fair-access policy, not a secret) | `SEC_EDGAR_CONTACT` — `backend/.env.example` |
+| US WARN source | WARN Firehose, all 50 states in one API | `backend/src/employment_events/us_warn.py` |
+| WARN Firehose API key | env var, free tier (25 calls/day) | `WARN_FIREHOSE_API_KEY` — `backend/.env.example` |
+| Eurofound ERM access flag | `False` | `backend/src/employment_events/eurofound_erm.py` — `ACCESS_CONFIRMED` |
+| Companies House source | Streaming API, all UK companies (revised 2026-09-11) | `backend/src/employment_events/companies_house.py` |
+| Companies House API key | env var, free registration | `COMPANIES_HOUSE_API_KEY` — `backend/.env.example` |
+| Source-event cursors | resumable stream position, per source | `employment_event_cursors` table (Postgres) |
+| Ingestion schedule | `0 7 * * *` (07:00 UTC — offset 1h from job-sync's 06:00 UTC, own service) | `backend/railway.employment-events.json` — `cronSchedule` |
+
 ### Gemini projects / keys / billing
 | Lever | File / location |
 |---|---|
@@ -236,3 +293,5 @@ Everything tunable, and where it lives. Grouped by area.
 - `backend/specs/market-health/api.md` — Business Logic — Ingestion; Tech Decisions — Source adapter abstraction, Company-list curation
 - `design/market-health/job-classification.md` — the role/skill taxonomy
 - `changes/2026-07-28-multi-source-job-data-ingestion.md` — the change that replaced Adzuna with the three ATS adapters
+- `changes/2026-09-11-employment-event-ingestion.md` — the change that added employment events
+  (§2, §3a above); source evaluation in `research/2026-09-11-employment-event-data-sources.md`

@@ -53,7 +53,13 @@ from ai_interaction_settings import (
 )
 from db import get_connection
 from market_health import _resolve_signal, _filter_demand, _filter_compensation, _serialise
-from market_query import query_compensation_data, query_market_data, query_requirements_data
+from employment_events.base import SOURCE_DISPLAY_NAMES
+from market_query import (
+    query_compensation_data,
+    query_employment_events_data,
+    query_market_data,
+    query_requirements_data,
+)
 from mock_data import LAYOFF_SIGNALS
 from models import ReasoningStep, ReasoningTrace, SourceAccess
 
@@ -150,8 +156,8 @@ def _render_transcript(messages: list[ChatMessage]) -> str:
 # ---------------------------------------------------------------------------
 
 _DATA_STAGE_SYSTEM_TEMPLATE = """You are a market intelligence assistant for tech professionals. \
-Today's date is {today}. You have three tools to examine real, live-classified job posting \
-data — call whichever fit (or several) as needed to answer the user's question with real numbers:
+Today's date is {today}. You have four tools to examine real platform data — call whichever \
+fit (or several) as needed to answer the user's question with real numbers:
 - query_market_data: demand/volume questions — counts, trends, comparisons across role, \
 specialization, level, track, or country.
 - query_compensation_data: salary/pay questions. Never blend its structured_count and \
@@ -168,6 +174,13 @@ Every extracted field is an interpretation of free text, not a verified fact —
 findings as proportions of total_matching ("42% of postings mention X"), never as absolute \
 claims. If total_matching is small, say so and be cautious about drawing a firm conclusion \
 from it. This tool never returns compensation figures — use query_compensation_data for those.
+- query_employment_events_data: layoffs, closures, restructuring, bankruptcy, offshoring, \
+expansion, and hiring-announcement questions for any company or sector (not limited to \
+tracked companies), plus the data half of any "is this a pattern or a one-off" question. Its \
+events entries carry a confidence of "confirmed" (a statutory filing/official register) or \
+"reported" (compiled from public announcements) — never state a "reported" event with a \
+"confirmed" event's certainty. This data is fully independent of the platform's job-posting \
+data — never join, compare, or cross-reference it against query_market_data and the others.
 
 Below is the recent conversation. Answer the LAST message in it, using the earlier messages \
 only to understand what a short reply like "yes please" or "what about X" is referring to.
@@ -207,7 +220,12 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
         return await provider.complete_with_tools(
             prompt=_render_transcript(recent_messages),
             system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
-            tools=[query_market_data, query_compensation_data, query_requirements_data],
+            tools=[
+                query_market_data,
+                query_compensation_data,
+                query_requirements_data,
+                query_employment_events_data,
+            ],
         )
 
     response = await call_with_retry(_chat_provider(), _call)
@@ -280,6 +298,16 @@ def _build_synthesis_system(stage1_text: str, tool_calls: list) -> str:
             "reasons over these numbers only, not outside advice. If total_matching is too "
             "small for a confident conclusion, give the data alone and say the sample is too "
             "small — don't guess a recommendation anyway.",
+            "",
+            "If the question asks whether a layoff/closure/restructuring/expansion is part of a "
+            "pattern or a one-off, and query_employment_events_data was called: two clearly "
+            "separated parts — first the event history (in order), then, on its own line, your "
+            "judgment on pattern vs. isolated event, built only on event count and spacing. "
+            "Offer a judgment only when events has at least 2 entries for the queried "
+            "company/sector — with 0 or 1, say plainly it's too early to call a pattern and "
+            "stop there, don't reason further. Never join, compare, or cross-reference this "
+            "data against query_market_data/query_compensation_data/query_requirements_data — "
+            "employment events are a fully independent dataset.",
         ]
     return "\n".join(sections)
 
@@ -303,6 +331,36 @@ def _build_reasoning_trace(
     step_seq = 1
 
     for call in tool_calls:
+        result = call.result if isinstance(call.result, dict) else {}
+
+        if call.name == "query_employment_events_data":
+            # Added 2026-09-11 — a genuinely different source (external
+            # employment-event registries, not the job-board database the
+            # other three tools query), so it must not be attributed to
+            # "Job Market Database" below. sources_checked names every
+            # registry this platform currently ingests from, regardless of
+            # whether any returned a row — see
+            # backend/specs/market-health/api.md — Business Logic —
+            # Conversational data sourcing (reasoning trace).
+            for registry in result.get("sources_checked", []):
+                sources.append(SourceAccess(
+                    sequence=seq,
+                    source_type="data_source",
+                    name=SOURCE_DISPLAY_NAMES.get(registry, registry),
+                    purpose=f"{call.name}({call.args})",
+                ))
+                seq += 1
+            steps.append(ReasoningStep(
+                sequence=step_seq,
+                content=(
+                    f"Queried employment-event registries via {call.name}({call.args}). Found "
+                    f"{result.get('total_matching', 0)} matching event(s) across "
+                    f"{len(result.get('sources_checked', []))} registry/registries checked."
+                ),
+            ))
+            step_seq += 1
+            continue
+
         sources.append(SourceAccess(
             sequence=seq,
             source_type="data_source",
@@ -310,7 +368,6 @@ def _build_reasoning_trace(
             purpose=f"{call.name}({call.args})",
         ))
         seq += 1
-        result = call.result if isinstance(call.result, dict) else {}
         data_range = result.get("data_range", {})
         steps.append(ReasoningStep(
             sequence=step_seq,

@@ -2,6 +2,7 @@ import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
 import { Meter } from "./Meter";
 import { YearOnYearBars, type YearOnYearContent } from "./YearOnYearBars";
+import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -79,6 +80,14 @@ function yoyContent(sec: DataStorySection | undefined): YearOnYearContent | unde
 }
 
 export function DataStoryMessage({ story }: { story: DataStoryResult }) {
+  // A thin router as the catalogue grows past one entry (added 2026-09-11) —
+  // "a switch on story_id inside one file while the catalogue is small"
+  // (frontend/specs/market-health/architecture.md — Every story: the shared
+  // build). market-data-briefing keeps rendering inline below, unchanged.
+  if (story.story_id === "employment-risk-overview") {
+    return <EmploymentRiskStoryMessage story={story} />;
+  }
+
   const roles = section(story, "roles-offered");
   const skills = section(story, "employer-mentioned-skills");
   const pay = section(story, "compensation-coverage");

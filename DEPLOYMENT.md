@@ -198,6 +198,35 @@ needed), or a local GUI/`psql` client using the *public* `DATABASE_URL` from
 
 ---
 
+## Service: `employment-events` (code ready 2026-09-11 — **not yet deployed**)
+
+Employment-event ingestion (`changes/2026-09-11-employment-event-ingestion.md`) — layoffs,
+closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements. Same
+cron-service shape as `job-sync`, deliberately a **separate** Railway service (not folded into
+`job-sync`) — see `backend/specs/market-health/api.md` — Tech Decisions — Scheduling.
+
+| | |
+|---|---|
+| Source | Same repo/branch as `job-sync` |
+| Root directory | `backend/` |
+| Config file | `backend/railway.employment-events.json` (committed; not yet connected to a live Railway service) |
+| Start command | `python src/ingest_employment_events.py` |
+| Schedule | Cron `0 7 * * *` (07:00 UTC, daily — offset 1h from `job-sync`'s 06:00 UTC) |
+| Restart policy | `NEVER` |
+| Env vars needed | `DATABASE_URL` (internal reference, same as `job-sync`), `COMPANIES_HOUSE_API_KEY` (free registration — see `backend/.env.example`) |
+
+**Not yet a real Railway service** — committing `railway.employment-events.json` is only the
+config-as-code half; per Gotcha 6 below, a new service still needs the dashboard's real
+"Connect Repo" flow and its config-file path set explicitly under Settings → Config-as-code
+before it will build or run anything. Deliberately left as a manual step here rather than
+created via this session's Railway MCP access — creating a new production service is exactly
+the kind of outward-facing, hard-to-reverse action that should be a deliberate choice, not a
+side effect of a spec-chain implementation pass. Running it is also low-value until at least
+one adapter is functional (`DATA_SOURCES.md` §3a) — connect the service once that's true, not
+before.
+
+---
+
 ## Gotchas learned the hard way (2026-07-26 deploy)
 
 These cost real time to figure out and will bite again if forgotten:

@@ -15,6 +15,8 @@ backend/specs/market-health/api.md — Data Models — Classification.
 """
 
 from db import get_connection
+from employment_events import ALL_EMPLOYMENT_EVENT_ADAPTERS
+from employment_events.base import SOURCE_DISPLAY_NAMES
 
 _ALLOWED_GROUP_BY = {"role_category", "specialization", "level", "track", "country", "month"}
 _ALLOWED_ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer", "other", "unknown"}
@@ -573,4 +575,115 @@ def query_requirements_data(
             "latest": latest.date().isoformat() if latest else None,
         },
         "total_matching": total_matching,
+    }
+
+
+# ---------------------------------------------------------------------------
+# query_employment_events_data — added 2026-09-11, Layoff Signal
+# ---------------------------------------------------------------------------
+
+def query_employment_events_data(
+    company: str | None = None,
+    sector: str | None = None,
+    country: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """
+    Query reported employment events (layoffs, closures, restructuring,
+    bankruptcy, offshoring, expansion, hiring announcements) from external
+    registries — Eurofound European Restructuring Monitor, US state WARN
+    notices, UK Companies House insolvency filings.
+
+    Use this for any question about a company's or sector's layoffs,
+    closures, restructuring, bankruptcy, offshoring, expansion, or hiring
+    announcements, and for "is this a pattern or a one-off" questions. This
+    tool is NOT restricted to the platform's own tracked companies — it can
+    report on any company an ingested registry covers. **This data is fully
+    independent of the platform's own job-posting/hiring data — never join,
+    compare, or cross-reference it against anything from query_market_data,
+    query_compensation_data, or query_requirements_data.** Whether a pattern
+    judgment is warranted is YOUR call as the assistant, not this tool's:
+    only offer one when `events` has at least two entries for the queried
+    company/sector; with 0 or 1, say so plainly ("too early to call a
+    pattern") rather than judging. A coincidence in timing between two
+    events is not evidence either caused the other.
+
+    Args:
+        company: A company name to filter to (matched case-insensitively,
+            substring match against the registry's own reported spelling —
+            not a fuzzy match). Omit to search across all companies (e.g.
+            for a sector-only question).
+        sector: An industry/sector name to filter to, matched against
+            whichever events report one (mainly Eurofound ERM records) — a
+            sector query is honestly scoped to only the source(s) that
+            report sector; state that if it materially affects the answer.
+        country: List of one or more ISO-2 country codes (e.g. "US", "GB",
+            "DE") to filter to.
+        date_from, date_to: ISO dates (YYYY-MM-DD), same meaning as the
+            other tools.
+
+    Returns:
+        A dict with:
+        - events: [{company_raw, event_date, event_type, direction,
+          jobs_affected, confidence, source}, ...], oldest first. confidence
+          is "confirmed" (a statutory filing / official register) or
+          "reported" (compiled by the registry from public announcements) —
+          never state a "reported" event with the same certainty as a
+          "confirmed" one.
+        - sources_checked: every employment-event registry this platform
+          currently ingests from, regardless of whether any returned a row —
+          use this to say "we checked X, Y, Z; none report an event for
+          this company" rather than staying silent.
+        - total_matching: len(events).
+    """
+    where = ["superseded_by IS NULL"]
+    params: list = []
+    if company and company.strip():
+        where.append("company_raw ILIKE %s")
+        params.append(f"%{company.strip()}%")
+    if sector and sector.strip():
+        where.append("sector ILIKE %s")
+        params.append(f"%{sector.strip()}%")
+    countries = _country_filter(country)
+    if countries:
+        where.append("country = ANY(%s)")
+        params.append(countries)
+    if date_from:
+        where.append("event_date >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("event_date <= %s")
+        params.append(date_to)
+    where_sql = " AND ".join(where)
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT company_raw, event_date, event_type, direction,
+                   jobs_affected, confidence, source
+            FROM employment_events
+            WHERE {where_sql}
+            ORDER BY event_date ASC
+            """,
+            params,
+        ).fetchall()
+
+    events = [
+        {
+            "company_raw": r[0],
+            "event_date": r[1].isoformat(),
+            "event_type": r[2],
+            "direction": r[3],
+            "jobs_affected": r[4],
+            "confidence": r[5],
+            "source": SOURCE_DISPLAY_NAMES.get(r[6], r[6]),
+        }
+        for r in rows
+    ]
+
+    return {
+        "events": events,
+        "sources_checked": [a.name for a in ALL_EMPLOYMENT_EVENT_ADAPTERS],
+        "total_matching": len(events),
     }

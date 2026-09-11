@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -25,6 +25,18 @@ See: `design/market-health/job-classification.md` — canonical `Role Category` 
 > taxonomy reference above and the `/openings` API contract below, which now matches the real
 > endpoint (`market_openings.py`) exactly. A full spec-vs-code reconciliation pass is a
 > candidate for its own future change request.
+>
+> **Status `implemented` (restored 2026-09-11, Step 8, then partially reverted hours later
+> same day — `changes/2026-09-11-employment-events-no-company-matching.md`).** The Step 8
+> additions (`EmploymentEventsStrip`, `EventMarkerDetail`, `JobOpeningsChart`'s `events` prop,
+> the `employment-events` TanStack Query) were built, verified, then **removed** once the user
+> directed that employment events must never be matched to tracked companies at any layer,
+> including a chart overlay. `JobOpeningsChart` and `MarketBriefingMessage` are back to their
+> pre-2026-09-11 shape. Employment events now surface only through `EmploymentRiskStoryMessage`
+> (Story 2, below) and follow-up Layoff Signal conversation, both already independent of
+> tracked companies. The Layoff Signal conversational path itself needed no change either
+> time — confirmed against the real `ConversationThread.tsx` (`whitespace-pre-wrap` plain
+> text) and `ReasoningPanel.tsx` (already generic).
 
 ---
 
@@ -72,7 +84,7 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
-| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ period, designer, product_manager, engineer }`). Owns two directly visible dropdown filters: granularity (`Week · Month`) and time range (`6 Months · This Year · Past 5 Years · All Time`). Week is the default granularity and 6 Months is the default range. Fetches trend data via TanStack Query when either control changes. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
+| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ period, designer, product_manager, engineer }`). Owns two directly visible dropdown filters: granularity (`Week · Month`) and time range (`6 Months · This Year · Past 5 Years · All Time`). Week is the default granularity and 6 Months is the default range. Fetches trend data via TanStack Query when either control changes. **No employment-event layer** — `EmploymentEventsStrip`/`EventMarkerDetail` were added 2026-09-11 and removed the same day (`changes/2026-09-11-employment-events-no-company-matching.md`); this chart is unchanged from its pre-2026-09-11 shape. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
 | `WrittenSummary` | The 3–4 sentence AI-generated summary below the chart. Receives streamed text. Shows bouncing-dots while streaming; fades in text as it arrives. | `frontend/src/features/market-health/WrittenSummary.tsx` |
 | `PromptBadge` | Small "view prompt" affordance anchored to every AI message. On click, opens `PromptViewer`. Receives the prompt string as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
 | `PromptViewer` | Read-only overlay showing the prompt behind an AI message. Dismissible with Escape or outside click. | `frontend/src/features/market-health/PromptViewer.tsx` |
@@ -90,6 +102,12 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 **Time range state** lives in `TrendChart` as local state (`'this-year' | 'past-5-years' | 'all-time'`). On range change, `TrendChart` refetches chart data and fires `onRangeChange(range)` to `MarketHealthPage`, which sends a summary regeneration request to `/api/chat` and streams the new text into `WrittenSummary`.
 
 **Prompt viewer state** is local to `PromptBadge` — a boolean open/closed flag.
+
+**Employment events state — removed 2026-09-11.** A chart-scoped employment-events query
+briefly existed here (added and removed the same day —
+`changes/2026-09-11-employment-events-no-company-matching.md`). `JobOpeningsChart` has no
+employment-event state of any kind. Employment-events state now lives only where Story 2 needs
+it — see "Story 2: employment risk across the market," below.
 
 **Task selection** (added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`)
 lives in `MarketHealthPage` as `activeTaskId: string`, defaulting to `"about-this-platform"`.
@@ -136,6 +154,13 @@ the shapes real sparse data actually takes:
 - **Baseline and in-progress period.** The backend already excludes the baseline day and the
   current in-progress week/month; the chart draws exactly what it receives, never back-fills or
   pads the empty pre-collection span of a wide range, and never re-adds a "today so far" point.
+
+### Employment events strip rendering — removed 2026-09-11
+
+Built and removed the same day — `changes/2026-09-11-employment-event-ingestion.md`, then
+`changes/2026-09-11-employment-events-no-company-matching.md`. `JobOpeningsChart` has no
+employment-event rendering logic; this section intentionally left empty as a marker of the
+removal.
 
 ---
 
@@ -329,12 +354,41 @@ change needed**, checked against the real component tree, not assumed:
 Same pattern as the 2026-07-22 / 08-03 / 08-04 reviews — a backend behaviour change fully
 absorbed by existing generic frontend infrastructure.
 
+**Reviewed 2026-09-11** (change: Layoff Signal + employment events,
+`changes/2026-09-11-employment-event-ingestion.md`) — **not a clean no-op**, unlike most of
+the reviews above; real new components were required (Component Breakdown, above: the chart
+strip, State Management: its state). Traced the two parts against the real component tree
+before assuming either the "conversation absorbs it" or "new component" pattern:
+
+1. **Layoff Signal conversational answers need no new rendering component** — same finding
+   as the 2026-08-09 (Requirements Signal) review: `query_employment_events_data` is a fourth
+   server-side chat tool (`backend/specs/market-health/api.md`), consumed entirely inside
+   `/api/chat`'s existing SSE contract. The two-part "data, then judgment" answer
+   (`design/market-health/experience.md` User Flow 7d) is achieved the same way Requirements
+   Signal's synthesis answer already is — two paragraphs, a blank line between them, rendered
+   by `ConversationThread.tsx`'s existing `whitespace-pre-wrap` text path. No markdown, no new
+   component, no change to `ConversationThread.tsx` itself.
+2. **`ReasoningPanel.tsx` needs no change** — it already renders `sources_and_tools` and
+   `reasoning_steps` generically (2026-08-04 review's finding: no tool name hardcoded
+   anywhere in the component), so a `query_employment_events_data` trace entry, and the
+   registries named in its `sources_checked` (Eurofound ERM / US WARN / UK Companies House),
+   render correctly with zero code change — same mechanism that already lets it name
+   Greenhouse/Lever/Ashby individually.
+3. **The chart strip and event-detail expansion were genuinely new** — built, then **removed
+   the same day** (`changes/2026-09-11-employment-events-no-company-matching.md`) once the
+   user directed that employment events must never be matched to tracked companies at any
+   layer, including a chart overlay. Finding 1 and 2 above still hold: the conversational path
+   remains exactly as described, no change needed there either time.
+
 ---
 
 ## Tech Decisions
 
 - **Vercel AI SDK `useChat`** for follow-up conversation only. The opening briefing and summary regeneration use direct streaming fetches, not `useChat`.
 - **TanStack Query** for trend chart data. Query key: `['market-health', 'trends', range]`.
+  (A chart-scoped employment-events query briefly existed alongside this, added and removed
+  2026-09-11 — `changes/2026-09-11-employment-events-no-company-matching.md`. See "Story 2:
+  employment risk across the market," below, for where that query now lives.)
 - **CSS layout** for the three-zone structure (corrected 2026-08-17 —
   `changes/2026-08-17-chat-scroll-white-gap.md` — this bullet previously described
   `position: fixed` for `TopBar`/`ChatInput` with padding-based clearing, which was
@@ -435,6 +489,20 @@ The two window date ranges come from `content.current_window` / `content.prior_w
 are shown once under the block heading (`StoryBlock` already owns the heading; the dates go in
 the block's own markup, `text-xs text-gray-500`). The "what this means" sentence is per-block
 copy in `DataStoryMessage`, not from the API.
+
+### Story 2: employment risk across the market (added 2026-09-11 — `changes/2026-09-11-employment-events-independent-scope.md`)
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `EmploymentRiskStoryMessage` | Renders `POST /api/market-health/stories/employment-risk-overview`'s resolved sections: framing line → Hero Figure + Meter (contraction roles + direction split) → 3× `RankedBarList` (top companies / regions / sectors by roles affected). One movement, no year-on-year block (event data isn't a 12-month-comparable series the way posting volume is). | `frontend/src/features/market-health/EmploymentRiskStoryMessage.tsx` |
+
+`DataStoryMessage` becomes a thin router (added 2026-09-11): it branches on `story.story_id`
+— `"market-data-briefing"` renders inline as before (unchanged), `"employment-risk-overview"`
+delegates to `EmploymentRiskStoryMessage`. `ConversationThread.tsx` is untouched — it already
+renders whatever `DataStoryMessage` returns for the active story, generically. This is the
+"a switch on story_id inside one file while the catalogue is small" option this spec's own
+"Every story: the shared build" section anticipated, now exercised for the first time with a
+second catalogue entry.
 
 ### Reference story: market data briefing
 
