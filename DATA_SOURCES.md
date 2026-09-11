@@ -93,7 +93,7 @@ implementation order, not a ranking of importance.
 
 | Adapter | `name` | Access | Auth | Status |
 |---|---|---|---|---|
-| Eurofound European Restructuring Monitor | `eurofound_erm` | CSV data-access request (exact mechanism TBC) | None confirmed | ⚠️ **Scaffolded, not functional.** `fetch()` logs a notice and returns `[]` — `ACCESS_CONFIRMED = False`. See `backend/src/employment_events/eurofound_erm.py`'s module-docstring TODO for the exact next step. |
+| Eurofound European Restructuring Monitor | `eurofound_erm` | Keyless CSV export (`apps.eurofound.europa.eu/restructuring-events/factsheetscsv`) — no query params returns the full dataset; access mechanism found by reading Eurofound's own client-side JS, no manual browser step needed after all (`changes/2026-09-11-eurofound-erm-live.md`) | **None — fully keyless and free.** | ✅ **Live — 31,786 real rows ingested 2026-09-11** (EU 27 + Norway), re-run confirmed idempotent (0 new). Full-file refetch every run, not a trailing window (unlike WARN Firehose/SEC EDGAR, this endpoint has no observed rate limit) — `insert_new_events()`'s id-based dedupe handles the overlap. 5 of 9 real restructuring types map onto the closed `event_type` set (94.9% of rows); the other 4 (Merger/Acquisition, Relocation, Reshoring, Outsourcing) are skipped, not guessed — see `research/2026-09-11-eurofound-erm-access-confirmed.md`. Extended the shared `COUNTRY_NAME_TO_ISO2` with 19 real EU/Norway country names found in this data. |
 | US state WARN notices | `us_warn` | **WARN Firehose** (warnfirehose.com) — one aggregated API, all 50 states, replaces the original per-state scraping design (found via live research 2026-09-11, same day) | API key, free tier (25 calls/day) — env var `WARN_FIREHOSE_API_KEY` (set, local `backend/.env` only, gitignored) | ✅ **Live — first real data ingested 2026-09-11.** Field mapping verified against a real authenticated response (`company_name`, `industry`→`sector`, real `source_url` per record — see `backend/src/employment_events/us_warn.py`). 25 real rows inserted on first run; re-run confirmed idempotent (0 new). **Real finding**: the feed lags ~9 days behind the actual date (an unfiltered call's `latest_notice` was 9 days stale) — the trailing window was widened from 4 to 30 days after the first run returned 0 (too narrow), same "confirm empirically" correction pattern as everywhere else in this pipeline. |
 | UK Companies House — insolvency | `companies_house_insolvency` | **Streaming API** (`stream.companieshouse.gov.uk/insolvency-cases`) — real-time, all UK companies, no company targeting (revised 2026-09-11, replacing a tracked-company candidate-list design — `changes/2026-09-11-employment-events-no-company-matching.md`) | Streaming-type API key (free registration, Companies House Developer Hub) — env var `COMPANIES_HOUSE_API_KEY`, **set 2026-09-11** | ✅ **Live — first real data ingested 2026-09-11.** Field mapping corrected against a real authenticated response (`resource_id` for company number, `data.cases[0].dates[0].date` for the case date — three fields differed from the initial guess). **Known limitation**: the stream carries no company name, only a company number (`company_raw` = the bare id, e.g. `"12028607"` — never fabricated as `"Company N"`, revised 2026-09-11) — resolving names needs a separate REST-type key, not pursued yet. Such events are excluded from the Employment Risk story's company ranking (`is_real_company_name()`) but still count toward direction/country/sector totals — `changes/2026-09-11-employment-risk-hide-placeholder-names.md`. |
 | SEC EDGAR (8-K Item 2.05) | `sec_edgar_8k` | Full-text search (`efts.sec.gov/LATEST/search-index`), filtered to structured Item 2.05 ("Costs Associated with Exit or Disposal Activities") — added 2026-09-11 | **None — no key at all, keyless and free.** Requires only a descriptive `User-Agent` (`SEC_EDGAR_CONTACT` env var; falls back to a placeholder that should be replaced with a real contact before relying on this in production) | ✅ **Live — first real data ingested 2026-09-11**, 9 real filings on first run (Veritone, TScan Therapeutics, TELA Bio, PDS Biotechnology, CVD Equipment, and others). The only source so far with a genuine company name straight from the record — see `backend/src/employment_events/sec_edgar.py`. `jobs_affected` and `sector` are `NULL` (not in this index's metadata; sizing/SIC-to-sector mapping not attempted rather than guessed). |
@@ -107,13 +107,14 @@ employment events are an **independent dataset, matched or compared against trac
 nowhere in this pipeline** — not the data model, not any query, not any surface. Every
 `employment_events` row carries only `company_raw`, exactly as its source reported it.
 
-**Net effect today**: `python ingest_employment_events.py` is live and verified for **US
-WARN** — 25 real rows in `employment_events` as of 2026-09-11, re-run confirmed idempotent.
-Eurofound ERM (access unconfirmed) and Companies House (no key set yet) still insert nothing,
-safely. All real employment-event data surfaces through the **"Employment risk across the
-market"** data story (`design/market-health/data-stories.md` — Story 2) and follow-up Layoff
-Signal conversation — both fully independent of the platform's 35 tracked companies, by
-design, at every layer.
+**Net effect today**: `python ingest_employment_events.py` is live and verified for **all four
+registered adapters** — 31,865 real rows in `employment_events` as of 2026-09-11 (31,786
+Eurofound ERM, 45 UK Companies House, 25 US WARN, 9 SEC EDGAR), every source's re-run confirmed
+idempotent. See `backend/EMPLOYMENT_EVENTS.md` for the always-current per-source breakdown
+(query it directly rather than trusting this static count for long). All real employment-event
+data surfaces through the **"Employment risk across the market"** data story
+(`design/market-health/data-stories.md` — Story 2) and follow-up Layoff Signal conversation —
+both fully independent of the platform's 35 tracked companies, by design, at every layer.
 
 **Add a new employment-event source**: a 4-step recipe, documented in full in
 `backend/src/employment_events/__init__.py`'s module docstring (write one adapter file
@@ -266,7 +267,7 @@ Everything tunable, and where it lives. Grouped by area.
 | SEC EDGAR contact | env var (required by SEC's fair-access policy, not a secret) | `SEC_EDGAR_CONTACT` — `backend/.env.example` |
 | US WARN source | WARN Firehose, all 50 states in one API | `backend/src/employment_events/us_warn.py` |
 | WARN Firehose API key | env var, free tier (25 calls/day) | `WARN_FIREHOSE_API_KEY` — `backend/.env.example` |
-| Eurofound ERM access flag | `False` | `backend/src/employment_events/eurofound_erm.py` — `ACCESS_CONFIRMED` |
+| Eurofound ERM export endpoint | Keyless, no env var needed | `backend/src/employment_events/eurofound_erm.py` — `EXPORT_URL` |
 | Companies House source | Streaming API, all UK companies (revised 2026-09-11) | `backend/src/employment_events/companies_house.py` |
 | Companies House API key | env var, free registration | `COMPANIES_HOUSE_API_KEY` — `backend/.env.example` |
 | Source-event cursors | resumable stream position, per source | `employment_event_cursors` table (Postgres) |

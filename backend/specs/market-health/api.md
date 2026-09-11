@@ -1529,25 +1529,47 @@ Logic — Ingestion — Fault isolation), applied to this pipeline's own adapter
 employment-event adapter never touches `raw_postings`, classification, or requirements
 extraction — genuinely separate tables, separate code paths, separate schedule.
 
-- **Eurofound ERM adapter contract.** Maps ERM's `company`/`country`/`date`/`sector`/
-  `restructuring type`/`employment_change` fields (research file's example shape) onto
-  `EmploymentEvent`: `event_type` from a fixed lookup of ERM's own restructuring-type
-  vocabulary (e.g. its "Internal restructuring," "Closure," "Bankruptcy/liquidation,"
-  "Offshoring/Delocalisation," "Business expansion" categories map onto this spec's closed
-  `event_type` set — the exact ERM-string-to-`event_type` table is an implementation
-  deliverable, validated against real fetched records, not invented here), `jobs_affected`
-  from `employment_change` (absolute value; `direction` is derived from `event_type`, not
-  from the sign of `employment_change`, so the two can be cross-checked rather than blindly
-  trusted), `sector` passed through verbatim, `confidence: "reported"` (ERM compiles from
-  public announcements, not a legal filing — Business Logic, EmploymentEvent field above).
-  **Access mechanism not yet empirically confirmed** — the research file notes an explicit
-  "Request data access (.csv)" option on Eurofound's site; whether that resolves to a public,
-  no-key bulk download or a gated request requiring manual approval is unverified as of this
-  spec. Confirming which, and the real endpoint/file shape, is `/implement-backend`'s first
-  task for this adapter — same "confirm empirically, don't assume" discipline this spec
-  already applies to every other source's access method (Tech Decisions — Company-list
-  curation). If it turns out to require a manual, non-automatable request step, `ingest.py`'s
-  daily schedule can't drive it directly — see Tech Decisions, below, for the fallback.
+- **Eurofound ERM adapter contract — access confirmed and live 2026-09-11**
+  (`changes/2026-09-11-eurofound-erm-live.md`). The "Request data access (.csv)" option
+  flagged as unconfirmed when this spec was first written turned out not to need a manual
+  request at all: reading Eurofound's own client-side JS
+  (`restructuring-events/assets/js/scripts/search-page.js`) showed the "Export data" button is
+  just the search page's URL with `search` replaced by `factsheetscsv` in the path — a plain,
+  keyless, unauthenticated `GET https://apps.eurofound.europa.eu/restructuring-events/factsheetscsv`,
+  verified live: `200 OK`, `text/csv`, 33,509 rows, freshest row dated 2026-09-08. No query
+  params returns the entire dataset (EU 27 + Norway + a handful of `"European Union"`/`"World"`-
+  scoped multi-country rows); no rate limit or pagination observed.
+  **Full-file refetch every run, not a trailing date window** — unlike WARN Firehose/SEC EDGAR
+  (both genuinely rate/quota-constrained), this endpoint is an unpaginated flat CSV; refetching
+  it whole each run and relying on `insert_new_events()`'s existing id-based dedupe (already
+  proven correct for Companies House's change-stream case) is simpler and safer than a window —
+  no cursor needed, and a late-corrected historical row is naturally picked up.
+  **Real columns**: `Id, Announcement date, Country, Company, Sector, Restructuring type,
+  Employment Change`. Field mapping: `source_ref` = `Id`; `company_raw` = `Company` verbatim;
+  `event_date` = `Announcement date` (ISO `YYYY-MM-DD`); `country` = `Country` (full name,
+  normalized via `normalize_country()` — see below); `sector` = `Sector` verbatim;
+  `jobs_affected` = `abs(int(Employment Change))` (the field is a signed string, e.g. `"+100"`/
+  `"-172"` — `direction` is derived from `event_type`, never from this sign, so the two remain
+  independently cross-checkable); `confidence: "reported"` (ERM compiles from public
+  announcements, not a legal filing); `source_url`: not set — no stable per-record factsheet
+  URL was found (the search results are rendered by a dynamic fetch this pipeline's own
+  ingestion doesn't need to reverse-engineer further; left `NULL` rather than guessed, same
+  "absent means absent" rule as every other nullable field in this table).
+  **Real restructuring-type vocabulary** (all 33,509 rows, not assumed): 5 of 9 real values map
+  onto this spec's closed `event_type` set — `"Business expansion"` → `expansion` (13,203),
+  `"Internal restructuring"` → `restructuring` (12,326), `"Closure"` → `closure` (3,429),
+  `"Bankruptcy"` → `bankruptcy` (1,652), `"Offshoring/Delocalisation"` → `offshoring` (1,176) —
+  covering 94.9% of rows. The remaining 4 (`"Merger/Acquisition"`, `"Relocation"`,
+  `"Reshoring"`, `"Outsourcing"` — 5.1%) are **not** mapped onto the existing set; their
+  direction is genuinely ambiguous or unconfirmed, so they're logged (one aggregated summary
+  line per type per run, not one per record) and skipped — never guessed onto the closest-
+  sounding value. See `research/2026-09-11-eurofound-erm-access-confirmed.md` for the full
+  count table and the open question on `Reshoring` specifically.
+  **`COUNTRY_NAME_TO_ISO2` extended** (`sources/base.py`, shared with `raw_postings.country`)
+  with the 19 real EU/Norway country names found in ERM's data that weren't already mapped —
+  without this, most ERM country values would have silently normalized to `NULL`, undermining
+  the "by country" breakdown this source exists to serve. `"European Union"`/`"World"`-scoped
+  rows are genuinely not a single country and stay unmapped/`NULL`, not guessed.
 - **US WARN adapter contract — revised 2026-09-11 (`changes/2026-09-11-employment-events-independent-scope.md`
   research pass).** This spec originally scoped a per-state scraper (each state its own
   fetcher/parser, verified one at a time) because no unified federal API was known to exist.
@@ -1631,7 +1653,7 @@ nothing joins or compares it against `raw_postings`.
 | Ashby Job Board API (`api.ashbyhq.com/posting-api/job-board/{jobBoardName}`) | Source of live job postings for `raw_postings` (`source: "ashby"`). Public, unauthenticated GET, no credentials. No documented rate limit (confirmed against Ashby's own API docs, 2026-08-03); paced conservatively regardless. No filtering support at all on this endpoint — every company's full board is fetched. |
 | ~~Adzuna Jobs API (UK)~~ | **Retired 2026-08-03** — license no longer permits use. No longer called; existing `raw_postings` rows sourced from it are kept as historical data (`source: "adzuna"`, backfilled). See `changes/2026-07-28-multi-source-job-data-ingestion.md`. |
 | Railway (cron-scheduled service) | Runs the daily ingestion agent independently of local dev — see Tech Decisions |
-| Eurofound European Restructuring Monitor (ERM) | Source of `employment_events` rows (`source: "eurofound_erm"`) — EU + Norway, company-level restructuring/expansion events. **Access mechanism not yet empirically confirmed** — see Business Logic — Employment event ingestion. Added 2026-09-11. |
+| Eurofound European Restructuring Monitor (ERM) (`apps.eurofound.europa.eu/restructuring-events/factsheetscsv`) | Source of `employment_events` rows (`source: "eurofound_erm"`) — EU + Norway, company-level restructuring/expansion events. **Live and verified 2026-09-11** — keyless public CSV, 33,509 real rows, ~95% mapped onto the closed `event_type` set. Added 2026-09-11, access confirmed same day — see Business Logic — Employment event ingestion and `changes/2026-09-11-eurofound-erm-live.md`. |
 | WARN Firehose (`warnfirehose.com/api/records`) | Source of `employment_events` rows (`source: "us_warn"`) — US, all 50 states, company-level, statutory filings. Free tier (25 calls/day), keyed (`WARN_FIREHOSE_API_KEY`). **Live and verified 2026-09-11** — real data flowing. Added 2026-09-11, revised same day (replaced an original per-state scraping design once this aggregator was found — see Business Logic). |
 | UK Companies House Streaming API (`stream.companieshouse.gov.uk/insolvency-cases`) | Source of `employment_events` rows (`source: "companies_house_insolvency"`) — UK-wide, all companies, real-time insolvency events, no company targeting. Requires a free Streaming-type API key (Companies House Developer Hub — not interchangeable with a REST-type key). **Live and verified 2026-09-11** — real data flowing; field mapping corrected against the real payload (three fields differed from the initial guess — see Business Logic). **No company name in this stream, only a company number** — `company_raw` is the bare id; resolving a real name needs a separate REST-type key, not pursued yet. Events with no real company name are excluded from the Employment Risk story's company ranking but still count toward every other aggregate (`is_real_company_name()`, `employment_events/base.py` — `changes/2026-09-11-employment-risk-hide-placeholder-names.md`). |
 | SEC EDGAR full-text search (`efts.sec.gov/LATEST/search-index`) | Source of `employment_events` rows (`source: "sec_edgar_8k"`) — US-listed companies, 8-K Item 2.05 filings ("Costs Associated with Exit or Disposal Activities"), added 2026-09-11. **No API key at all** — free, unauthenticated, but SEC's fair-access policy requires a real, descriptive `User-Agent` (`SEC_EDGAR_CONTACT` env var). **Live and verified 2026-09-11** — 9 real filings on first run, real company names straight from the record (the only source so far that has them). `event_type` is always `"restructuring"`; `jobs_affected` and `sector` are always `NULL` (not in this index's metadata — not sized/mapped rather than guessed). Full-text search terms are a recall net; the structured `items` field containing `"2.05"` is the actual filter (see `employment_events/sec_edgar.py`). |
@@ -1910,21 +1932,16 @@ is no company-matching step of any kind — added 2026-09-11, removed the same d
 company matching."
 
 **Scheduling — a separate cron step, not folded into `ingest.py`'s daily run.** Employment
-event ingestion runs on its own schedule (Railway cron, same mechanism as the existing daily
-job — a second scheduled service or a second script triggered independently, an
-`/implement-backend` deliverable either way), deliberately decoupled from job-posting
-ingestion/classification: the two pipelines write to different tables, have no shared
-back-pressure, and — critically — a registry that turns out to require a manual/gated access
-step (Eurofound ERM's access mechanism is unconfirmed, Business Logic above) can't share a
-single automated daily trigger with sources that are fully automatable (US WARN, UK Companies
-House) without either blocking on the slowest one or silently skipping it. If Eurofound ERM
-does turn out to need a manual step, its adapter runs on-demand (a documented manual command,
-same "run now, safe to re-run" pattern already established for `reprocess_taxonomy.py` and
-`reclassify_unknowns.py`) rather than being force-fit into an automated schedule it can't
-actually meet — an honest reflection of that source's real access constraints, not a spec
-promising automation the source doesn't support. US WARN and UK Companies House, both
-confirmed-automatable in shape (a fetchable endpoint / a keyed API), run on a real cron
-schedule from day one.
+event ingestion runs on its own schedule (Railway cron, weekly — `backend/railway.employment-
+events.json`), deliberately decoupled from job-posting ingestion/classification: the two
+pipelines write to different tables and have no shared back-pressure. This decoupling was
+originally motivated by the possibility that Eurofound ERM might need a manual/gated access
+step that couldn't share an automated trigger with fully-automatable sources — **resolved
+2026-09-11**: ERM turned out to be a plain keyless GET (Business Logic, above), so all four
+live adapters (Eurofound ERM, US WARN, UK Companies House, SEC EDGAR) run on the same automated
+weekly schedule today, no manual-run fallback needed for any of them. The separate-schedule
+decision itself stands regardless — a genuinely independent pipeline benefits from its own
+schedule even when every source turns out to be automatable.
 
 **Migration.** `CREATE TABLE IF NOT EXISTS employment_events (...)` plus
 `CREATE TABLE IF NOT EXISTS employment_event_cursors (...)`, same idempotent `init_schema()`

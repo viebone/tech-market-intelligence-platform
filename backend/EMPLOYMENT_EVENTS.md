@@ -9,6 +9,8 @@ Logic — Employment event ingestion) and `design/market-health/data-stories.md`
 
 Verified against the **real, live production schema** on 2026-09-11 (queried
 directly, not assumed from the spec — see "How to verify this yourself," below).
+Updated same day, later, once Eurofound ERM went live
+(`changes/2026-09-11-eurofound-erm-live.md`) — the counts below reflect that.
 
 ---
 
@@ -112,14 +114,27 @@ production right now (`GROUP BY source`), not a claim:
 
 | Source | Events | Has `jobs_affected` | Has `sector` | Has `region` | Date range seen |
 |---|---|---|---|---|---|
+| `eurofound_erm` | 31,786 | 31,718 (a small number of rows carry the literal string `"None"` for headcount — treated as genuinely absent, never coerced) | 31,786 (always — ERM tags every case with a sector) | 0 (country-level only, no sub-national field) | 2001-03-01 → 2026-09-08 |
 | `companies_house_insolvency` | 45 | 0 (never — this endpoint doesn't size headcount) | 0 (not in this stream's payload) | 0 (UK only, no sub-national field) | 2021-04-30 → 2026-09-03 |
 | `us_warn` | 25 | 25 (always — a WARN notice states it) | 16 (sparsely populated by the source) | 25 (always — a US state code) | 2026-08-28 → 2026-09-02 |
 | `sec_edgar_8k` | 9 | 0 (not in this index's metadata) | 0 (a SIC code is present in the raw payload but not honestly mappable to a sector name without a real ~1,000-entry lookup table, so it's left `NULL` rather than guessed) | 9 (a US state, from the filer's business address) | 2026-08-13 → 2026-09-10 |
 
-Every row currently in the table is `direction: contraction` — 45
-`bankruptcy`, 21 `layoff`, 9 `restructuring`, 4 `closure`. No `expansion` or
-`hiring_announcement` events exist yet (none of the three live sources
-report growth — Eurofound ERM, the only source that would, isn't live yet).
+**Direction split (real, 2026-09-11): 18,662 `contraction` / 13,203 `expansion`.**
+Before Eurofound ERM went live, every row was `contraction` (no other live source reports
+growth); ERM's `"Business expansion"` restructuring type is the first real `expansion` data in
+this table. By `event_type`: 13,203 `expansion` (all ERM), 12,335 `restructuring` (12,326 ERM +
+9 SEC EDGAR — every SEC EDGAR row maps to `restructuring`, its adapter has no other outcome),
+3,433 `closure` (3,429 ERM + 4 US WARN), 1,697 `bankruptcy` (1,652 ERM + 45 Companies House),
+1,176 `offshoring` (all ERM), 21 `layoff` (all US WARN — the only source that produces this
+value today). Query the table directly (How to verify this yourself, below) for a figure that
+can't drift out of date.
+
+**Restructuring-type coverage is not 100% for Eurofound ERM.** 4 of the source's 9 real
+restructuring types (`Merger/Acquisition`, `Relocation`, `Reshoring`, `Outsourcing` — 5.1% of
+ERM's 33,509 total rows) are deliberately not mapped onto this table's closed `event_type` set
+— their direction is genuinely ambiguous or unconfirmed, so they're skipped and logged
+(aggregated, one summary line per type per run) rather than guessed. See
+`research/2026-09-11-eurofound-erm-access-confirmed.md` for the full count table.
 
 **A `NULL` in any of these columns is not a bug and not a gap to silently
 fill** — it means that source genuinely doesn't report that fact for that
@@ -141,8 +156,8 @@ source gives us a different kind of identifier:
 - **`sec_edgar_8k`** — the SEC's own accession number (`adsh`), one per
   filing (deduped across multiple exhibit files belonging to the same
   filing before it ever reaches storage).
-- **`eurofound_erm`** — not live yet; will be the registry's own case
-  reference once built.
+- **`eurofound_erm`** — the registry's own record `Id` from its CSV export
+  (e.g. `"301005"`), verbatim.
 
 ---
 
@@ -159,9 +174,11 @@ its last position between scheduled runs — added for UK Companies House's
 Streaming API (a live, unbounded feed; without a saved position, every run
 would either replay from the very beginning or miss everything that arrived
 since the last run went idle). A polling/full-refetch source (WARN Firehose,
-SEC EDGAR) doesn't need this — those adapters just re-request a trailing
-date window every run and rely on the `id`-based dedupe above to make the
-overlap free.
+SEC EDGAR, Eurofound ERM) doesn't need this — those adapters just re-request
+the same window every run (a trailing date range for WARN/SEC EDGAR; the
+*entire* dataset for ERM, since its export has no pagination or observed
+rate limit, so a full refetch is simpler and safer than a window) and rely
+on the `id`-based dedupe above to make the overlap free.
 
 Real current state: one row, `companies_house_insolvency` → a Companies
 House `timepoint` integer (stored as text) — the position the stream had
@@ -221,6 +238,18 @@ discussion — each links to its full change record in `changes/`.
    fabricated `"Company N"` string) and at display time
    (`is_real_company_name()` keeps a bare id from ever being shown as if it
    were a company).
+7. **2026-09-11, later same day — `eurofound-erm-live`**: user asked "I need
+   more data from Europe" — Eurofound ERM (the #1-recommended EU source,
+   scaffolded since the base ingestion change but blocked on an unconfirmed
+   access mechanism) went live. The blocker turned out not to require the
+   manual browser step originally assumed: the real export URL was found by
+   reading Eurofound's own client-side JS. 31,786 real rows ingested on
+   first run (EU 27 + Norway, dating back to 2001-03-01), re-run confirmed
+   idempotent. This is also the table's first real `expansion` data — every
+   row before this was `contraction` (no other live source reports growth).
+   Also extended the shared `COUNTRY_NAME_TO_ISO2` (`sources/base.py`) with
+   19 real EU/Norway country names found in this data — without it, most
+   ERM country values would have silently normalized to `NULL`.
 
 ---
 

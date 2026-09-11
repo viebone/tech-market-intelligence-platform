@@ -5,112 +5,118 @@ Priority 1 source (backend/specs/market-health/api.md — Business Logic —
 Employment event ingestion): EU + Norway, company-level, covers both
 contraction and expansion, reports `sector` directly.
 
-*** ACCESS MECHANISM NOT YET EMPIRICALLY CONFIRMED — see TODO below. ***
-research/2026-09-11-employment-event-data-sources.md notes an explicit
-"Request data access (.csv)" option on Eurofound's restructuring-monitor
-site, but whether that resolves to a public, no-key bulk download or a
-gated request requiring manual approval was not verified when this spec and
-this adapter's structure were written. Per this pipeline's standing "confirm
-empirically, don't assume" discipline (backend/specs/market-health/api.md —
-Tech Decisions — Company-list curation), this file deliberately does NOT
-fabricate a working call against a guessed endpoint. fetch() returns an
-empty list and logs a clear, one-time-per-run notice explaining exactly
-what's unverified, instead of silently pretending to succeed or raising an
-alarming exception that would look like a real adapter failure.
+**Access mechanism confirmed and live 2026-09-11**
+(changes/2026-09-11-eurofound-erm-live.md,
+research/2026-09-11-eurofound-erm-access-confirmed.md) — not by asking for a
+manual browser step, but by reading Eurofound's own client-side JS
+(restructuring-events/assets/js/scripts/search-page.js), which shows the
+"Export data" button is just the search page's own URL with `search`
+replaced by `factsheetscsv` in the path: a plain, keyless, unauthenticated
+GET. Verified live: 200 OK, text/csv, 33,509 rows, freshest row dated
+2026-09-08. No query params returns the entire dataset — no rate limit or
+pagination observed.
 
-TODO (first task for this adapter, per the backend spec):
-  1. Visit Eurofound's European Restructuring Monitor site directly and
-     determine the real mechanism behind "Request data access (.csv)" —
-     public bulk download (has a stable URL, no key) vs. a gated
-     manual-approval request.
-  2a. If public/keyless: set ACCESS_CONFIRMED = True below, fill in
-      REAL_ENDPOINT, and implement _fetch_csv() to download and parse it
-      into FetchedEmploymentEvent rows using the field mapping already
-      sketched in _map_record() below.
-  2b. If gated/manual: this adapter cannot run on the automated cron
-      schedule ingest_employment_events.py drives (Tech Decisions —
-      Scheduling). Instead, build a standalone "run now, safe to re-run"
-      script (same pattern as reprocess_taxonomy.py /
-      reclassify_unknowns.py) that ingests a manually-downloaded CSV file
-      from disk, and update DATA_SOURCES.md §3a to reflect that this
-      source is manual-refresh, not scheduled.
-  3. Once real records are seen, verify _RESTRUCTURING_TYPE_TO_EVENT_TYPE
-     below against ERM's actual restructuring-type vocabulary — the
-     mapping here is a best-effort guess from the research file's example
-     categories, not yet checked against a real API/CSV response.
+Full-file refetch every run, not a trailing date window: unlike WARN
+Firehose/SEC EDGAR (both genuinely rate/quota-constrained), this endpoint is
+an unpaginated flat CSV. insert_new_events()'s existing id-based dedupe
+(already proven correct for Companies House's change-stream case) makes a
+full refetch safe and cheap — no cursor needed, and a late-corrected
+historical row is naturally picked up on the next run.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
+from collections import Counter
+from datetime import date
+
+import httpx
 
 from employment_events.base import EVENT_TYPES, FetchedEmploymentEvent
 
 logger = logging.getLogger(__name__)
 
-ACCESS_CONFIRMED = False  # flip to True once step 1/2a above is done
+# Verified live 2026-09-11 — see module docstring. No query params = full dataset.
+EXPORT_URL = "https://apps.eurofound.europa.eu/restructuring-events/factsheetscsv"
 
-# UNVERIFIED — placeholder pending step 1 above.
-REAL_ENDPOINT = "https://restructuringmonitor.eurofound.europa.eu/erm-database"  # noqa: E501 (unverified, see TODO)
-
-# Best-effort mapping from ERM's restructuring-type vocabulary (per the
-# research file's example categories: "Internal restructuring", "Closure",
-# "Bankruptcy/liquidation", "Offshoring/Delocalisation", "Business
-# expansion") to this platform's closed event_type set. NOT yet validated
-# against a real fetched record — see TODO step 3.
+# Real ERM restructuring-type vocabulary (all 33,509 rows, checked directly —
+# not assumed). 5 of 9 real values map cleanly onto this platform's closed
+# event_type set, covering 94.9% of rows. The other 4
+# (Merger/Acquisition, Relocation, Reshoring, Outsourcing — 5.1%) are
+# deliberately NOT mapped: their direction is genuinely ambiguous or
+# unconfirmed, so they're skipped (aggregated-logged, below) rather than
+# guessed onto the closest-sounding value. See research/2026-09-11-eurofound-
+# erm-access-confirmed.md for the full count table and the open question on
+# Reshoring specifically. "Merger /Acquisition" (extra space) is a real typo
+# variant seen once in the live data — matched via .lower() + a normalized
+# key, not a second dict entry.
 _RESTRUCTURING_TYPE_TO_EVENT_TYPE = {
+    "business expansion": "expansion",
     "internal restructuring": "restructuring",
     "closure": "closure",
-    "bankruptcy/liquidation": "bankruptcy",
     "bankruptcy": "bankruptcy",
-    "liquidation": "bankruptcy",
     "offshoring/delocalisation": "offshoring",
-    "offshoring": "offshoring",
-    "delocalisation": "offshoring",
-    "business expansion": "expansion",
-    "expansion": "expansion",
 }
 
 
-def _map_record(record: dict) -> FetchedEmploymentEvent | None:
+def _normalize_type_key(raw_type: str) -> str:
+    """Collapses whitespace variance (e.g. the real "Merger /Acquisition"
+    typo vs. "Merger/Acquisition") without attempting to guess a mapping for
+    either — this only affects how skipped types are counted/logged."""
+    return " ".join(raw_type.strip().lower().split())
+
+
+def _map_record(row: dict) -> FetchedEmploymentEvent | None:
     """
-    Maps one ERM record (research file's example shape: company, country,
-    date, sector, restructuring type, employment_change) onto
-    FetchedEmploymentEvent. Not yet exercised against a real record — the
-    field names below follow the research file's illustrative shape and
-    must be corrected against ERM's actual response/CSV column names once
-    step 1/2a (module docstring) is done.
+    Maps one real ERM CSV row (columns: Id, Announcement date, Country,
+    Company, Sector, Restructuring type, Employment Change) onto
+    FetchedEmploymentEvent. Returns None for a row whose restructuring type
+    isn't in the mapped set — caller aggregates and logs these, not this
+    function (avoids one warning line per record for a ~1,700-row/run
+    category).
     """
-    raw_type = (record.get("type") or "").strip().lower()
+    raw_type = _normalize_type_key(row.get("Restructuring type") or "")
     event_type = _RESTRUCTURING_TYPE_TO_EVENT_TYPE.get(raw_type)
     if event_type is None:
-        logger.warning(
-            "eurofound_erm: unrecognised restructuring type %r — skipped, not guessed. "
-            "Add it to _RESTRUCTURING_TYPE_TO_EVENT_TYPE once confirmed.", raw_type,
-        )
         return None
     assert event_type in EVENT_TYPES
 
-    record_id = record.get("id") or record.get("case_reference")
-    company = record.get("company")
-    event_date = record.get("date")
-    if not (record_id and company and event_date):
-        logger.warning("eurofound_erm: record missing id/company/date — skipped: %r", record)
+    record_id = (row.get("Id") or "").strip()
+    company = (row.get("Company") or "").strip()
+    event_date_raw = (row.get("Announcement date") or "").strip()
+    if not (record_id and company and event_date_raw):
+        logger.warning("eurofound_erm: row missing Id/Company/Announcement date — skipped: %r", row)
         return None
 
-    employment_change = record.get("employment_change")
-    jobs_affected = abs(int(employment_change)) if employment_change is not None else None
+    event_date = date.fromisoformat(event_date_raw)
+
+    # 252 real rows carry the literal string "None" here (not an empty
+    # field) — found while verifying this adapter against the live export,
+    # not assumed. Treated the same as genuinely absent, never coerced.
+    employment_change = (row.get("Employment Change") or "").strip()
+    jobs_affected = (
+        abs(int(employment_change))
+        if employment_change and employment_change.lower() != "none"
+        else None
+    )
 
     return FetchedEmploymentEvent(
-        source_ref=str(record_id),
+        source_ref=record_id,
         company_raw=company,
         event_date=event_date,
         event_type=event_type,
         jobs_affected=jobs_affected,
-        country=record.get("country"),
-        sector=record.get("sector"),
+        country=(row.get("Country") or "").strip() or None,
+        sector=(row.get("Sector") or "").strip() or None,
+        # No stable per-record factsheet URL found — ERM's search results
+        # are rendered by a dynamic fetch this adapter doesn't need to
+        # reverse-engineer further. Left None rather than guessed, same
+        # "absent means absent" rule as every other nullable field here.
+        source_url=None,
         confidence="reported",  # ERM compiles from public announcements, not a legal filing
-        raw_response=record,
+        raw_response=row,
     )
 
 
@@ -118,18 +124,32 @@ class EurofoundErmAdapter:
     name = "eurofound_erm"
 
     def fetch(self) -> list[FetchedEmploymentEvent]:
-        if not ACCESS_CONFIRMED:
-            logger.warning(
-                "eurofound_erm: access mechanism not yet confirmed — returning no "
-                "events this run. See employment_events/eurofound_erm.py module "
-                "docstring TODO before enabling this adapter."
-            )
-            return []
+        with httpx.Client(timeout=60.0) as client:
+            response = client.get(EXPORT_URL)
+            response.raise_for_status()
 
-        # Real fetch + CSV/JSON parsing goes here once ACCESS_CONFIRMED is
-        # True (TODO step 2a). Intentionally unimplemented until then, rather
-        # than a fabricated call against an unverified endpoint.
-        raise NotImplementedError(
-            "eurofound_erm: ACCESS_CONFIRMED is True but the real fetch is not "
-            "implemented yet — finish TODO step 2a in this file."
-        )
+        reader = csv.DictReader(io.StringIO(response.text))
+        results: list[FetchedEmploymentEvent] = []
+        skipped_by_type: Counter[str] = Counter()
+
+        for row in reader:
+            event = _map_record(row)
+            if event is not None:
+                results.append(event)
+            else:
+                raw_type = (row.get("Restructuring type") or "").strip()
+                # A missing Id/Company/Announcement date is already logged
+                # per-row inside _map_record(); only count here when the
+                # type itself was the reason (a recognised type would never
+                # reach this branch with an unmapped raw_type).
+                if _normalize_type_key(raw_type) not in _RESTRUCTURING_TYPE_TO_EVENT_TYPE:
+                    skipped_by_type[raw_type] += 1
+
+        for raw_type, count in skipped_by_type.most_common():
+            logger.info(
+                "eurofound_erm: skipped %d row(s) with unmapped restructuring type %r "
+                "(not guessed onto the existing event_type set)", count, raw_type,
+            )
+
+        assert all(e.event_type in EVENT_TYPES for e in results)
+        return results

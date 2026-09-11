@@ -71,6 +71,30 @@ COUNTRY_NAME_TO_ISO2 = {
     "denmark": "DK",
     "lithuania": "LT",
     "israel": "IL",
+    # Added 2026-09-11 (changes/2026-09-11-eurofound-erm-live.md) — the real EU/Norway
+    # countries found in Eurofound ERM's data that weren't already covered above. Without
+    # these, most ERM country values would have silently normalized to NULL. Deliberately
+    # NOT mapped: ERM's "European Union" and "World" values — genuinely not a single country,
+    # left unmapped rather than guessed.
+    "austria": "AT",
+    "belgium": "BE",
+    "bulgaria": "BG",
+    "croatia": "HR",
+    "cyprus": "CY",
+    "czechia": "CZ",
+    "estonia": "EE",
+    "finland": "FI",
+    "greece": "GR",
+    "hungary": "HU",
+    "italy": "IT",
+    "latvia": "LV",
+    "luxembourg": "LU",
+    "malta": "MT",
+    "norway": "NO",
+    "portugal": "PT",
+    "romania": "RO",
+    "slovakia": "SK",
+    "slovenia": "SI",
 }
 
 
