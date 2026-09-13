@@ -105,13 +105,16 @@ the content within them is live or catalogue-driven, not hand-written per story.
 
 ### Content
 
-**Hero** (fixed):
+**Hero** (fixed — revised 2026-09-13, `changes/2026-09-13-welcome-mentions-employment-risk.md`,
+to name the employment-risk signal now that Story 2 is live; previously mentioned only job
+openings/skills/pay):
 > TECH MARKET INTELLIGENCE
 >
 > # Read the tech hiring market before you make a move.
 >
-> We track job openings, skills, and pay across company career pages — so you see where
-> demand is heading, not guess.
+> We track job openings, skills, and pay across company career pages — and layoffs,
+> restructuring, and hiring activity from official US and European registries — so you see
+> the full picture, not just guess.
 
 **Proof** (live — see Data Contract below for the exact aggregates):
 > **{N}** job openings tracked · **{M}** companies · tracking since **{month year}**
@@ -128,8 +131,11 @@ the content within them is live or catalogue-driven, not hand-written per story.
 > {one Shortcut Card per current catalogue entry — for example, today's only entry, "What do
 > we currently know about the tech job market?"}
 >
-> You can also ask your own question about demand, skills, pay, or specific roles once you're
-> in a conversation. We don't cover layoffs, company reviews, or application tracking.
+> You can also ask your own question about demand, skills, pay, employment risk, or specific
+> roles once you're in a conversation. We don't cover company reviews or application tracking.
+> (Revised 2026-09-13 — "layoffs" removed from the not-covered list: Story 2 made this false
+> the moment it shipped, and the shortcut card for it was already rendering directly above this
+> sentence, a live self-contradiction until this fix.)
 
 ### Data contract
 

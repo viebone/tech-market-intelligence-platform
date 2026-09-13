@@ -78,8 +78,9 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
           Read the tech hiring market before you make a move.
         </h2>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-gray-400">
-          We track job openings, skills, and pay across company career pages — so you see
-          where demand is heading, not guess.
+          We track job openings, skills, and pay across company career pages — and layoffs,
+          restructuring, and hiring activity from official US and European registries — so you
+          see the full picture, not just guess.
         </p>
       </div>
 
@@ -190,9 +191,9 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
           </ul>
         )}
         <p className="mt-4 text-sm leading-relaxed text-gray-400">
-          You can also ask your own question about demand, skills, pay, or specific roles once
-          you're in a conversation. We don't cover layoffs, company reviews, or application
-          tracking.
+          You can also ask your own question about demand, skills, pay, employment risk, or
+          specific roles once you're in a conversation. We don't cover company reviews or
+          application tracking.
         </p>
       </div>
     </article>
