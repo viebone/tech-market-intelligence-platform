@@ -93,6 +93,12 @@ the content within them is live or catalogue-driven, not hand-written per story.
      sentence with the real breakdown.
    - One fixed coverage-limit sentence and one fixed sentence naming which signals exist
      (skills, pay where disclosed, location where normalized).
+   - **Employment-risk proof** (added 2026-09-13, `changes/2026-09-13-welcome-employment-risk-proof.md`):
+     a second, visually distinct stat row — total employment events tracked, number of
+     official registries (named), and countries covered. Kept separate from the job-openings
+     row above, not merged into it: two different pipelines, two different counts, shown as
+     two different numbers rather than blurred into one. Independent of whether job postings
+     have been collected — its own empty state if `employment_events` has no rows yet.
    This section describes the platform's *data*, not its catalogue of questions — it does not
    change shape as stories are added or removed.
 3. **Call to action** — a **live-rendered list of shortcuts, one per entry currently in the
@@ -125,6 +131,9 @@ openings/skills/pay):
 > This is a growing sample of the market, not every job out there — it reflects the companies
 > and roles we follow today. For most of these we also have the skills employers mention, and
 > pay figures where they're shared.
+>
+> **{E}** employment events tracked · **{R}** official registries — {registry names} · **{C}**
+> countries covered
 
 **Call to action** (structure fixed, card content is the live catalogue):
 > Get an instant answer
@@ -150,6 +159,9 @@ no LLM.
 | Collection start (Stat Tile) | `min(raw_postings.fetched_at)` | Observation window, not historical market coverage |
 | Role breakdown (Category Share Bar) — revised 2026-09-04, was a single "headline fact" | Every currently tracked Role Category with `count(distinct rp.id)` of its classified postings | Whatever the taxonomy currently defines — not hardcoded to today's three; each segment states its own count, not just a rank |
 | Signals available | Fixed statement — skills, pay (where disclosed), location (where normalized) | Presence only; no counts in this section |
+| Employment events tracked (added 2026-09-13) | `count(*) FROM employment_events WHERE superseded_by IS NULL` | Reported events, not a claim every real-world event is captured |
+| Official registries (added 2026-09-13) | `count(DISTINCT source)` + names via `SOURCE_DISPLAY_NAMES` | Named individually, same "name each source" discipline as the Employment Risk story's own `sources` fact |
+| Countries covered (added 2026-09-13) | `count(DISTINCT country) FROM employment_events WHERE country IS NOT NULL` | All-time coverage, not scoped to the Employment Risk story's trailing-12-month window — a broader, "have we ever seen this country" fact, stated as such |
 | "What you can ask" cards | `design/market-health/data-stories.md` catalogue — each entry's `question` | One card per current entry; the section is omitted if the catalogue is ever empty |
 
 ### Honesty rules

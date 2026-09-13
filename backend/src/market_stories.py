@@ -672,6 +672,8 @@ def build_welcome() -> dict[str, Any]:
     with no change to this function. See design/market-health/data-stories.md — Relationship
     to the Welcome.
     """
+    from employment_events.base import SOURCE_DISPLAY_NAMES
+
     query_time = datetime.now().astimezone()
     role_categories_sql = ", ".join(f"'{c}'" for c in PLOTTED_ROLE_CATEGORIES)
 
@@ -693,11 +695,32 @@ def build_welcome() -> dict[str, Any]:
             """
         ).fetchall()
 
+        # Employment-risk proof — added 2026-09-13
+        # (changes/2026-09-13-welcome-employment-risk-proof.md), so the
+        # Hero's "layoffs... from official registries" claim is backed by a
+        # real number, same discipline as the job-openings proof above.
+        # superseded_by IS NULL excludes corrected/retracted records — same
+        # rule the Employment Risk story itself already follows.
+        employment_risk_row = conn.execute(
+            """
+            SELECT count(*), count(DISTINCT source), count(DISTINCT country)
+            FROM employment_events
+            WHERE superseded_by IS NULL
+            """
+        ).fetchone()
+        employment_risk_sources_row = conn.execute(
+            "SELECT DISTINCT source FROM employment_events WHERE superseded_by IS NULL",
+        ).fetchall()
+
     collection_started_at, total_postings, company_count = coverage
     role_breakdown = [
         {"role_category": role_category, "postings": posting_count}
         for role_category, posting_count in breakdown_rows
     ]
+    employment_events_count, employment_source_count, employment_country_count = employment_risk_row
+    employment_source_names = sorted(
+        SOURCE_DISPLAY_NAMES.get(s, s) for (s,) in employment_risk_sources_row
+    )
 
     return {
         "inventory": {
@@ -707,13 +730,19 @@ def build_welcome() -> dict[str, Any]:
             "role_categories": list(PLOTTED_ROLE_CATEGORIES),
             "role_breakdown": role_breakdown,
             "signals_available": ["skills", "compensation", "location"],
+            "employment_risk": {
+                "events": employment_events_count,
+                "sources": employment_source_count,
+                "source_names": employment_source_names,
+                "countries": employment_country_count,
+            },
         },
         "story_shortcuts": [
             {"id": s["id"], "display_name": s["display_name"], "question": s["question"]}
             for s in STORY_CATALOGUE
         ],
         "provenance": {
-            "sources": ["raw_postings", "classifications"],
+            "sources": ["raw_postings", "classifications", "employment_events"],
             "model_used": False,
             "query_time": query_time.isoformat(),
         },

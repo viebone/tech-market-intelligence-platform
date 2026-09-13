@@ -11,6 +11,13 @@ export interface WelcomeRoleBreakdownRow {
   postings: number;
 }
 
+export interface WelcomeEmploymentRisk {
+  events: number;
+  sources: number;
+  source_names: string[];
+  countries: number;
+}
+
 export interface WelcomeInventory {
   total_postings: number;
   companies: number;
@@ -18,6 +25,7 @@ export interface WelcomeInventory {
   role_categories: string[];
   role_breakdown: WelcomeRoleBreakdownRow[];
   signals_available: string[];
+  employment_risk: WelcomeEmploymentRisk;
 }
 
 export interface WelcomeStoryShortcut {
@@ -165,6 +173,43 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
           <p className="text-sm text-gray-400">
             We haven't collected any job openings yet. Once collection begins, this section
             will show how many openings and companies we're tracking and since when.
+          </p>
+        )}
+
+        {/* Employment-risk proof — added 2026-09-13,
+            changes/2026-09-13-welcome-employment-risk-proof.md. A distinct sub-block, not
+            merged into the job-openings stat row above — mixing "postings" and "events"
+            counts in one row risks exactly the ambiguity Data Legibility exists to catch,
+            and keeps this view's one Hero Figure (job openings) as the clear lead number,
+            employment risk as a supporting line. Independent of `hasCollected`: this is a
+            genuinely separate pipeline, queried and shown on its own terms. */}
+        {inventory.employment_risk.events > 0 ? (
+          <div className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4 border-t border-gray-800 pt-5">
+            <div>
+              <p className="text-xl font-semibold leading-none text-gray-100">
+                {formatCount(inventory.employment_risk.events)}
+              </p>
+              <p className="mt-1.5 text-xs text-gray-500">employment events tracked</p>
+            </div>
+            <div>
+              <p className="text-xl font-semibold leading-none text-gray-100">
+                {inventory.employment_risk.sources}
+              </p>
+              <p className="mt-1.5 text-xs text-gray-500">
+                official registries — {inventory.employment_risk.source_names.join(", ")}
+              </p>
+            </div>
+            <div>
+              <p className="text-xl font-semibold leading-none text-gray-100">
+                {inventory.employment_risk.countries}
+              </p>
+              <p className="mt-1.5 text-xs text-gray-500">countries covered</p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-5 border-t border-gray-800 pt-5 text-sm text-gray-400">
+            We haven't tracked any employment events yet. Once collection begins, this section
+            will show how many events, registries, and countries we're covering.
           </p>
         )}
       </div>
