@@ -88,10 +88,17 @@ export function WorldRiskMap({ rows }: { rows: CountryRiskRow[] }) {
 
   return (
     <div className="relative">
+      {/* d3's default geoEqualEarth scale (~177) is tuned for a ~960x500
+          canvas; at 800x440 it overflows and clips the poles — reported as
+          "cut on top, Alaska barely visible." scale:140 pulls it in to fit;
+          center:[0,15] shifts the visible window north, trading unused
+          Antarctica margin (irrelevant to this data) for full Arctic
+          visibility (Alaska/Scandinavia/Russia, all real data points). */}
       <ComposableMap
         projection="geoEqualEarth"
+        projectionConfig={{ scale: 140, center: [0, 15] }}
         width={800}
-        height={400}
+        height={440}
         className="w-full h-auto"
       >
         <Geographies geography={WORLD_TOPOLOGY_URL}>

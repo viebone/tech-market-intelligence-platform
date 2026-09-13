@@ -57,3 +57,11 @@ Data Story visual vocabulary, product-wide).
   country with no reported events in the window gets a neutral, undecorated fill, never
   implied to be "calm" (same "zero events is a different message" rule as the direction-split
   block).
+- 2026-09-13, follow-up (real user feedback after deploy): the map appeared cropped at the top
+  ("Alaska not very visible"). Root cause: d3's default `geoEqualEarth` scale (~177) is tuned
+  for a ~960x500 canvas; at 800x400 it overflows and clips the poles. Fixed with
+  `projectionConfig={{ scale: 140, center: [0, 15] }}` and `height` 400->440 — the centre shift
+  trades unused Antarctica margin (no country in this dataset is there) for full Arctic
+  visibility (Alaska/Scandinavia/Russia are all real data points). `npm run build` clean;
+  visual confirmation of the exact framing is pending the user's next look, not yet re-verified
+  in a live browser from this environment.
