@@ -268,12 +268,20 @@ to absorb that lag while still being a bounded "recent activity" window, not all
 
 1. **Framing line** — one sentence naming what's being summarised, and that this is
    independent of the platform's own tracked companies.
-2. **Contraction vs. expansion** — a **Hero Figure + Meter**: total roles reported affected by
+2. **Where it's happening** — subtitle: "Hiring and layoff activity by country, over the
+   trailing 12 months." (Added 2026-09-13, `changes/2026-09-13-employment-risk-world-map.md`
+   — replaces the former "By country" Ranked bar list and moves to lead the story, since
+   *where* is the more natural first question for a market-wide risk view.) A **World risk
+   map** (`design/visual-design.md`): every country with a reported event in the window is
+   coloured by net direction (more hiring vs. more layoffs), with a legend and a hover tooltip
+   giving both totals per country — never just the net figure, since net can hide real
+   activity happening in both directions at once.
+3. **Contraction vs. expansion** — a **Hero Figure + Meter**: total roles reported affected by
    contraction events (layoff/closure/restructuring/bankruptcy/offshoring) in the window (Hero
    Figure), with a Meter showing what share of *events* (not roles) were contraction vs.
    expansion. The Meter's own caption already states the unit inline ("of reported events were
    contraction…") — no separate subtitle needed (Data Legibility, `visual-design.md`).
-3. **Companies with the most reported impact** — subtitle: "Ranked by jobs reported affected,
+4. **Companies with the most reported impact** — subtitle: "Ranked by jobs reported affected,
    summed across contraction events in the window." (Added 2026-09-11,
    `changes/2026-09-11-data-legibility-market-health.md` — the heading alone didn't state a
    unit; found via real user feedback.) Top 10 companies by roles affected, Ranked bar list.
@@ -284,17 +292,16 @@ to absorb that lag while still being a bounded "recent activity" window, not all
    underlying events still count in every other block (contraction/expansion, by country, by
    sector) — only the name-specific ranking omits them, with an honest qualifier stating how
    many were excluded and why.
-4. **By country** — subtitle: "Jobs reported affected, summed by country, over the trailing 12
-   months." Every country with a reported event, ranked by roles affected, Ranked bar list.
-   **Revised 2026-09-11** (`changes/2026-09-11-employment-risk-country-dimension.md`) —
-   originally specified as region (US state, or country for non-US sources), which conflated
-   two different granularities into one ranking the moment a second country's data existed.
-   State-level detail is deferred (still stored in `region`, not dropped), not built into this
-   block.
 5. **By sector** — subtitle: "Jobs reported affected, summed by sector — only events whose
    source reports one." Top sectors by roles affected, Ranked bar list, **only for events whose
    source reports a sector** — the qualifier states what share of events that covers (today:
    Eurofound ERM and some WARN records report it; Companies House never does).
+
+**"By country" as a Ranked bar list — removed 2026-09-13**
+(`changes/2026-09-13-employment-risk-world-map.md`), replaced by the World risk map (block 2,
+above). The original "Revised 2026-09-11" region-vs-country note still applies to the map:
+state-level detail stays deferred, not built in. History preserved here, not deleted, per this
+project's own "mark removed, don't erase" convention.
 
 ### Data contract
 
@@ -309,7 +316,7 @@ deduplicated, stored) but sourced from external registries, not observed posting
 | Contraction total | `sum(jobs_affected)` where `direction = 'contraction'` | Roles reported, not roles actually eliminated (some sources don't size every event) |
 | Direction split | `count(*)` grouped by `direction` | Event count share, not role-count share — stated explicitly, the two can diverge |
 | Top companies | `company_raw` grouped, `sum(jobs_affected)`, events missing a jobs-affected figure excluded from the sum but the qualifier states how many events had no figure | Company names are exactly as the source registry reported them, not normalized |
-| By country | `country`, grouped, `sum(jobs_affected)` | Only events with a non-null `country`. `region` (state-level) is deliberately not broken out here — deferred, see the "Revised 2026-09-11" note above |
+| By country (World risk map) | `country`, `direction`, grouped, `sum(jobs_affected)` and `count(*)` per (country, direction) pair — no `LIMIT`, every country with data is mapped, not a top-N | Only events with a non-null `country`. `region` (state-level) is deliberately not broken out here — deferred, see the "Revised 2026-09-11" note above. Revised 2026-09-13 (`changes/2026-09-13-employment-risk-world-map.md`) from a single combined total to a per-direction split, so the map can show net hiring vs. net layoff, not just total activity |
 | By sector | `sector` grouped, `sum(jobs_affected)` | States the share of in-window events that report a sector at all |
 | Sources | `count(distinct source)` + names via `SOURCE_DISPLAY_NAMES` | Every registry that contributed at least one in-window event, named individually — same "name each source" discipline as Story 1's `sources` fact |
 

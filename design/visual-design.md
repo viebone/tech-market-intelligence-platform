@@ -362,6 +362,40 @@ design goal.
 | **Category Share Bar** | a part-to-whole split across the 3 tracked Role Categories | "Category Share Bar", above |
 | **Trend line** | a value over time, where the block's data is genuinely time-series | Chart Specification, `design/market-health/experience.md` (compact variant) |
 | **Year-on-year comparison** | how a set of proportions shifted between the trailing 12 months and the 12 months a year earlier — one year back, never more | below |
+| **World risk map** | a geographic "where" comparison across countries — a choropleth, not a ranked list | below |
+
+**World risk map** (added 2026-09-13 — `changes/2026-09-13-employment-risk-world-map.md`):
+```
+library:  react-simple-maps (ComposableMap/Geographies/Geography) over a world-atlas
+          countries-50m topology — the 50m resolution, not the more common 110m, because the
+          110m file was found to drop small/island nations (Singapore, Malta) that appear in
+          this product's real data; verified directly against the topology file, not assumed.
+          Served as a static asset (`public/world-countries-50m.json`), fetched at runtime
+          only when this story opens — not imported as a JS module, which was tried first and
+          found to grow the app's main bundle by ~750KB for every visitor regardless of
+          whether they ever open this story
+map:      flat SVG country shapes, no basemap tiles/imagery — the question is "which country,
+          how much," not street-level geography, so tiles would be noise, not signal
+fill:     one colour per country, by NET direction (expansion total minus contraction total,
+          by jobs reported affected) — reuses the existing semantic tokens, no new accent hue:
+            net > 0 (more expansion)     emerald-600, opacity scaled to magnitude (min ~30%,
+                                          max 100%, relative to the largest |net| on the map)
+            net < 0 (more contraction)   red-600, same opacity scaling
+            no reported events           gray-800 (neutral — "no data," never implied calm,
+                                          same rule as the direction-split block's zero-events
+                                          state)
+borders:  gray-700, thin — countries read as distinct shapes without competing with the fill
+legend:   one line, always shown, pairing each colour with its meaning — e.g. "● More reported
+          hiring   ● More reported layoffs   ● No reported events in this window" — required
+          per Data Legibility (below): colour is never the only signal
+hover:    a small dark tooltip (gray-800, border-gray-700, same Surface treatment as elsewhere)
+          following the cursor, naming the country and both totals — "Germany — 620 jobs
+          reported affected by contraction, 210 by expansion" — never just the net figure,
+          since net alone can hide real activity in both directions
+zero/empty: a country with no reported events in the window is still drawn (neutral fill), never
+          omitted from the map — omitting it would read as "not part of the world," not "no
+          data"
+```
 
 **Meter** (new here):
 ```

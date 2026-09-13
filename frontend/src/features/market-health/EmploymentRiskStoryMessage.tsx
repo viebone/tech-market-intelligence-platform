@@ -1,6 +1,7 @@
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
 import { Meter } from "./Meter";
+import { WorldRiskMap, type CountryRiskRow } from "./WorldRiskMap";
 import type { DataStoryResult } from "./DataStoryMessage";
 
 // Story 2 — "Employment risk across the market" (added 2026-09-11,
@@ -54,9 +55,15 @@ export function EmploymentRiskStoryMessage({ story }: { story: DataStoryResult }
     .map((row) => ({ label: str(row.company_raw), value: num(row.affected) }))
     .filter((row) => row.label !== "");
 
-  const countryRows: RankedBarRow[] = listFrom(countriesSection, "countries")
-    .map((row) => ({ label: str(row.country), value: num(row.affected) }))
-    .filter((row) => row.label !== "");
+  const countryRiskRows: CountryRiskRow[] = listFrom(countriesSection, "countries")
+    .map((row) => ({
+      country: str(row.country),
+      contraction_events: num(row.contraction_events),
+      contraction_affected: num(row.contraction_affected),
+      expansion_events: num(row.expansion_events),
+      expansion_affected: num(row.expansion_affected),
+    }))
+    .filter((row) => row.country !== "");
 
   const sectorRows: RankedBarRow[] = listFrom(sectorsSection, "sectors")
     .map((row) => ({ label: str(row.sector), value: num(row.affected) }))
@@ -77,6 +84,14 @@ export function EmploymentRiskStoryMessage({ story }: { story: DataStoryResult }
       </p>
 
       <StoryBlock
+        heading="Where it's happening"
+        subtitle="Hiring and layoff activity by country, over the trailing 12 months."
+        {...blockProps(countriesSection, countryRiskRows.length > 0)}
+      >
+        <WorldRiskMap rows={countryRiskRows} />
+      </StoryBlock>
+
+      <StoryBlock
         heading="Contraction vs. expansion"
         {...blockProps(directionSection, contractionRolesAffected > 0 || contractionShareOfEvents > 0)}
       >
@@ -93,14 +108,6 @@ export function EmploymentRiskStoryMessage({ story }: { story: DataStoryResult }
         {...blockProps(companiesSection, companyRows.length > 0)}
       >
         <RankedBarList rows={companyRows} limit={10} />
-      </StoryBlock>
-
-      <StoryBlock
-        heading="By country"
-        subtitle="Jobs reported affected, summed by country, over the trailing 12 months."
-        {...blockProps(countriesSection, countryRows.length > 0)}
-      >
-        <RankedBarList rows={countryRows} limit={10} />
       </StoryBlock>
 
       <StoryBlock

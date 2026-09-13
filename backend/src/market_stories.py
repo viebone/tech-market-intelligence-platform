@@ -514,21 +514,25 @@ def build_employment_risk_overview() -> dict[str, Any]:
             row for row in company_candidates if is_real_company_name(row["company_raw"])
         ][:10]
 
-        # By country only, not state — revised 2026-09-11
-        # (changes/2026-09-11-employment-risk-country-dimension.md). The
-        # original COALESCE(region, country) conflated US state codes and
-        # country codes in one ranking, which stops being a meaningful
-        # comparison the moment a second country's data exists. `region`
-        # (state-level) stays a stored column, deliberately not surfaced
-        # here — deferred, not dropped.
-        country_rows = _rows_as_dicts(conn.execute(
+        # By country, split by direction — revised 2026-09-13 (World risk
+        # map, changes/2026-09-13-employment-risk-world-map.md) from a
+        # single combined total per country to a per-direction split, so
+        # the map can show net hiring vs. net layoff, not just total
+        # activity. Still not by state — see the 2026-09-11 note this
+        # replaces: COALESCE(region, country) conflated US state codes and
+        # country codes in one ranking, which stops being meaningful the
+        # moment a second country's data exists. `region` (state-level)
+        # stays a stored column, deliberately not surfaced here — deferred,
+        # not dropped. No LIMIT — the map plots every country with data,
+        # not a top-N (unlike the ranked-list blocks below).
+        country_direction_rows = _rows_as_dicts(conn.execute(
             f"""
-            SELECT country, count(*) AS events, COALESCE(sum(jobs_affected), 0) AS affected
+            SELECT country, direction, count(*) AS events,
+                   COALESCE(sum(jobs_affected), 0) AS affected
             FROM employment_events
             WHERE {base_where} AND country IS NOT NULL
-            GROUP BY country
-            ORDER BY affected DESC, country
-            LIMIT 10
+            GROUP BY country, direction
+            ORDER BY country
             """,
             params,
         ))
@@ -566,7 +570,31 @@ def build_employment_risk_overview() -> dict[str, Any]:
 
     has_data = total_events > 0
 
+    # Pivot (country, direction) rows into one row per country carrying both
+    # totals — World risk map, changes/2026-09-13-employment-risk-world-map.md.
+    # `direction` is always 'contraction' or 'expansion' (a closed set,
+    # enforced at insert time by direction_for() — employment_events/base.py),
+    # so no third branch is needed.
+    country_totals: dict[str, dict[str, Any]] = {}
+    for row in country_direction_rows:
+        entry = country_totals.setdefault(row["country"], {
+            "country": row["country"],
+            "contraction_events": 0, "contraction_affected": 0,
+            "expansion_events": 0, "expansion_affected": 0,
+        })
+        entry[f"{row['direction']}_events"] = row["events"]
+        entry[f"{row['direction']}_affected"] = row["affected"]
+    country_rows = sorted(country_totals.values(), key=lambda r: r["country"])
+
     sections = [
+        _section(
+            "employment-risk-countries",
+            "Where it's happening",
+            {"countries": country_rows},
+            "State-level detail isn't broken out here yet — every country's events are "
+            "combined into one figure regardless of which state/region within it.",
+            ready=bool(country_rows),
+        ),
         _section(
             "contraction-vs-expansion",
             "Contraction vs. expansion",
@@ -595,14 +623,6 @@ def build_employment_risk_overview() -> dict[str, Any]:
                 else ""
             ),
             ready=bool(company_rows),
-        ),
-        _section(
-            "employment-risk-countries",
-            "By country",
-            {"countries": country_rows},
-            "State-level detail isn't broken out here yet — every country's events are "
-            "combined into one figure regardless of which state/region within it.",
-            ready=bool(country_rows),
         ),
         _section(
             "employment-risk-sectors",
