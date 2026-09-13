@@ -3,6 +3,10 @@
 This project follows the **User Outcome Based Product Development (UOBPD)** framework.
 See `CLAUDE.md` at the workspace root for the full framework rules. This file adds project-specific context.
 
+New to this product? Start with [`README.md`](README.md) and
+[`ONBOARDING.md`](ONBOARDING.md) — this file is instructions for working in the repo, not an
+introduction to it.
+
 ---
 
 ## Workspace Setup
