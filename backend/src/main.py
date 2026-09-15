@@ -28,6 +28,7 @@ from market_openings import router as market_openings_router
 from mcp_access.account import router as mcp_account_router
 from mcp_access.oauth import router as mcp_oauth_router
 from mcp_access.server import get_mcp_asgi_app, mcp_lifespan
+from mcp_access.well_known import router as mcp_well_known_router
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ app.include_router(chat_router)
 
 app.include_router(mcp_account_router)
 app.include_router(mcp_oauth_router)
+app.include_router(mcp_well_known_router)
 app.mount("/mcp", get_mcp_asgi_app())
 
 

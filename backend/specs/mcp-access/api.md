@@ -173,6 +173,29 @@ spec); the user can grant fewer than requested but never more.
 
 ---
 
+## OAuth Discovery Metadata
+
+**Added post-deployment, 2026-09-15** — found missing when a real Claude connection attempt
+failed at the very first step ("Couldn't register with TMIP's sign-in service"), because
+nothing published *where* the endpoints below actually live. A connecting client doesn't guess
+these paths — it fetches a well-known discovery document first. Two, per the two RFCs MCP's own
+Authorization spec references:
+
+### GET /.well-known/oauth-authorization-server
+RFC 8414. Returns `issuer`, `authorization_endpoint`, `token_endpoint`, `registration_endpoint`
+(pointing at the three endpoints below), `code_challenge_methods_supported: ["S256"]`,
+`token_endpoint_auth_methods_supported: ["none"]` (public clients only), and
+`scopes_supported`.
+
+### GET /.well-known/oauth-protected-resource (and the `/mcp`-suffixed variant)
+RFC 9728. Tells a client that `/mcp` is protected and names this same origin as its
+authorization server (this deployment doesn't separate the two roles). Served at both the bare
+well-known path and the resource-path-appended one — different clients probe different
+candidates first.
+
+Both are built from a single `PUBLIC_BASE_URL` env var (`mcp_access/well_known.py`) so the two
+documents can't drift apart — see `backend/.env.example`.
+
 ## OAuth 2.1 Authorization Flow
 
 Follows [MCP's own authorization spec](https://modelcontextprotocol.io) — OAuth 2.1, PKCE
