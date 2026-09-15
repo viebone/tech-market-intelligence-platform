@@ -1,10 +1,10 @@
 ---
 id: design-foundations
-version: 1.1
+version: 1.3
 status: active
 generic: false
 created: 2026-06-11
-updated: 2026-08-14
+updated: 2026-09-14
 ---
 
 # Design Foundations — Tech Market Intelligence Platform
@@ -22,7 +22,7 @@ a clear signal they can trust and act on, quickly.
 
 ## Scope
 
-These foundations — the Product Paradigm and all eight UX Principles below — govern the
+These foundations — the Product Paradigm and all nine UX Principles below — govern the
 **consumer-facing product**: the experience described above, used by job seekers. They do
 not automatically extend to internal/operational tooling built for the people running the
 platform (e.g. an admin pipeline-visibility view serving
@@ -39,6 +39,36 @@ Internal tooling is scoped by its own outcome and experience spec, and is exempt
 
 Any future internal-tooling outcome that explicitly wants conversational interaction or
 direct manipulation is free to ask for it — this carve-out is a default exemption, not a ban.
+
+**Extended 2026-09-13** (`changes/2026-09-13-mcp-ai-agent-access.md`, for
+`outcomes/bring-your-own-ai-agent-access.md`): a third category joins consumer-facing product
+and operator-only internal tooling — **external access surfaces**, where the consumer is a
+client program a user has authorized to act on their behalf (starting with external AI agents
+connecting over MCP), not a human reading this product's own UI and not an operator running
+the platform. This category splits in two, each ruled on differently:
+
+- **The connections-management surface** — where a user connects, inspects, and revokes an
+  authorized external client, and sees its granted scopes and plan tier — *is* part of the
+  consumer-facing product; it's a real task a user performs. It is **not** exempt from
+  **Principle 5 (Direct Manipulation of Outcomes)** — revoking a connection is itself direct
+  manipulation of the thing it governs (access), so no exemption is needed or granted.
+  **Revised 2026-09-14** (`design/information-architecture.md` v2.6): it needs no exemption from
+  the **Agentic Conversational UI** paradigm either, because it was placed inside the existing
+  Output Panel as a Settings tab rather than on a separate page — reusing a zone the paradigm
+  already treats as non-conversational (the Output Panel has never been a conversation; it's
+  always been something the user clicks through directly). A first draft of this paragraph
+  proposed exempting it as its own carved-out surface, the way pipeline-visibility is exempt;
+  that framing is superseded by the simpler placement and kept here only for traceability.
+- **The external tool-contract surface** — what an external AI agent's tool call actually
+  returns — has no rendering surface on this platform at all. The *presentational* mechanics of
+  every principle below (the three-column layout, Task Panel, Reasoning Panel) do not apply,
+  because there is nothing here for this platform to lay out — the external agent's own
+  interface does that. The *values* those principles protect still bind regardless of who
+  renders the result: see Principle 9 below.
+
+The exact layout of the connections-management surface, and the exact shape of what any given
+tool returns, are `/new-experience` and `/new-backend-spec` decisions respectively — this
+section only rules on which foundational commitments carry over, not the detail.
 
 ---
 
@@ -174,6 +204,25 @@ across time. If work changes hands, context must travel with it.
 
 *UX anchors: Collaborative Intent · Conceptual Breadcrumbs · Resumption Summary*
 
+### 9. Curated Access, Never Raw
+Every consumer of this platform's data — a human in this product's own UI, an operator, or an
+external AI agent acting on a user's behalf — receives it through operations this platform has
+deliberately designed to be helpful, never through raw or unrestricted access to the underlying
+database.
+**Implication:** Any way to reach this platform's data — this product's own UI, an internal
+tool, an MCP server, or any future integration — is a specific, named operation over specific
+fields (e.g. role, seniority, geography, date range, metric), never a general-purpose query
+language, a free-form filter, or direct database access, regardless of who or what is asking or
+which tier they're on. This platform's own taxonomy and classification stay authoritative in
+every one of these operations — a caller's own interpretation of a term (what "senior" or a
+skill means) never overrides this platform's canonical definition of it. The platform curates
+*because* the goal is to help someone find the right job, not merely to expose data — the same
+intent that already shapes which stories and insights this product chooses to surface, extended
+to every future access surface.
+
+*UX anchors: Provenance · Epistemic UI (the same anchors Principle 4 already sets — extended
+here to consumers other than a human reading this product's own UI)*
+
 ---
 
 ## Design Goals & Metrics
@@ -256,6 +305,21 @@ impact of their changes.*
 
 ---
 
+### Curated Access Integrity
+*Every consumer — human or external AI agent — gets this platform's help through curated
+operations, never raw access, and the platform's own taxonomy always wins.*
+→ Principle 9 — Curated Access, Never Raw
+
+- % of external calls (MCP or any future integration) served by a named, curated operation
+  vs. any raw/ad-hoc query path — target: 100%, always
+- Count of raw/free-form query surfaces exposed to any external caller — target: 0, always
+- Time from a user revoking a connection to that connection's access actually failing —
+  target: the very next call, no grace window
+- % of tool responses whose category/role/skill labels match this platform's canonical
+  taxonomy rather than a caller-supplied interpretation — target: 100%
+
+---
+
 ## What this rules out
 
 **Interaction paradigm**
@@ -284,3 +348,14 @@ impact of their changes.*
 
 **Accessibility**
 - Colour as the sole encoding for health status (must pair with label or icon)
+
+**External access**
+- Raw SQL, an unrestricted query language, or any form of direct database access exposed to
+  any client — human or AI, any plan tier, no exceptions
+- A new access surface (API, integration, agent connector) added without a specific operation
+  contract behind it — every one is named, parameterized, and scoped, never a general-purpose
+  passthrough
+- An external caller's own interpretation of a term (role, seniority, skill, geography)
+  overriding this platform's canonical taxonomy
+- A revoked connection that keeps working until some cache or token naturally expires —
+  revocation must take effect on the next call

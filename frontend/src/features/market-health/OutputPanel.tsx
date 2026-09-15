@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { Message } from "ai";
+import { TabSwitcher } from "../../components/TabSwitcher";
+import { SettingsTab } from "../mcp-access/SettingsTab";
 
 interface OutputRef {
   id: string;
@@ -45,7 +48,13 @@ interface OutputPanelProps {
   messages: Message[];
 }
 
+// Added 2026-09-15 (changes/2026-09-13-mcp-ai-agent-access.md) — the Output
+// Panel's only integration point with the mcp-access feature. Everything
+// below this line, and the Output tab's own logic above, is unchanged from
+// before this feature existed.
 export function OutputPanel({ messages }: OutputPanelProps) {
+  const [activeTab, setActiveTab] = useState<"output" | "settings">("output");
+
   const userMessages = messages.filter((m) => m.role === "user");
   const assistantMessages = messages.filter((m) => m.role === "assistant");
 
@@ -76,32 +85,41 @@ export function OutputPanel({ messages }: OutputPanelProps) {
   return (
     <aside className="w-80 shrink-0 flex flex-col border-l border-gray-800 bg-gray-900 overflow-y-auto">
       <div className="shrink-0 px-4 py-3 border-b border-gray-800">
-        <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest">
-          Output
-        </p>
+        <TabSwitcher
+          options={[
+            { value: "output", label: "Output" },
+            { value: "settings", label: "Settings" },
+          ]}
+          active={activeTab}
+          onChange={(value) => setActiveTab(value as "output" | "settings")}
+        />
       </div>
 
-      <div className="flex-1 p-2 space-y-0.5">
-        {refs.map((ref) => (
-          <button
-            key={ref.id}
-            onClick={() => scrollToTurn(ref.id)}
-            className="w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 transition-colors group"
-          >
-            <span className="shrink-0 mt-0.5 text-gray-500 group-hover:text-gray-400 transition-colors">
-              {ref.type === "chart" ? <ChartIcon /> : <TextIcon />}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-medium text-gray-300 group-hover:text-gray-100 transition-colors truncate">
-                {ref.label}
+      {activeTab === "settings" ? (
+        <SettingsTab />
+      ) : (
+        <div className="flex-1 p-2 space-y-0.5">
+          {refs.map((ref) => (
+            <button
+              key={ref.id}
+              onClick={() => scrollToTurn(ref.id)}
+              className="w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 transition-colors group"
+            >
+              <span className="shrink-0 mt-0.5 text-gray-500 group-hover:text-gray-400 transition-colors">
+                {ref.type === "chart" ? <ChartIcon /> : <TextIcon />}
               </span>
-              <span className="block text-[11px] leading-normal text-gray-500 mt-0.5 line-clamp-2">
-                {ref.description}
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-gray-300 group-hover:text-gray-100 transition-colors truncate">
+                  {ref.label}
+                </span>
+                <span className="block text-[11px] leading-normal text-gray-500 mt-0.5 line-clamp-2">
+                  {ref.description}
+                </span>
               </span>
-            </span>
-          </button>
-        ))}
-      </div>
+            </button>
+          ))}
+        </div>
+      )}
     </aside>
   );
 }

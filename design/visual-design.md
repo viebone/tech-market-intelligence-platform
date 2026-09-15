@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.6
+version: 1.7
 status: active
 created: 2026-06-21
-updated: 2026-09-11
+updated: 2026-09-14
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -120,10 +120,33 @@ never shrinks to accommodate the side panels.
 |---|---|---|
 | Task panel (left) | 240px | Fixed. Contains the task/question navigation list. |
 | Working space (centre) | max-w-[1200px] | Max width, centred. Fills available space between the side panels. Charts fill the full working space width. |
-| Output panel (right) | 320px | Fixed. Shows a reference index of outputs for the active task — not the content itself. |
+| Output panel (right) | 320px | Fixed. Two tabs — Output (default) and Settings (added 2026-09-14, see below). The Output tab shows a reference index of outputs for the active task, not the content itself; the Settings tab is account-level and doesn't change with the active task. |
 
 The left panel drives the context loaded into the working space and output panel.
-Selecting a task on the left changes what appears in both right zones simultaneously.
+Selecting a task on the left changes what appears in both right zones simultaneously — this
+holds for the Output tab only; the Settings tab is unaffected by task selection.
+
+### Output Panel tabs (added 2026-09-14 — `changes/2026-09-13-mcp-ai-agent-access.md`)
+
+The Output Panel's two tabs, **Output** and **Settings**, are switched using the existing **Tab
+/ range selector** pattern below (Component Aesthetics) — the same pill-style control already
+used for chart time ranges — reused as-is, no new tab component. The switcher is pinned at the
+top of the Output Panel, above whichever tab's content is currently showing, and is present on
+every Task since the Output Panel itself always is.
+
+```
+Output Panel (320px fixed)
+┌───────────────────────────┐
+│  [Output] [Settings]      │  ← Tab / range selector, pinned, gray-800 track
+├───────────────────────────┤
+│                            │
+│  active tab's content     │
+│                            │
+└───────────────────────────┘
+```
+
+Switching tabs never affects the Task Panel or the Working Space. See "Output Panel — Settings
+tab" (Component Aesthetics, below) for what the Settings tab contains.
 
 ### Sidebar + Main Content (operator surfaces)
 
@@ -224,6 +247,9 @@ inactive tab:  transparent, gray-400 text, hover gray-200
 font:          text-xs
 padding:       4px 12px (py-1 px-3)
 ```
+Reused as-is (added 2026-09-14) for the Output Panel's Output/Settings tab switcher — same
+container, same active/inactive treatment, just two fixed tabs instead of a chart's time-range
+options. No new tab component was introduced.
 
 ### Entry-point components (added 2026-09-04)
 
@@ -635,6 +661,83 @@ treatment — both mean "not yet resolved," not "broken." Only "Failed" states u
 matches the amber/red distinction `design/pipeline-visibility/experience.md`'s Chart
 Specification and Edge Cases sections already rely on.
 
+### Output Panel — Settings tab (added 2026-09-14 — `changes/2026-09-13-mcp-ai-agent-access.md`)
+
+Everything here fits the Output Panel's fixed 320px width — narrower than any surface this
+product has designed for before. Every element below is vertically stacked; nothing is
+side-by-side.
+
+**Settings tab header:**
+```
+title:         "Connect your AI" — Section-heading scale (text-sm font-medium), gray-100
+                (not Conversation-title scale — that would crowd a 320px column)
+explanation:   one line, Caption scale, gray-400
+MCP endpoint:  Monospace scale, gray-100, bg-gray-800 border border-gray-700 rounded-lg,
+               py-2 px-3, truncated with text-overflow: ellipsis (the value never force-wraps
+               or overflows the panel width) + an inline "Copy" ghost/text action, right-aligned
+per-client
+instructions:  collapsed by default, one row per client (Claude / ChatGPT / Gemini CLI / other),
+               Body scale gray-300; expands inline on click using the same height transition as
+               the Reasoning Panel (`duration-200`)
+```
+
+**Connected Assistant card** (one per connection, stacked with `gap-3` between cards):
+```
+container:     bg-gray-800, border border-gray-700, rounded-lg (same Surface as everywhere
+               else), p-3 (tighter than the standard p-4 — the column is narrower)
+client row:    icon (16px) + client name, Section-heading scale, gray-100
+timestamp:     "Connected {relative time}" — Caption scale, gray-400, directly below the
+               client row
+scope chips:   Filter-chip pattern (existing), wrapped onto multiple lines as needed
+               (flex-wrap, gap-1.5) — never truncated or scrolled horizontally; always
+               plain language, never a raw scope identifier (e.g. "Can read job market
+               data", never "jobs.read" — see Data Legibility, below)
+plan badge:    Status badge / pill pattern (existing), placed on its own line below the
+               scope chips — see the Plan tier mapping, below
+revoke:        Ghost/text action, "Revoke", right-aligned on its own row at the card's
+               bottom edge; on click, replaces itself inline with "Revoke access? [Yes] [No]"
+               at the same position — no modal, matching Principle 5's direct-manipulation bar
+```
+
+**Plan tier badge** — new mapping onto the existing Status badge / pill pattern, no new colours:
+
+| Plan tier | Semantic colour | Label |
+|---|---|---|
+| Free | `amber` (Stable / neutral) | "Free" |
+| Premium | `emerald` (Rising / positive) | "Premium" |
+
+Free is amber, not a "problem" colour — it is a neutral state, the same logic that already
+gives `unknown` and "Pending" the amber treatment elsewhere in this document.
+
+**Empty State** (zero connections): same Surface treatment as a card, but centred text instead
+of the structure above — Body scale, gray-300, explaining what connecting does, with the MCP
+endpoint and instructions still shown above it (per the experience spec, the endpoint/
+instructions block is never hidden, connected or not).
+
+### OAuth consent screen (added 2026-09-14 — same change)
+
+Rendered when an external AI client initiates the connection — not part of the three-column
+layout, no Task Panel, no Output Panel, no TopBar. May be the first thing a visitor ever sees on
+this platform, so it must be legible with zero assumed context.
+
+```
+background:    gray-900 (Page background — same as everywhere else, no special "auth" theme)
+container:     centred, max-w-[420px], bg-gray-800 Surface, border border-gray-700,
+               rounded-lg, p-6
+requester:     client icon + name, Section-heading scale, gray-100, top of the card
+               ("Claude is requesting access")
+scope
+checklist:     one row per requested scope, plain language (same phrasing as the Connected
+               Assistant card's scope chips), a small checkmark glyph (gray-400) before each —
+               Body scale, gray-300
+actions:       "Allow" — Primary button (existing), full-width
+               "Cancel" — Ghost/text action, centred, below Allow
+```
+
+No accent colour is introduced for this screen — it uses the same dark surfaces, type scale,
+and button styles as the rest of the product, so a user recognises it as this platform even on
+a first visit.
+
 ---
 
 ## Data Legibility
@@ -669,7 +772,17 @@ arrows, chart lines, status tags). Concretely: a semantic colour states its dire
 caption or subtitle at least once per view; an opacity/shape distinction (e.g. `RankedBarList`'s
 `emphasis` — full opacity vs. ~70%) gets an inline caption naming what the two states mean
 (e.g. "Solid bars are must-have mentions."); `YearOnYearBars`'s two bar colours get a legend
-line stating which is which (Year-on-year comparison, above).
+line stating which is which (Year-on-year comparison, above). The Plan tier badge's colour
+(added 2026-09-14) is always paired with its text label ("Free"/"Premium") per the Status badge
+/ pill pattern — never colour alone.
+
+### Plain language over raw identifiers (added 2026-09-14)
+Any backend identifier a human would otherwise see verbatim — a scope name (`jobs.read`), an
+enum value, an internal code — is translated to a plain-language label before it reaches this
+product's UI. The Connected Assistant card's scope chips ("Can read job market data") are the
+first instance of this rule; it applies to any future surface that would otherwise expose a raw
+identifier to a person. This mirrors `design/foundations.md`'s Principle 9 (Curated Access,
+Never Raw) applied to this platform's own UI, not only to what an external AI agent receives.
 
 ---
 
@@ -724,3 +837,10 @@ duration is unknown.
   expand/collapse). No animations for visual interest.
 - **Dense or compact layouts that sacrifice readability.** The user is processing data under
   stress. Generous line-height and padding are not optional.
+- **A raw backend identifier shown directly to a user** (added 2026-09-14) — a scope name like
+  `jobs.read`, an enum value, an internal code. Always translate to plain language first (the
+  Connected Assistant card's scope chips are the reference case).
+- **A settings surface forced into a modal, a separate route, or a new top-level navigation
+  element when it fits an existing zone** (added 2026-09-14) — the Output Panel's Settings tab
+  reused the panel's own pre-existing "outputs and settings" definition rather than inventing a
+  new layout element; the same judgement applies to whatever account-level surface comes next.

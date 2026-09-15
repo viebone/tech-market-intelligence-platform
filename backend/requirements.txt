@@ -15,3 +15,21 @@ pyjwt>=2.9.0
 # module 'bcrypt' has no attribute '__about__'), confirmed the hard way while
 # verifying this implementation against real dependencies, 2026-08-16.
 bcrypt>=4.0.0
+
+# Bring-your-own-AI access (mcp_access/) — see backend/specs/mcp-access/api.md
+# — External Dependencies. Official MCP Python SDK; pyjwt/python-multipart
+# above are reused as-is (same versions, no bump needed). jinja2 above is
+# reused too, for the OAuth consent screen template.
+#
+# Pinned to 1.9.4, not the newest release — verified locally (2026-09-15):
+# mcp's 2.x line pulls in starlette>=1.x, which conflicts with this file's
+# own fastapi==0.115.0 pin (requires starlette<0.39.0). All mcp 1.x releases
+# only require starlette>=0.27 (no upper bound), so any of them satisfies
+# fastapi's pin — 1.9.4 is the oldest 1.x release confirmed (by actually
+# importing it) to expose FastMCP.streamable_http_app(), the method
+# mcp_access/server.py mounts into main.py; earlier 1.x releases (checked
+# down to 1.4.0) don't have it at all. sse-starlette is pinned alongside it
+# for the same reason — installing mcp alone pulls in whatever sse-starlette
+# is newest, which itself then conflicts with the pinned starlette.
+mcp==1.9.4
+sse-starlette==3.0.3
