@@ -130,7 +130,12 @@ def create_mcp_server():
     get_taxonomy. Called once, from asgi_app() below."""
     from mcp.server.fastmcp import FastMCP  # imported here, not at module top,
 
-    mcp_server = FastMCP("Tech Market Intelligence Platform")
+    # streamable_http_path="/" — FastMCP defaults this to "/mcp" internally, which
+    # doubled up with the "/mcp" prefix this app is mounted under in main.py
+    # (app.mount("/mcp", asgi_app())), producing an unreachable /mcp/mcp. Found by
+    # actually curling the deployed endpoint, not caught by import-level checks —
+    # see the module docstring's verification note.
+    mcp_server = FastMCP("Tech Market Intelligence Platform", streamable_http_path="/")
 
     @mcp_server.tool()
     def get_taxonomy_tool() -> dict:
