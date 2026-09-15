@@ -222,8 +222,46 @@ def create_mcp_server():
     return mcp_server
 
 
-def asgi_app():
-    """Returns the mountable ASGI app for main.py: app.mount('/mcp', asgi_app())."""
-    mcp_server = create_mcp_server()
-    inner_app = mcp_server.streamable_http_app()  # see VERIFY-FIRST note, top of file
-    return BearerTokenMiddleware(inner_app)
+# Singleton — created once, on first access. Two callers need the *same*
+# FastMCP instance: main.py's app.mount() (needs the wrapped ASGI app) and
+# main.py's lifespan (needs session_manager.run(), below) — a second
+# instance would mean a second, uninitialized session manager.
+_mcp_server: object | None = None
+_mcp_asgi_app: object | None = None
+
+
+def get_mcp_asgi_app():
+    """The mountable ASGI app for main.py: app.mount('/mcp', get_mcp_asgi_app())."""
+    global _mcp_server, _mcp_asgi_app
+    if _mcp_asgi_app is None:
+        _mcp_server = create_mcp_server()
+        inner_app = _mcp_server.streamable_http_app()
+        _mcp_asgi_app = BearerTokenMiddleware(inner_app)
+    return _mcp_asgi_app
+
+
+def mcp_lifespan():
+    """
+    The MCP SDK's StreamableHTTPSessionManager needs its own async context
+    manager entered — it initializes an anyio task group there — or every
+    request fails with `RuntimeError: Task group is not initialized. Make
+    sure to use run().`. That context manager normally runs automatically
+    when a FastMCP server owns its own process (`mcp_server.run(...)`); it
+    does **not** get entered automatically just because this ASGI app is
+    mounted into another FastAPI app's routes — mounting wires up HTTP
+    routing, not lifespan propagation. Found by curling the real deployed
+    `/mcp` endpoint (a live 500, not caught by any import-level check,
+    since nothing about registering tools or building the app touches this
+    path) — main.py's `lifespan` must enter this context manager, once,
+    for the lifetime of the process:
+
+        async with mcp_lifespan():
+            yield
+
+    get_mcp_asgi_app() must have already been called (main.py calls it via
+    app.mount() before the app starts serving) — session_manager is created
+    lazily by streamable_http_app(), which get_mcp_asgi_app() already calls.
+    """
+    if _mcp_server is None:
+        get_mcp_asgi_app()
+    return _mcp_server.session_manager.run()

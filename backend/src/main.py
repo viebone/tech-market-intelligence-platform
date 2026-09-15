@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,9 +27,28 @@ from market_health import router as market_health_router
 from market_openings import router as market_openings_router
 from mcp_access.account import router as mcp_account_router
 from mcp_access.oauth import router as mcp_oauth_router
-from mcp_access.server import asgi_app as mcp_asgi_app
+from mcp_access.server import get_mcp_asgi_app, mcp_lifespan
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Lifespan — schema init (unchanged, just moved off the legacy @app.on_event
+# style) plus mcp_access's session-manager context, which the MCP SDK
+# requires entered for the lifetime of the process (see
+# mcp_access/server.py's mcp_lifespan() docstring for why — a real 500
+# found by curling the deployed /mcp endpoint, not by any import-level
+# check, since nothing about registering tools or mounting the app touches
+# this path).
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    try:
+        init_schema()
+    except Exception as exc:
+        logger.warning("Could not initialise market-health schema: %s", exc)
+    async with mcp_lifespan():
+        yield
 
 # ---------------------------------------------------------------------------
 # App
@@ -38,6 +58,7 @@ app = FastAPI(
     title="Tech Market Intelligence Platform API",
     description="Market health signals, trend data, and AI-assisted market queries for tech professionals.",
     version="1.0.0",
+    lifespan=_lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -81,17 +102,16 @@ app.include_router(market_openings_router)
 app.include_router(chat_router)
 
 # ---------------------------------------------------------------------------
-# Bring-your-own-AI access (added 2026-09-15) — see backend/specs/mcp-access/
-# api.md, for outcomes/bring-your-own-ai-agent-access.md. Mounted on this
-# same api service, not a new Railway service, per that spec's Tech
-# Decisions. LOCAL ONLY per the user's explicit instruction — nothing here
-# has been deployed; do not add to DEPLOYMENT.md or any Railway config
-# without being asked.
+# Bring-your-own-AI access (added 2026-09-15, deployed same day at the
+# user's request — see changes/2026-09-13-mcp-ai-agent-access.md's Decision
+# Log) — see backend/specs/mcp-access/api.md, for
+# outcomes/bring-your-own-ai-agent-access.md. Mounted on this same api
+# service, not a new Railway service, per that spec's Tech Decisions.
 # ---------------------------------------------------------------------------
 
 app.include_router(mcp_account_router)
 app.include_router(mcp_oauth_router)
-app.mount("/mcp", mcp_asgi_app())
+app.mount("/mcp", get_mcp_asgi_app())
 
 
 @app.exception_handler(auth.NotAuthenticated)
@@ -102,19 +122,6 @@ def _account_not_authenticated(request: Request, exc: auth.NotAuthenticated) -> 
     the OAuth consent screen's own not-signed-in redirect, which is a real
     page navigation and handles that itself in mcp_access/oauth.py)."""
     return JSONResponse({"error": "not_authenticated"}, status_code=401)
-
-# ---------------------------------------------------------------------------
-# Startup — ensure raw_postings / classifications exist.
-# Non-fatal if the DB is unreachable: only /api/market-health/openings depends
-# on it, everything else (summary, chat, exceptions) still runs on mock data.
-# ---------------------------------------------------------------------------
-
-@app.on_event("startup")
-def _ensure_schema() -> None:
-    try:
-        init_schema()
-    except Exception as exc:
-        logger.warning("Could not initialise market-health schema: %s", exc)
 
 # ---------------------------------------------------------------------------
 # Health check
