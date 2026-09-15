@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 import auth
 from mcp_access import db_helpers
+from mcp_access.well_known import PUBLIC_BASE_URL
 
 router = APIRouter(prefix="/mcp/oauth", tags=["mcp-oauth"])
 
@@ -74,7 +75,15 @@ def authorize_form(
 ):
     user_id = auth.current_user_id(request.cookies.get(auth.SESSION_COOKIE_NAME))
     if user_id is None:
-        next_url = str(request.url)
+        # Built from PUBLIC_BASE_URL, not request.url — Railway (and most
+        # reverse proxies) terminate TLS at the edge and forward to this
+        # container over plain HTTP, so request.url.scheme reflects the
+        # internal "http", not what the browser actually used. A `next`
+        # built from it sends the browser back to a plain-HTTP URL after
+        # login — confirmed against a real Claude connection attempt,
+        # 2026-09-15. PUBLIC_BASE_URL is the one place this deployment's
+        # real, external scheme+host is already recorded correctly.
+        next_url = f"{PUBLIC_BASE_URL}{request.url.path}?{request.url.query}"
         login_url = f"{FRONTEND_ORIGIN}/login?{urlencode({'next': next_url})}"
         return RedirectResponse(login_url, status_code=303)
 
