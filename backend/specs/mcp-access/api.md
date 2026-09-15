@@ -21,10 +21,15 @@ them. Every MCP tool parameter that names a taxonomy dimension uses exactly the 
 two documents already define.
 
 ## Deployment note
-**Local only for now, at the user's explicit direction** — this spec defines the feature; it
-does not add or change any Railway service, environment, or deployment step. `/implement-backend`
-targets local dev (`uvicorn main:app --reload`, existing `DATABASE_URL`) — nothing here should be
-read as authorizing a deploy. Revisit `DEPLOYMENT.md` only when the user asks to ship this.
+**Deployed 2026-09-15**, at the user's explicit request (local Postgres wasn't running, and
+"maybe better to deploy and test in remote then"). Mounted on the existing `api` service, no
+new Railway service — see `DEPLOYMENT.md`'s "Bring-your-own-AI access" section for the live
+URL, env vars (`USER_JWT_SECRET`, `FRONTEND_ORIGIN`, `PUBLIC_BASE_URL`), and the three
+production-only bugs a real Claude connection attempt surfaced (none of which any local or
+import-level check could have caught): a `/mcp` routing collision, the MCP SDK's session-manager
+lifespan not being wired into `main.py`'s startup, and missing OAuth discovery metadata
+(RFC 8414/9728). All fixed same day; see `changes/2026-09-13-mcp-ai-agent-access.md`'s Decision
+Log for the full sequence.
 
 ---
 
@@ -600,4 +605,4 @@ anticipated.
   would benefit from, not something to bolt on only for MCP callers.
 - Any tool that pre-composes a report, summary, or comparison — per Principle 9 and the
   outcome's explicit "data primitives, not pre-written reports" direction.
-- Deploying this feature anywhere — see Deployment note, above.
+- ~~Deploying this feature anywhere~~ — done 2026-09-15, see Deployment note, above.

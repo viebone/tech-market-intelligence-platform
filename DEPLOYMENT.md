@@ -267,7 +267,8 @@ These cost real time to figure out and will bite again if forgotten:
 ## Service: `api` (deployed 2026-08-16)
 
 The consumer-facing FastAPI backend (`backend/src/main.py`) — `/api/market-health/*`,
-`/api/chat`. Live at `https://api-production-df13.up.railway.app`.
+`/api/chat`, and (added 2026-09-15) `/api/account/*`, `/mcp/oauth/*`, `/.well-known/oauth-*`,
+and the MCP server itself at `/mcp`. Live at `https://api-production-df13.up.railway.app`.
 
 | | |
 |---|---|
@@ -277,11 +278,24 @@ The consumer-facing FastAPI backend (`backend/src/main.py`) — `/api/market-hea
 | Start command | `cd src && uvicorn main:app --host 0.0.0.0 --port $PORT` (from `railway.api.json`) |
 | Restart policy | `ALWAYS` — long-running web service |
 | Auto-deploy | On — a push to `main` deploys `api` (and `admin`, and rebuilds `job-sync`'s image, though `job-sync` itself only *runs* on its cron schedule) |
-| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY_CHAT_PAID` (the **dedicated paid** chat Gemini project — the only key `/api/chat` reads since 2026-09-06; set + verified live that date), `GEMINI_API_KEY` (the old **free-tier** project `gen-lang-client-0003173949` — no longer read by any code, left set, safe to remove), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need). See "Gemini projects & LLM billing" above and `AI_INTERACTION_SETTINGS.md`. |
+| Env vars | `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`, internal reference), `GEMINI_API_KEY_CHAT_PAID` (the **dedicated paid** chat Gemini project — the only key `/api/chat` reads since 2026-09-06; set + verified live that date), `GEMINI_API_KEY` (the old **free-tier** project `gen-lang-client-0003173949` — no longer read by any code, left set, safe to remove), `CORS_ALLOWED_ORIGINS` (`https://web-production-03c43.up.railway.app` — see below; not actually load-bearing given how `web` reaches it, kept set anyway as defense-in-depth and to match what any *other* future direct caller would need). See "Gemini projects & LLM billing" above and `AI_INTERACTION_SETTINGS.md`. **Added 2026-09-15** for bring-your-own-AI access (`backend/specs/mcp-access/api.md`, `changes/2026-09-13-mcp-ai-agent-access.md`): `USER_JWT_SECRET` (consumer session signing — deliberately separate from `ADMIN_JWT_SECRET`), `FRONTEND_ORIGIN` (`https://web-production-03c43.up.railway.app` — where the OAuth consent screen sends a not-signed-in visitor to log in), `PUBLIC_BASE_URL` (`https://api-production-df13.up.railway.app` — this service's own external URL, used to build the OAuth discovery documents; get this wrong and a real MCP client's *first* connection attempt fails, confirmed the hard way against a live Claude connection the same day). |
 | Domain | Railway-generated (`generate-domain`) |
 
 Deployed cleanly on the **first attempt** — every gotcha below had already been learned
 deploying `admin` a few hours earlier in the same session.
+
+### Bring-your-own-AI access (deployed 2026-09-15)
+
+The MCP endpoint a user adds to Claude/ChatGPT/Gemini CLI is
+**`https://api-production-df13.up.railway.app/mcp`** — also shown directly inside the app
+(Settings tab, Output Panel) so a user never has to come here to find it. Full feature detail:
+`backend/specs/mcp-access/api.md` (backend), `frontend/specs/mcp-access/architecture.md`
+(frontend), `changes/2026-09-13-mcp-ai-agent-access.md` (the full build + deploy history,
+including two real bugs found only by testing a live Claude connection: a routing collision
+between this app's `/mcp` mount prefix and the SDK's own default internal path, and the MCP
+SDK's session manager needing its async lifespan explicitly wired into `main.py`'s startup,
+not just its routes mounted). No new Railway service — mounted on this same `api` service, per
+that spec's own Tech Decisions.
 
 ## Service: `web` (deployed 2026-08-16)
 
@@ -297,7 +311,7 @@ entry point.**
 | Build command | `npm run build` (`tsc && vite build`) |
 | Start command | `npm run preview -- --port $PORT` (from `frontend/railway.json`) — **not** a purpose-built production static server; `vite preview` is pragmatic here (zero new dependencies, already verified working) but is explicitly not designed by Vite for heavy production traffic. Revisit if `web` ever needs more than light/personal traffic. |
 | Restart policy | `ALWAYS` |
-| Env vars | `API_PROXY_TARGET` (`https://api-production-df13.up.railway.app`) — server-side only, deliberately **not** `VITE_`-prefixed, so it's never bundled into client JS |
+| Env vars | `API_PROXY_TARGET` (`https://api-production-df13.up.railway.app`) — server-side only, deliberately **not** `VITE_`-prefixed, so it's never bundled into client JS. **Added 2026-09-15**: `VITE_MCP_ENDPOINT_URL` (`https://api-production-df13.up.railway.app/mcp`) — deliberately the opposite of `API_PROXY_TARGET`: **is** `VITE_`-prefixed because `McpEndpointField.tsx` needs to render this literal string to a signed-in user, so it must be inlined into the client bundle at build time, not read at request time. |
 | Domain | Railway-generated (`generate-domain`) |
 
 ### How `web` actually reaches `api` — no frontend code change, no CORS dependency
