@@ -4,7 +4,10 @@ import { useState } from "react";
 // (frontend/specs/mcp-access/architecture.md — Data Requirements). Local
 // dev default matches how the backend runs per this product's CLAUDE.md;
 // override via env once this is ever deployed (not now).
-const MCP_ENDPOINT_URL = import.meta.env.VITE_MCP_ENDPOINT_URL ?? "http://127.0.0.1:8000/mcp";
+// Trailing slash mandatory, not cosmetic — see backend/src/mcp_access/
+// well_known.py's MCP_ENDPOINT_URL for why a bare /mcp silently fails for
+// a real MCP client (confirmed against Claude, 2026-09-15).
+const MCP_ENDPOINT_URL = import.meta.env.VITE_MCP_ENDPOINT_URL ?? "http://127.0.0.1:8000/mcp/";
 
 const CLIENT_INSTRUCTIONS: { client: string; steps: string }[] = [
   {

@@ -315,10 +315,15 @@ would otherwise let a revoked client silently keep working past its last access 
 
 ## MCP Tools
 
-Exposed over the MCP protocol at a single endpoint, **`POST /mcp`** (per the MCP spec's own
-transport — JSON-RPC over HTTP; this platform does not invent a second, REST-shaped tool API
-alongside it). Every tool call carries a Bearer access token; every tool implementation runs
-the same three checks before touching data — see Business Logic, below.
+Exposed over the MCP protocol at a single endpoint, **`POST /mcp/`** — trailing slash mandatory,
+not cosmetic (per `mcp_access/well_known.py`'s `MCP_ENDPOINT_URL`: Starlette's `Mount` can only
+match a path of `/mcp/` or deeper; a bare `/mcp` fails outright and only "works" via a 307
+redirect that curl follows silently but a real MCP client (confirmed: Claude's) does not,
+producing a connection failure with no other symptom. Every place this URL is published must
+use the trailing-slash form. This is per the MCP spec's own transport — JSON-RPC over HTTP; this
+platform does not invent a second, REST-shaped tool API alongside it. Every tool call carries a
+Bearer access token; every tool implementation runs the same three checks before touching data
+— see Business Logic, below.
 
 Six tools. Each is a genuine data primitive already proven inside this platform's own chat
 feature (`backend/specs/market-health/api.md`) — nothing here is new, untested query logic.

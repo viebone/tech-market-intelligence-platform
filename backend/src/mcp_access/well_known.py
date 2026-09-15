@@ -39,6 +39,23 @@ FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
 
 SUPPORTED_SCOPES = ["jobs.read", "companies.read", "compensation.read"]
 
+# The MCP endpoint's one true published URL — with a trailing slash,
+# deliberately. Confirmed against a real Claude connection, 2026-09-15:
+# Starlette's Mount (main.py's app.mount("/mcp", ...)) can only match a
+# request whose path is /mcp/ or deeper — a bare /mcp with nothing after it
+# fails Mount's own compiled path regex outright, and Starlette's outer
+# router papers over that with a 307 redirect to the trailing-slash form
+# (redirect_slashes, on by default; turning it off just turns the 307 into
+# a 404, since the underlying regex still can't match /mcp bare — proven
+# locally before ruling this out). That redirect is invisible to curl
+# (follows it automatically) but Claude's own MCP client does not follow
+# it — it just retried the bare URL six times and gave up ("TMIP returned
+# an error when connecting"), confirmed from this service's own request
+# logs. Every place this URL is published — this metadata, the frontend's
+# VITE_MCP_ENDPOINT_URL, backend/specs/mcp-access/api.md — must use this
+# exact trailing-slash form so the redirect is never in the loop at all.
+MCP_ENDPOINT_URL = f"{PUBLIC_BASE_URL}/mcp/"
+
 
 @router.get("/.well-known/oauth-authorization-server")
 def oauth_authorization_server_metadata():
@@ -83,9 +100,13 @@ def oauth_protected_resource_metadata():
     doesn't separate the two roles). Registered at both the bare
     well-known path and the resource-path-appended variant — different
     clients probe different candidates first; serving both costs nothing
-    and removes a guess."""
+    and removes a guess.
+
+    `resource` ends in a trailing slash deliberately — see MCP_ENDPOINT_URL
+    in this module's own docstring / the module-level note below for why a
+    bare /mcp (no trailing slash) can never work here."""
     return {
-        "resource": f"{PUBLIC_BASE_URL}/mcp",
+        "resource": MCP_ENDPOINT_URL,
         "authorization_servers": [PUBLIC_BASE_URL],
         "scopes_supported": SUPPORTED_SCOPES,
     }

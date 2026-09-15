@@ -184,7 +184,7 @@ sibling render path, not a rewrite.
 |---|---|---|
 | Current session | `GET /api/account/me` | Once, on app load, before routes render |
 | Connections list | `GET /api/account/connections` | On mount of `ConnectionsList` (i.e. whenever the Settings tab is opened) |
-| MCP endpoint value | A build-time/env constant (`VITE_MCP_ENDPOINT_URL`, e.g. `http://127.0.0.1:8000/mcp` locally) | Not fetched — it's this deployment's own known address, same as how the frontend already knows its own API base path |
+| MCP endpoint value | A build-time/env constant (`VITE_MCP_ENDPOINT_URL`, e.g. `http://127.0.0.1:8000/mcp/` locally — **trailing slash mandatory**, see `backend/src/mcp_access/well_known.py`'s `MCP_ENDPOINT_URL` docstring: a bare `/mcp` fails outright for a real MCP client, confirmed against Claude 2026-09-15) | Not fetched — it's this deployment's own known address, same as how the frontend already knows its own API base path |
 | Scope plain-language labels | A small static map in `mcp-access`, keyed by the backend's scope identifiers (`jobs.read` → "Can read job demand and skill trends", etc. — exact three from `backend/specs/mcp-access/api.md` — Scope model) | Bundled, not fetched — these three labels change only when the backend's own scope model changes, at which point this map is updated in the same change |
 
 ---
