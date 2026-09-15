@@ -436,7 +436,11 @@ before assuming either the "conversation absorbs it" or "new component" pattern:
 - Filter controls (role family, seniority, location)
 - Market Health Signal and Search Implication components
 - Exception / alert banner
-- Authentication and user session management
+- Authentication and user session management — **still true for this feature specifically**
+  (Market Health itself stays fully anonymous-accessible); a real session now exists in this
+  codebase as of `frontend/specs/mcp-access/architecture.md`, scoped to the `account` and
+  `mcp-access` features only. This line isn't stale, it's a deliberate boundary — see that
+  spec's Architecture Overview for what did and didn't change here.
 - Side-by-side market comparison
 
 ## Data stories

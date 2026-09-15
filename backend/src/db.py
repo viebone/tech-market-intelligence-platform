@@ -372,6 +372,76 @@ CREATE TABLE IF NOT EXISTS employment_event_cursors (
     cursor      TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Bring-your-own-AI access (added 2026-09-15) — see backend/specs/mcp-access/
+-- api.md — Data Models, for outcomes/bring-your-own-ai-agent-access.md.
+-- Six brand-new tables, plain CREATE IF NOT EXISTS — this is the first
+-- consumer-facing account system in this product; nothing here evolves an
+-- existing table.
+
+CREATE TABLE IF NOT EXISTS users (
+    id             SERIAL PRIMARY KEY,
+    email          TEXT NOT NULL UNIQUE,
+    password_hash  TEXT NOT NULL,
+    plan           TEXT NOT NULL DEFAULT 'free',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Dynamic Client Registration (RFC 7591) records — one per registering AI
+-- client (Claude, ChatGPT, Gemini CLI, ...). No client_secret column: every
+-- MCP client is a public client using PKCE, never a confidential one.
+CREATE TABLE IF NOT EXISTS mcp_clients (
+    client_id      TEXT PRIMARY KEY,
+    client_name    TEXT NOT NULL,
+    redirect_uris  JSONB NOT NULL DEFAULT '[]',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The "Connected Assistant" (design/information-architecture.md v2.6). No
+-- plan_tier column here — plan is a property of the user, always read live
+-- via user_id, never a per-connection snapshot that could drift.
+CREATE TABLE IF NOT EXISTS mcp_connections (
+    id            TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    client_id     TEXT NOT NULL REFERENCES mcp_clients(client_id),
+    client_name   TEXT NOT NULL,
+    scopes        JSONB NOT NULL DEFAULT '[]',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_connections_user_id ON mcp_connections (user_id);
+
+-- Bearer tokens, stored hashed — the raw token is returned to the client
+-- exactly once, at issuance, and never stored or logged in the clear.
+CREATE TABLE IF NOT EXISTS mcp_tokens (
+    token_hash     TEXT PRIMARY KEY,
+    connection_id  TEXT NOT NULL REFERENCES mcp_connections(id),
+    kind           TEXT NOT NULL,
+    expires_at     TIMESTAMPTZ NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_tokens_connection_id ON mcp_tokens (connection_id);
+
+-- Short-lived, single-use OAuth authorization codes (PKCE, S256 only).
+CREATE TABLE IF NOT EXISTS mcp_auth_codes (
+    code             TEXT PRIMARY KEY,
+    user_id          INTEGER NOT NULL REFERENCES users(id),
+    client_id        TEXT NOT NULL REFERENCES mcp_clients(client_id),
+    scopes           JSONB NOT NULL DEFAULT '[]',
+    redirect_uri     TEXT NOT NULL,
+    code_challenge   TEXT NOT NULL,
+    expires_at       TIMESTAMPTZ NOT NULL,
+    used_at          TIMESTAMPTZ
+);
+
+-- Per-connection daily request counter — same shape and purpose as
+-- chat_paid_usage above, for MCP tool calls instead of chat model calls.
+CREATE TABLE IF NOT EXISTS mcp_usage (
+    connection_id  TEXT NOT NULL REFERENCES mcp_connections(id),
+    usage_date     DATE NOT NULL,
+    request_count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (connection_id, usage_date)
+);
 """
 
 

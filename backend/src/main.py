@@ -12,16 +12,21 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+import auth
 from chat import router as chat_router
 from db import init_schema
 from market_health import router as market_health_router
 from market_openings import router as market_openings_router
+from mcp_access.account import router as mcp_account_router
+from mcp_access.oauth import router as mcp_oauth_router
+from mcp_access.server import asgi_app as mcp_asgi_app
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,29 @@ app.add_middleware(
 app.include_router(market_health_router)
 app.include_router(market_openings_router)
 app.include_router(chat_router)
+
+# ---------------------------------------------------------------------------
+# Bring-your-own-AI access (added 2026-09-15) — see backend/specs/mcp-access/
+# api.md, for outcomes/bring-your-own-ai-agent-access.md. Mounted on this
+# same api service, not a new Railway service, per that spec's Tech
+# Decisions. LOCAL ONLY per the user's explicit instruction — nothing here
+# has been deployed; do not add to DEPLOYMENT.md or any Railway config
+# without being asked.
+# ---------------------------------------------------------------------------
+
+app.include_router(mcp_account_router)
+app.include_router(mcp_oauth_router)
+app.mount("/mcp", mcp_asgi_app())
+
+
+@app.exception_handler(auth.NotAuthenticated)
+def _account_not_authenticated(request: Request, exc: auth.NotAuthenticated) -> JSONResponse:
+    """Every /api/account/* route guarded by auth.require_user_session lands
+    here on a missing/invalid/expired cookie — a plain 401 JSON body, never a
+    redirect (these are called by fetch(), not navigated to; contrast with
+    the OAuth consent screen's own not-signed-in redirect, which is a real
+    page navigation and handles that itself in mcp_access/oauth.py)."""
+    return JSONResponse({"error": "not_authenticated"}, status_code=401)
 
 # ---------------------------------------------------------------------------
 # Startup — ensure raw_postings / classifications exist.

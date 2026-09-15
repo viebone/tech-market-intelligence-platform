@@ -66,3 +66,13 @@ MAX_USER_MESSAGE_CHARS = 4000
 # data-story/welcome zero-LLM paths still work. See
 # changes/2026-09-03-chat-resilience-and-instant-answers.md.
 CHAT_PAID_DAILY_REQUEST_CAP = 100
+
+# MCP tool-access daily request caps, per connection — see
+# backend/specs/mcp-access/api.md — Business Logic — Rate limiting. Unlike
+# CHAT_PAID_DAILY_REQUEST_CAP above, this feature spends no LLM tokens of its
+# own (every MCP tool is a direct database read); the cap exists to bound
+# database/compute load per external connection, not dollars. Same mechanism
+# as every other daily budget in this file: enforced before each call
+# (mcp_usage table, incremented pre-call), never reconciled after.
+MCP_FREE_DAILY_REQUEST_CAP = 200
+MCP_PREMIUM_DAILY_REQUEST_CAP = 2000

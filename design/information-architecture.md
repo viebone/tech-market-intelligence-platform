@@ -1,9 +1,9 @@
 ---
 id: information-architecture
-version: 2.4
+version: 2.6
 status: active
 created: 2026-06-11
-updated: 2026-09-11
+updated: 2026-09-14
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
@@ -30,6 +30,19 @@ described below.
 This carve-out mirrors `design/foundations.md`'s own Scope section (v1.1), which exempts
 internal tooling from the product's Agentic Conversational UI paradigm for the same reason.
 
+**Extended, then revised, 2026-09-14** (`changes/2026-09-13-mcp-ai-agent-access.md`, for
+`design/mcp-access/experience.md`): **Connect Your AI** is the opposite case from
+pipeline-visibility above — it **is** part of the consumer-facing product and **is** reachable
+from it, matching `design/foundations.md` v1.2's Scope section, which names this a
+consumer-facing "external access surface," distinct from operator-only tooling. Unlike
+pipeline-visibility, though, it needs no carve-out from the three-column layout at all: it lives
+inside the existing **Output Panel**, as a second tab alongside Output (see Layout Model and
+Navigation Model, below) — a zone this document's own Content Taxonomy already defined as
+showing "outputs *and settings*" for the active task, before this feature gave that second half
+any real content. (A first version of this placed it behind a new TopBar "Account" menu instead;
+superseded same day in favour of the simpler Output Panel tab, which needed no new layout
+element at all. Kept here only so a future reader sees why that note briefly existed.)
+
 ---
 
 ## Layout Model
@@ -44,18 +57,23 @@ desktop. The left column sets the context for the other two.
 │                 │                                    │                      │
 │  240px fixed    │   max-w-[1200px] · centred         │   320px fixed        │
 │                 │                                    │                      │
-│  Navigation     │   Conversation interface           │   Reference index    │
-│  list of tasks, │   for the selected task.           │   of outputs. Each   │
-│  questions,     │   This is where the user           │   entry: icon +      │
-│  and processes. │   and system exchange              │   label + one-line   │
-│                 │   messages. All content            │   description.       │
-│                 │   (charts, summaries) lives        │   Clicking scrolls   │
-│                 │   here.                            │   working space to   │
-│  Selecting an   │                                    │   the output.        │
-│  item here      │   Width never changes.             │                      │
-│  loads context  │   Side panels open                 │   No actual content  │
-│  into the other │   around it, not                   │   is rendered here.  │
-│  two columns.   │   at its expense.                  │                      │
+│  Navigation     │   Conversation interface           │  [Output | Settings] │
+│  list of tasks, │   for the selected task.           │   two tabs, always   │
+│  questions,     │   This is where the user           │   both present       │
+│  and processes. │   and system exchange              │                      │
+│                 │   messages. All content            │  Output tab:         │
+│                 │   (charts, summaries) lives        │   reference index    │
+│                 │   here.                            │   of outputs. Each   │
+│  Selecting an   │                                    │   entry: icon +      │
+│  item here      │   Width never changes.             │   label + one-line   │
+│  loads context  │   Side panels open                 │   description.       │
+│  into the other │   around it, not                   │                      │
+│  two columns.   │   at its expense.                  │  Settings tab:       │
+│                 │                                    │   account-level      │
+│                 │                                    │   surfaces (e.g.     │
+│                 │                                    │   Connect Your AI),  │
+│                 │                                    │   same regardless    │
+│                 │                                    │   of active Task     │
 └─────────────────┴───────────────────────────────────┴──────────────────────┘
 ```
 
@@ -65,7 +83,7 @@ desktop. The left column sets the context for the other two.
 |---|---|---|
 | Task Panel | 240px fixed | Primary navigation. Selecting an item here defines what the working space and output panel show. The hierarchy setter. |
 | Working Space | max-w-[1200px], centred | The conversation. All user–system exchanges happen here, including charts and summaries embedded in AI messages. Width never compresses to accommodate the side panels. |
-| Output Panel | 320px fixed | A persistent reference index of all outputs produced by the active conversation. Each entry: type icon, short label, one-line description. Clicking an entry scrolls the working space to that output. The panel never renders the actual content — the working space is where content lives. |
+| Output Panel | 320px fixed | Two tabs, always both present: **Output** (default) — a persistent reference index of all outputs produced by the active conversation, each entry icon + label + one-line description, clicking scrolls the working space to that output, never rendering the actual content itself; and **Settings** (added 2026-09-14) — account-level surfaces such as Connect Your AI, whose content stays the same regardless of which Task is active, unlike Output's. |
 
 ### The relationship between columns
 
@@ -75,6 +93,11 @@ space and the output panel update to reflect that task.
 
 The working space and the output panel are always in sync around the same selected item.
 They are two views of the same task — not independent sections.
+
+**Exception (added 2026-09-14):** this holds for the Output Panel's **Output** tab only. Its
+**Settings** tab is account-level, not task-level — switching tasks in the left panel never
+changes what Settings shows, and leaving the Settings tab open while switching tasks is
+expected, not a bug. Only the Output tab tracks the active task.
 
 **Each task carries its own conversation** (clarified 2026-09-06 —
 `changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md`). The chat input at the
@@ -147,6 +170,25 @@ follow it, in catalogue order; pinned feature tasks come after those.
 
 ---
 
+### Output Panel Settings tab
+
+Added 2026-09-14 (`changes/2026-09-13-mcp-ai-agent-access.md`) — no new top-level navigation
+element. **Connect Your AI** lives behind the Output Panel's **Settings** tab (see Layout Model,
+above), reached from within any Task by switching the Output Panel from Output to Settings.
+Because Settings content is account-level, not task-level, it looks identical no matter which
+Task the user switched from to get there.
+
+*(A first version of this section put the entry point behind a new TopBar "Account" menu
+instead — superseded same day by the simpler Settings-tab placement, which reuses a zone that
+already existed rather than adding one. Kept here only so a future reader sees why a TopBar
+change briefly existed in this document.)*
+
+| Zone | Priority | Contains |
+|---|---|---|
+| Output Panel — Settings tab | Primary | Account-level surfaces. Today: **Connect Your AI** only — the platform's MCP endpoint, setup instructions, and the user's Connected Assistants. |
+
+---
+
 ## Content Taxonomy
 
 All labels, headings, statuses, and terminology across the product must use these exact
@@ -174,6 +216,10 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Reasoning Step** | A single logical step in the AI's thinking process, shown inside the Reasoning Panel. | Reasoning Panel |
 | **Source** | A data source or tool the AI consulted to produce an answer, shown inside the Reasoning Panel. For Market Health chat this is always one of the platform's own owned-data queries — the assistant does not consult the open web. | Reasoning Panel |
 | **Follow-up** | A user message sent in the Working Space after the initial Task Result has loaded. Extends the conversation thread for the active task. | Working Space |
+| **Output Tab** (added 2026-09-14) | The Output Panel's default tab — the pre-existing reference index of outputs for the active task. Named explicitly now that the panel has a second tab to distinguish it from. | Output Panel |
+| **Settings Tab** (added 2026-09-14) | The Output Panel's second tab. Account-level, not task-level — its content doesn't change when the active Task changes. Today holds Connect Your AI only. | Output Panel |
+| **Connect Your AI** (added 2026-09-14 — `changes/2026-09-13-mcp-ai-agent-access.md`) | The settings surface where a user connects, inspects, and revokes external AI clients (Claude, ChatGPT, Gemini CLI, or any MCP-compatible client), and sees each one's granted access and plan tier. Reachable from the Output Panel's Settings tab. See `design/mcp-access/experience.md`. | Output Panel (Settings tab) |
+| **Connected Assistant** (added 2026-09-14) | A single external AI client the user has authorized, as it appears in Connect Your AI: which client, when connected, what it can see (in plain language, never a raw scope name), and its plan tier. | Connect Your AI |
 
 ---
 
@@ -208,6 +254,14 @@ terms. Experience specs must not introduce synonyms or alternate names.
    story-catalogue tasks (or opens "Tech market hiring status" directly) → continues from
    there. Identical regardless of how many stories the catalogue currently holds.
 
+7. **Connecting an external AI assistant** (added 2026-09-14 — `changes/2026-09-13-mcp-ai-agent-access.md`)
+   — User switches the Output Panel to its Settings tab (from any Task) → Connect Your AI shows
+   → copies the platform's MCP endpoint and reads setup instructions → leaves the product to add
+   it inside their AI client of choice → that client redirects back to this platform's consent
+   screen → user grants access → is returned to their AI client, connected → the new Connected
+   Assistant appears under the Settings tab the next time the user opens it. See
+   `design/mcp-access/experience.md` — Part 1, Flows A and B.
+
 ---
 
 ## Entry Points
@@ -222,3 +276,15 @@ terms. Experience specs must not introduce synonyms or alternate names.
   in that conversation.
 - **Direct task link** — A notification or shared link selects a specific task in the Task
   Panel and scrolls the working space to the relevant exchange.
+- **Settings tab (added 2026-09-14)** — User switches the Output Panel from Output to Settings,
+  from any Task → Connect Your AI loads, showing the MCP endpoint, setup instructions, and the
+  user's current Connected Assistants (or the Empty State if there are none). Reachable
+  identically from every Task, since the Output Panel is present everywhere; unlike the Output
+  tab, what's shown never changes based on which Task the user switched from.
+- **External consent redirect (added 2026-09-14)** — A user may land directly on this
+  platform's OAuth consent screen without ever having opened the rest of the product — triggered
+  from inside Claude, ChatGPT, Gemini CLI, or another MCP-compatible client when they add this
+  platform's endpoint there. This screen carries no TopBar and no navigation; it must be legible
+  entirely on its own (who's requesting access, what it's asking to do), since it may be a
+  first-time visitor's only contact with this platform. See `design/mcp-access/experience.md` —
+  Part 1, Flow B and Visual Design.
