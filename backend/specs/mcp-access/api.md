@@ -199,7 +199,27 @@ well-known path and the resource-path-appended one — different clients probe d
 candidates first.
 
 Both are built from a single `PUBLIC_BASE_URL` env var (`mcp_access/well_known.py`) so the two
-documents can't drift apart — see `backend/.env.example`.
+documents can't drift apart — see `backend/.env.example`. **Exception**: `authorization_endpoint`
+deliberately points at `FRONTEND_ORIGIN` (the `web` service's own domain), not `PUBLIC_BASE_URL`
+— see "Why the consent step is reached through `web`'s domain, not `api`'s," below. This was
+found and fixed post-deployment, against a real Claude connection: the session cookie a user
+gets from logging in is scoped to whichever domain the browser believes it talked to, and login
+happens through `web`'s domain, so sending the browser straight to `api`'s separate domain for
+consent meant the cookie never arrived — login appeared to silently do nothing.
+
+### Why the consent step is reached through `web`'s domain, not `api`'s
+
+`GET/POST /mcp/oauth/authorize` and its unauthenticated redirect to `/login` all have to share
+one origin with wherever the login POST itself lands, or the session cookie set by one is
+invisible to the other — cookies are scoped by the domain the browser believes it's talking to,
+not by which physical service ends up handling the request server-side. Since login
+(`POST /api/account/login`) is called via the SPA's own relative fetch (landing on `web`'s
+domain), the consent step must be reached the same way: `frontend/vite.config.ts` proxies
+`/mcp/*` through to `api`, exactly like it already does for `/api/*`
+(`DEPLOYMENT.md`'s "How `web` actually reaches `api`"). `token_endpoint` and
+`registration_endpoint` have no such requirement — both are called server-to-server by the
+connecting client's own backend, never by the user's browser, so no cookie and no origin
+constraint applies to them; they stay on `PUBLIC_BASE_URL` (`api`'s own domain) directly.
 
 ## OAuth 2.1 Authorization Flow
 

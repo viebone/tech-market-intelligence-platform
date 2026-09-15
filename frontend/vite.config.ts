@@ -18,6 +18,21 @@ export default defineConfig({
         target: apiProxyTarget,
         changeOrigin: true,
       },
+      // Added 2026-09-15 (changes/2026-09-13-mcp-ai-agent-access.md) — the
+      // OAuth consent step (/mcp/oauth/*, backend/src/mcp_access/oauth.py)
+      // must be reached through this same origin, not api's domain
+      // directly. The session cookie from logging in is scoped to this
+      // origin (the SPA's own relative fetches land here); sending a user
+      // straight to api's separate domain for consent meant that cookie
+      // never arrived, and login appeared to silently do nothing — found
+      // against a real Claude connection attempt. The real MCP endpoint
+      // (/mcp itself) is included in this same prefix for simplicity, but
+      // real MCP clients never reach it through this proxy — they connect
+      // to api's domain directly, per VITE_MCP_ENDPOINT_URL.
+      "/mcp": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
     },
   },
   preview: {
@@ -28,6 +43,21 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
+      // Added 2026-09-15 (changes/2026-09-13-mcp-ai-agent-access.md) — the
+      // OAuth consent step (/mcp/oauth/*, backend/src/mcp_access/oauth.py)
+      // must be reached through this same origin, not api's domain
+      // directly. The session cookie from logging in is scoped to this
+      // origin (the SPA's own relative fetches land here); sending a user
+      // straight to api's separate domain for consent meant that cookie
+      // never arrived, and login appeared to silently do nothing — found
+      // against a real Claude connection attempt. The real MCP endpoint
+      // (/mcp itself) is included in this same prefix for simplicity, but
+      // real MCP clients never reach it through this proxy — they connect
+      // to api's domain directly, per VITE_MCP_ENDPOINT_URL.
+      "/mcp": {
         target: apiProxyTarget,
         changeOrigin: true,
       },

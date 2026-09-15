@@ -12,7 +12,6 @@ Routing section, which has no route for this at all.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -23,18 +22,12 @@ from pydantic import BaseModel
 
 import auth
 from mcp_access import db_helpers
-from mcp_access.well_known import PUBLIC_BASE_URL
+from mcp_access.well_known import FRONTEND_ORIGIN
 
 router = APIRouter(prefix="/mcp/oauth", tags=["mcp-oauth"])
 
 _BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
-
-# Where the consumer SPA's login page lives — this backend redirects a
-# not-yet-signed-in visitor there and back, per the Routing decision in
-# frontend/specs/mcp-access/architecture.md. Local dev default matches the
-# Vite dev server; override via env once this is ever deployed (not now).
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
 
 # Plain-language scope descriptions — the consent screen's checklist wording.
 # The frontend keeps its own copy of this same map for the Connected
@@ -75,15 +68,24 @@ def authorize_form(
 ):
     user_id = auth.current_user_id(request.cookies.get(auth.SESSION_COOKIE_NAME))
     if user_id is None:
-        # Built from PUBLIC_BASE_URL, not request.url — Railway (and most
-        # reverse proxies) terminate TLS at the edge and forward to this
-        # container over plain HTTP, so request.url.scheme reflects the
-        # internal "http", not what the browser actually used. A `next`
-        # built from it sends the browser back to a plain-HTTP URL after
-        # login — confirmed against a real Claude connection attempt,
-        # 2026-09-15. PUBLIC_BASE_URL is the one place this deployment's
-        # real, external scheme+host is already recorded correctly.
-        next_url = f"{PUBLIC_BASE_URL}{request.url.path}?{request.url.query}"
+        # Built from FRONTEND_ORIGIN, not PUBLIC_BASE_URL or request.url —
+        # two real bugs found against a live Claude connection, 2026-09-15,
+        # in sequence:
+        #   1. request.url reflects this container's internal scheme
+        #      (Railway terminates TLS at its edge and forwards over plain
+        #      HTTP) — produced a http:// redirect target.
+        #   2. Fixed to PUBLIC_BASE_URL (api's own domain) — technically
+        #      correct HTTPS, but the *wrong domain* for a cookie's worth of
+        #      reasons: the session cookie from logging in is scoped to
+        #      FRONTEND_ORIGIN (the SPA's own domain, where the login POST
+        #      actually lands), not api's separate domain. Sending the
+        #      browser back to api's domain directly meant the cookie never
+        #      arrived, login silently appeared to do nothing, and the user
+        #      landed back on the login page. This whole GET handler is now
+        #      reached *through* FRONTEND_ORIGIN's own proxy in the first
+        #      place (frontend/vite.config.ts) specifically so it and the
+        #      login page share one origin end to end.
+        next_url = f"{FRONTEND_ORIGIN}{request.url.path}?{request.url.query}"
         login_url = f"{FRONTEND_ORIGIN}/login?{urlencode({'next': next_url})}"
         return RedirectResponse(login_url, status_code=303)
 

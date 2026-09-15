@@ -31,6 +31,12 @@ router = APIRouter(tags=["oauth-discovery"])
 # across the two documents.
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
 
+# Where the consumer SPA lives — the single source of truth for this value
+# (mcp_access/oauth.py imports it from here rather than reading its own copy
+# of the env var, so the two can't drift apart the way PUBLIC_BASE_URL and
+# this one briefly did in practice — see authorization_endpoint below).
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
+
 SUPPORTED_SCOPES = ["jobs.read", "companies.read", "compensation.read"]
 
 
@@ -38,10 +44,25 @@ SUPPORTED_SCOPES = ["jobs.read", "companies.read", "compensation.read"]
 def oauth_authorization_server_metadata():
     """RFC 8414. Tells a client where this server's authorize/token/
     register endpoints actually are — mcp_access/oauth.py's router, which
-    a client has no way to find without this."""
+    a client has no way to find without this.
+
+    authorization_endpoint deliberately points at FRONTEND_ORIGIN (`web`'s
+    own domain, proxied server-side to this api service — see
+    frontend/vite.config.ts), not PUBLIC_BASE_URL like the other two.
+    Confirmed the hard way against a real Claude connection, 2026-09-15:
+    the session cookie a user gets from logging in is scoped to whichever
+    origin the browser believes it talked to. Login happens through `web`'s
+    own domain (the SPA's relative fetches), so the cookie is scoped there.
+    If a client is sent straight to `api`'s own domain for authorize — a
+    different site, even though it's the same physical service — that
+    cookie never arrives, the login appears to silently do nothing, and the
+    user is bounced right back to the login page. token_endpoint and
+    registration_endpoint have no such problem: both are called
+    server-to-server by the connecting client's own backend, never by the
+    user's browser, so no cookie is ever involved for them."""
     return {
         "issuer": PUBLIC_BASE_URL,
-        "authorization_endpoint": f"{PUBLIC_BASE_URL}/mcp/oauth/authorize",
+        "authorization_endpoint": f"{FRONTEND_ORIGIN}/mcp/oauth/authorize",
         "token_endpoint": f"{PUBLIC_BASE_URL}/mcp/oauth/token",
         "registration_endpoint": f"{PUBLIC_BASE_URL}/mcp/oauth/register",
         "response_types_supported": ["code"],
