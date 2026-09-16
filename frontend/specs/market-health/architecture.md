@@ -37,6 +37,18 @@ See: `design/market-health/job-classification.md` — canonical `Role Category` 
 > tracked companies. The Layoff Signal conversational path itself needed no change either
 > time — confirmed against the real `ConversationThread.tsx` (`whitespace-pre-wrap` plain
 > text) and `ReasoningPanel.tsx` (already generic).
+>
+> **Reorganized 2026-09-16** (`changes/2026-09-16-frontend-organization.md`, for
+> `outcomes/codebase-stays-navigable-as-it-grows.md`) — this folder had grown to 30 flat files
+> mixing page chrome, the data-story catalogue, and one chart feature together, plus 11 files
+> that were dead code (confirmed by tracing every import across the real app, not guessed).
+> Split into three subfolders — `layout/` (page chrome, present on every task), `stories/` (the
+> data-story catalogue), `hiring-status/` (the one pinned-feature chart task) — every Location
+> path below updated to match. Two of the dead files this pass found and removed —
+> `PromptBadge.tsx` and `PromptViewer.tsx` — were still documented below as real components; see
+> their entry, further down, for the correction. Verified with `tsc --noEmit` and `npm run build`
+> before and after — 474 modules transformed either way, confirming nothing was lost or
+> duplicated in the move.
 
 ---
 
@@ -75,21 +87,20 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | Component | Responsibility | Location |
 |---|---|---|
 | `MarketHealthPage` | Top-level page. Orchestrates the opening briefing fetch and the follow-up conversation. Composes all zones. | `frontend/src/pages/MarketHealthPage.tsx` |
-| `TopBar` | Fixed header. Product title only. No navigation in v1. | `frontend/src/features/market-health/TopBar.tsx` |
-| `TaskPanel` *(catalogue-driven, added 2026-09-04)* | Left-column navigation. Renders one pinned welcome item ("About this platform"), then one item per entry in `GET /api/market-health/stories` (label = that entry's `display_name`, in catalogue order), then pinned feature tasks (currently just "Tech market hiring status"). A new backend story needs no change here — the list is fetched, not hardcoded. | `frontend/src/features/market-health/TaskPanel.tsx` |
-| `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/WelcomeMessage.tsx` |
-| `DataStoryMessage` | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Composes a framing line + `StoryBlock`s from the shared story component set (see Data stories → "Every story: the shared build"). Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
-| `StoryBlock` *(added 2026-09-10, `subtitle` added 2026-09-11)* | The fixed data-story block anatomy — heading → optional subtitle (what's measured + its unit, `data-legibility`) → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/StoryBlock.tsx` |
-| `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearBars` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearBars` also owns the "no prior window yet" render and, since 2026-09-11, the ghost/solid bar colour legend (rendered only when a comparison is available — two colours are on screen). | `frontend/src/features/market-health/{RankedBarList,StoryFigure,Meter,YearOnYearBars}.tsx` |
-| `WorldRiskMap` *(added 2026-09-13)* | A country-level choropleth — `react-simple-maps` over a bundled `world-atlas` `countries-50m` topology (the 50m resolution, not 110m — verified the 110m file drops Singapore/Malta, real countries in this product's data). Fill = net direction (emerald-600/red-600, existing semantic tokens, opacity by magnitude); gray-800 for no reported events. Owns its own legend line and hover tooltip (both totals, never just net). Generic — takes a `{country, contraction_affected, expansion_affected, contraction_events, expansion_events}[]` prop, not employment-risk-specific by name, reusable by a future story. | `frontend/src/features/market-health/WorldRiskMap.tsx` |
-| `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/ConversationThread.tsx` |
+| `TopBar` | Fixed header. Product title only. No navigation in v1. | `frontend/src/features/market-health/layout/TopBar.tsx` |
+| `TaskPanel` *(catalogue-driven, added 2026-09-04)* | Left-column navigation. Renders one pinned welcome item ("About this platform"), then one item per entry in `GET /api/market-health/stories` (label = that entry's `display_name`, in catalogue order), then pinned feature tasks (currently just "Tech market hiring status"). A new backend story needs no change here — the list is fetched, not hardcoded. | `frontend/src/features/market-health/layout/TaskPanel.tsx` |
+| `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/stories/WelcomeMessage.tsx` |
+| `DataStoryMessage` | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Composes a framing line + `StoryBlock`s from the shared story component set (see Data stories → "Every story: the shared build"). Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/stories/DataStoryMessage.tsx` |
+| `StoryBlock` *(added 2026-09-10, `subtitle` added 2026-09-11)* | The fixed data-story block anatomy — heading → optional subtitle (what's measured + its unit, `data-legibility`) → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/stories/StoryBlock.tsx` |
+| `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearBars` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearBars` also owns the "no prior window yet" render and, since 2026-09-11, the ghost/solid bar colour legend (rendered only when a comparison is available — two colours are on screen). | `frontend/src/features/market-health/stories/{RankedBarList,StoryFigure,Meter,YearOnYearBars}.tsx` |
+| `WorldRiskMap` *(added 2026-09-13)* | A country-level choropleth — `react-simple-maps` over a bundled `world-atlas` `countries-50m` topology (the 50m resolution, not 110m — verified the 110m file drops Singapore/Malta, real countries in this product's data). Fill = net direction (emerald-600/red-600, existing semantic tokens, opacity by magnitude); gray-800 for no reported events. Owns its own legend line and hover tooltip (both totals, never just net). Generic — takes a `{country, contraction_affected, expansion_affected, contraction_events, expansion_events}[]` prop, not employment-risk-specific by name, reusable by a future story. | `frontend/src/features/market-health/stories/WorldRiskMap.tsx` |
+| `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/layout/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
 | `UserMessage` | Wraps a user turn. Left-aligned, no background, no border. First message in the thread: `text-2xl font-semibold text-gray-100`. Subsequent messages: `text-base font-medium text-gray-100`. Receives an `isFirst` boolean prop. | `frontend/src/features/market-health/UserMessage.tsx` |
-| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ period, designer, product_manager, engineer }`). Owns two directly visible dropdown filters: granularity (`Week · Month`) and time range (`6 Months · This Year · Past 5 Years · All Time`). Week is the default granularity and 6 Months is the default range. Fetches trend data via TanStack Query when either control changes. **No employment-event layer** — `EmploymentEventsStrip`/`EventMarkerDetail` were added 2026-09-11 and removed the same day (`changes/2026-09-11-employment-events-no-company-matching.md`); this chart is unchanged from its pre-2026-09-11 shape. | `frontend/src/features/market-health/JobOpeningsChart.tsx` |
+| `JobOpeningsChart` *(real name — this spec previously called it `TrendChart`)* | Multi-line chart driven by `OpeningDataPoint[]` (`{ period, designer, product_manager, engineer }`). Owns two directly visible dropdown filters: granularity (`Week · Month`) and time range (`6 Months · This Year · Past 5 Years · All Time`). Week is the default granularity and 6 Months is the default range. Fetches trend data via TanStack Query when either control changes. **No employment-event layer** — `EmploymentEventsStrip`/`EventMarkerDetail` were added 2026-09-11 and removed the same day (`changes/2026-09-11-employment-events-no-company-matching.md`); this chart is unchanged from its pre-2026-09-11 shape. | `frontend/src/features/market-health/hiring-status/JobOpeningsChart.tsx` |
 | `WrittenSummary` | The 3–4 sentence AI-generated summary below the chart. Receives streamed text. Shows bouncing-dots while streaming; fades in text as it arrives. | `frontend/src/features/market-health/WrittenSummary.tsx` |
-| `PromptBadge` | Small "view prompt" affordance anchored to every AI message. On click, opens `PromptViewer`. Receives the prompt string as a prop. | `frontend/src/features/market-health/PromptBadge.tsx` |
-| `PromptViewer` | Read-only overlay showing the prompt behind an AI message. Dismissible with Escape or outside click. | `frontend/src/features/market-health/PromptViewer.tsx` |
-| `ChatInput` | Fixed, full-width input bar pinned to the bottom of the viewport. Placeholder: "Ask about the market…". Disabled while AI is streaming. | `frontend/src/features/market-health/ChatInput.tsx` |
+| ~~`PromptBadge`~~ / ~~`PromptViewer`~~ | **Removed 2026-09-16** — confirmed dead (imported by nothing reachable from the real app) during `changes/2026-09-16-frontend-organization.md`'s dead-code trace, and deleted. This spec had documented them as real, live components; the real implementation's "view prompt" affordance, if it exists at all today, isn't these two files — worth confirming against the live UI next time this section is touched, rather than assumed from this row. | — |
+| `ChatInput` | Fixed, full-width input bar pinned to the bottom of the viewport. Placeholder: "Ask about the market…". Disabled while AI is streaming. | `frontend/src/features/market-health/layout/ChatInput.tsx` |
 | `DataFreshnessLabel` | Reusable label showing age and source of a data-backed claim. Used inside `TrendChart`. | `frontend/src/components/DataFreshnessLabel.tsx` |
 
 ---
@@ -131,7 +142,7 @@ No Zustand store required for v1.
 ## Chart rendering rules
 
 Added 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`. The trend chart is
-`frontend/src/features/market-health/JobOpeningsChart.tsx` (the spec's older `TrendChart` name).
+`frontend/src/features/market-health/hiring-status/JobOpeningsChart.tsx` (the spec's older `TrendChart` name).
 It is a hand-rolled SVG line chart. These rules exist because the first implementation broke on
 the shapes real sparse data actually takes:
 
@@ -460,11 +471,11 @@ fully generic component, which the catalogue model deliberately avoids.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `DataStoryMessage` | The per-story renderer. Composes the framing line + `StoryBlock`s from the story's resolved `sections`. One per catalogue entry, or a `switch` on `story_id` inside one file while the catalogue is small. | `frontend/src/features/market-health/DataStoryMessage.tsx` |
-| `StoryBlock` | The fixed block anatomy: heading (`text-sm font-semibold text-gray-200`) → one visual (child) → honesty qualifier (`text-xs text-gray-500`), with the `border-t border-gray-800 pt-4` divider. Renders the section's "not enough data yet" line instead of the child when `status === "insufficient_data"` or the child has no data. Enforces the anatomy so a story can't drift. | `frontend/src/features/market-health/StoryBlock.tsx` (extract from `DataStoryMessage`'s current inline `Block`) |
-| `RankedBarList` | Generic `{ label, value, emphasis? }[]` magnitude list — one muted hue, length = value, direct-labelled, capped (no scroll). | `frontend/src/features/market-health/RankedBarList.tsx` (exists) |
-| `StoryFigure` | The one Hero Figure a story may lead a block with — `text-3xl`/`text-4xl font-bold text-gray-100` value + `text-sm text-gray-400` caption. Never an accent colour. | `frontend/src/features/market-health/StoryFigure.tsx` (new — generalise the inline figure in `DataStoryMessage`) |
-| `Meter` | One share as a part-to-whole bar: the `StoryFigure` percentage + an `h-2` track (`bg-gray-800`) with an `indigo-500` fill at that width + a plain complement line below. Per `design/visual-design.md` — Meter. | `frontend/src/features/market-health/Meter.tsx` (new) |
+| `DataStoryMessage` | The per-story renderer. Composes the framing line + `StoryBlock`s from the story's resolved `sections`. One per catalogue entry, or a `switch` on `story_id` inside one file while the catalogue is small. | `frontend/src/features/market-health/stories/DataStoryMessage.tsx` |
+| `StoryBlock` | The fixed block anatomy: heading (`text-sm font-semibold text-gray-200`) → one visual (child) → honesty qualifier (`text-xs text-gray-500`), with the `border-t border-gray-800 pt-4` divider. Renders the section's "not enough data yet" line instead of the child when `status === "insufficient_data"` or the child has no data. Enforces the anatomy so a story can't drift. | `frontend/src/features/market-health/stories/StoryBlock.tsx` (extract from `DataStoryMessage`'s current inline `Block`) |
+| `RankedBarList` | Generic `{ label, value, emphasis? }[]` magnitude list — one muted hue, length = value, direct-labelled, capped (no scroll). | `frontend/src/features/market-health/stories/RankedBarList.tsx` (exists) |
+| `StoryFigure` | The one Hero Figure a story may lead a block with — `text-3xl`/`text-4xl font-bold text-gray-100` value + `text-sm text-gray-400` caption. Never an accent colour. | `frontend/src/features/market-health/stories/StoryFigure.tsx` (new — generalise the inline figure in `DataStoryMessage`) |
+| `Meter` | One share as a part-to-whole bar: the `StoryFigure` percentage + an `h-2` track (`bg-gray-800`) with an `indigo-500` fill at that width + a plain complement line below. Per `design/visual-design.md` — Meter. | `frontend/src/features/market-health/stories/Meter.tsx` (new) |
 | Category Share Bar / Trend line | Reuse `WelcomeMessage`'s share bar and the opening chart's trend rendering when a story's data is part-to-whole or time-series. Not built ahead of a story that needs them. | — |
 
 The framing line is plain `text-sm leading-relaxed text-gray-300` markup in `DataStoryMessage`
@@ -488,7 +499,7 @@ standard every story must meet". In frontend terms:
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `YearOnYearBars` | Renders a YoY section's `content`: for each `row`, a shared track with a `gray-700` prior-year ghost (`prior_share` width) behind an `indigo-500`/70% current fill (`current_share` width), and a right-aligned `▲/▼/– ±N pp` delta (glyph **and** sign carry direction — colour never alone). Per `design/visual-design.md` — Year-on-year comparison. When `content.comparison_available === false`: renders **only** the current window (plain `RankedBarList` of `current_share`, no ghost, no delta column) + a muted `text-xs text-gray-500` line derived from the section `qualifier` ("Year-on-year comparison starts {Month Year}"). Never renders a prior bar or delta from a `null`. | `frontend/src/features/market-health/YearOnYearBars.tsx` |
+| `YearOnYearBars` | Renders a YoY section's `content`: for each `row`, a shared track with a `gray-700` prior-year ghost (`prior_share` width) behind an `indigo-500`/70% current fill (`current_share` width), and a right-aligned `▲/▼/– ±N pp` delta (glyph **and** sign carry direction — colour never alone). Per `design/visual-design.md` — Year-on-year comparison. When `content.comparison_available === false`: renders **only** the current window (plain `RankedBarList` of `current_share`, no ghost, no delta column) + a muted `text-xs text-gray-500` line derived from the section `qualifier` ("Year-on-year comparison starts {Month Year}"). Never renders a prior bar or delta from a `null`. | `frontend/src/features/market-health/stories/YearOnYearBars.tsx` |
 
 The two window date ranges come from `content.current_window` / `content.prior_window` and
 are shown once under the block heading (`StoryBlock` already owns the heading; the dates go in
@@ -499,7 +510,7 @@ copy in `DataStoryMessage`, not from the API.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `EmploymentRiskStoryMessage` | Renders `POST /api/market-health/stories/employment-risk-overview`'s resolved sections: framing line → `WorldRiskMap` (where it's happening, leads the story — reordered 2026-09-13, `changes/2026-09-13-employment-risk-world-map.md`) → Hero Figure + Meter (contraction roles + direction split) → 2× `RankedBarList` (top companies / sectors by roles affected). One movement, no year-on-year block (event data isn't a 12-month-comparable series the way posting volume is). | `frontend/src/features/market-health/EmploymentRiskStoryMessage.tsx` |
+| `EmploymentRiskStoryMessage` | Renders `POST /api/market-health/stories/employment-risk-overview`'s resolved sections: framing line → `WorldRiskMap` (where it's happening, leads the story — reordered 2026-09-13, `changes/2026-09-13-employment-risk-world-map.md`) → Hero Figure + Meter (contraction roles + direction split) → 2× `RankedBarList` (top companies / sectors by roles affected). One movement, no year-on-year block (event data isn't a 12-month-comparable series the way posting volume is). | `frontend/src/features/market-health/stories/EmploymentRiskStoryMessage.tsx` |
 
 `DataStoryMessage` becomes a thin router (added 2026-09-11): it branches on `story.story_id`
 — `"market-data-briefing"` renders inline as before (unchanged), `"employment-risk-overview"`
@@ -566,7 +577,7 @@ under a second. The frontend surfaces them so the fast path is one tap:
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `SuggestedQuestions` | Fetches `GET /api/market-health/chat-suggestions` once on mount. Renders each `question` as a chip (the existing Shortcut-Card-lite / button token — no new visual pattern). Clicking a chip submits that exact question through the same `useChat` `append` path as typing it — the backend then matches it to the curated catalogue and returns the instant answer. | `frontend/src/features/market-health/SuggestedQuestions.tsx` |
+| `SuggestedQuestions` | Fetches `GET /api/market-health/chat-suggestions` once on mount. Renders each `question` as a chip (the existing Shortcut-Card-lite / button token — no new visual pattern). Clicking a chip submits that exact question through the same `useChat` `append` path as typing it — the backend then matches it to the curated catalogue and returns the instant answer. | `frontend/src/features/market-health/layout/SuggestedQuestions.tsx` |
 
 - **Placement**: inside `ConversationThread`, directly below the active task's opening turn
   (welcome / chart+summary / story answer) and above that task's conversation turns — on
@@ -593,7 +604,7 @@ under a second. The frontend surfaces them so the fast path is one tap:
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `DataStoryMessage` | Renders a resolved story's fixed sections, freshness, and limitations | `frontend/src/features/market-health/DataStoryMessage.tsx` |
+| `DataStoryMessage` | Renders a resolved story's fixed sections, freshness, and limitations | `frontend/src/features/market-health/stories/DataStoryMessage.tsx` |
 | `ReasoningPanel` | Shows story provenance and the explicit no-model path | Existing reasoning-panel component |
 
 The catalogue and story response are server-owned contracts. Adding a story should not require

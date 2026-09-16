@@ -3,16 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useChat } from "ai/react";
 import type { Message, JSONValue } from "ai";
 
-import { TimeRange, Granularity, OpeningDataPoint } from "../features/market-health/JobOpeningsChart";
-import { TopBar } from "../features/market-health/TopBar";
-import { TaskPanel, StoryMeta, WELCOME_TASK_ID } from "../features/market-health/TaskPanel";
-import { ConversationThread } from "../features/market-health/ConversationThread";
-import { MarketBriefingMessage, OPENING_PROMPT } from "../features/market-health/MarketBriefingMessage";
-import { ChatInput } from "../features/market-health/ChatInput";
-import { OutputPanel } from "../features/market-health/OutputPanel";
+import { TimeRange, Granularity, OpeningDataPoint } from "../features/market-health/hiring-status/JobOpeningsChart";
+import { TopBar } from "../features/market-health/layout/TopBar";
+import { TaskPanel, StoryMeta, WELCOME_TASK_ID } from "../features/market-health/layout/TaskPanel";
+import { ConversationThread } from "../features/market-health/layout/ConversationThread";
+import { MarketBriefingMessage, OPENING_PROMPT } from "../features/market-health/hiring-status/MarketBriefingMessage";
+import { ChatInput } from "../features/market-health/layout/ChatInput";
+import { OutputPanel } from "../features/market-health/layout/OutputPanel";
 import { ReasoningTrace } from "../components/ReasoningPanel";
-import { DataStoryResult } from "../features/market-health/DataStoryMessage";
-import { WelcomeResult } from "../features/market-health/WelcomeMessage";
+import { DataStoryResult } from "../features/market-health/stories/DataStoryMessage";
+import { WelcomeResult } from "../features/market-health/stories/WelcomeMessage";
 
 
 interface OpeningsResponse {
