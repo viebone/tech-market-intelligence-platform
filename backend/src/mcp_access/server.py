@@ -84,6 +84,44 @@ class BearerTokenMiddleware:
             await self.app(scope, receive, send)
 
 
+class NormalizeMcpPathMiddleware:
+    """
+    Rewrites a bare "/mcp" request path to "/mcp/" *before* Starlette's own
+    routing ever runs — so `app.mount("/mcp", ...)` in main.py matches on
+    the very first request, with no redirect generated at all.
+
+    Not a cosmetic fix — a structural one, confirmed against two separate
+    real Claude connection failures (2026-09-15 and 2026-09-16):
+    Starlette's `Mount` can only match a path of `/mcp/` or deeper — its
+    compiled path regex requires the separating slash to be *present* in
+    the request, so a bare `/mcp` fails outright, and Starlette's own
+    `redirect_slashes` default (the only reason this ever silently "worked"
+    under `curl`, which follows redirects automatically) papers over it
+    with a 307. The first bug this surfaced was a real client's *tool
+    calls* not following that redirect (retried six times, gave up). The
+    second, worse one: the exact URL a user pastes when adding a connector
+    in Claude is used completely literally — `/mcp`, without a slash, is
+    the natural and expected way to type this URL — and the *initial*
+    "is this a valid MCP server" probe didn't even retry; it failed
+    outright with no other symptom. Publishing the URL with a trailing
+    slash everywhere (the first attempted fix) only helps for clients that
+    happen to copy that exact string — it does nothing for a URL a human
+    typed or half-remembered. Normalizing the path itself, this early,
+    means both forms work identically and no client-side behavior (does it
+    follow redirects? does it retry?) matters at all.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") == "/mcp":
+            scope = dict(scope)
+            scope["path"] = "/mcp/"
+            scope["raw_path"] = b"/mcp/"
+        await self.app(scope, receive, send)
+
+
 def _daily_cap_for(plan: str) -> int:
     return MCP_PREMIUM_DAILY_REQUEST_CAP if plan == "premium" else MCP_FREE_DAILY_REQUEST_CAP
 

@@ -27,7 +27,7 @@ from market_health import router as market_health_router
 from market_openings import router as market_openings_router
 from mcp_access.account import router as mcp_account_router
 from mcp_access.oauth import router as mcp_oauth_router
-from mcp_access.server import get_mcp_asgi_app, mcp_lifespan
+from mcp_access.server import NormalizeMcpPathMiddleware, get_mcp_asgi_app, mcp_lifespan
 from mcp_access.well_known import router as mcp_well_known_router
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rewrites a bare "/mcp" to "/mcp/" before routing ever runs, so the mount
+# below matches on the first request with no redirect involved at all —
+# see mcp_access/server.py's NormalizeMcpPathMiddleware docstring for the
+# two real, separate Claude connection failures this fixes.
+app.add_middleware(NormalizeMcpPathMiddleware)
 
 # ---------------------------------------------------------------------------
 # Routers

@@ -315,15 +315,27 @@ would otherwise let a revoked client silently keep working past its last access 
 
 ## MCP Tools
 
-Exposed over the MCP protocol at a single endpoint, **`POST /mcp/`** — trailing slash mandatory,
-not cosmetic (per `mcp_access/well_known.py`'s `MCP_ENDPOINT_URL`: Starlette's `Mount` can only
-match a path of `/mcp/` or deeper; a bare `/mcp` fails outright and only "works" via a 307
-redirect that curl follows silently but a real MCP client (confirmed: Claude's) does not,
-producing a connection failure with no other symptom. Every place this URL is published must
-use the trailing-slash form. This is per the MCP spec's own transport — JSON-RPC over HTTP; this
-platform does not invent a second, REST-shaped tool API alongside it. Every tool call carries a
-Bearer access token; every tool implementation runs the same three checks before touching data
-— see Business Logic, below.
+Exposed over the MCP protocol at a single endpoint, **`POST /mcp`** — and, deliberately, also
+`POST /mcp/`; both work identically, with no redirect between them either way. This needed two
+attempts to get right, against two separate real Claude connection failures:
+
+1. First fix: always *publish* the URL with a trailing slash (`mcp_access/well_known.py`'s
+   `MCP_ENDPOINT_URL`), since Starlette's `Mount` can only match `/mcp/` or deeper — a bare
+   `/mcp` only "worked" via a 307 redirect that curl follows silently but a real client does
+   not. This fixed tool calls (which had been retrying the bare form and giving up), but not
+   the *next* failure: the literal URL a user pastes when adding a connector in Claude is
+   `/mcp` — no client normalizes that against published metadata, a human just types the
+   URL that looks complete without a slash — and the very first "is this a valid MCP server"
+   probe failed outright, no retry.
+2. Real fix: `mcp_access/server.py`'s `NormalizeMcpPathMiddleware`, applied to the whole app in
+   `main.py`, rewrites a bare `/mcp` to `/mcp/` **before Starlette's own routing runs at all** —
+   so both forms match on the first request, no redirect ever generated, and no assumption
+   about client behavior (follows redirects? retries?) is needed at all. The "publish with a
+   trailing slash" habit stays as harmless extra care, not the thing actually holding this up.
+
+This is per the MCP spec's own transport — JSON-RPC over HTTP; this platform does not invent a
+second, REST-shaped tool API alongside it. Every tool call carries a Bearer access token; every
+tool implementation runs the same three checks before touching data — see Business Logic, below.
 
 Six tools. Each is a genuine data primitive already proven inside this platform's own chat
 feature (`backend/specs/market-health/api.md`) — nothing here is new, untested query logic.
