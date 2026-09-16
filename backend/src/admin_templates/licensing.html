@@ -8,12 +8,13 @@
 </div>
 
 <div class="card" style="margin-bottom: 16px;">
-  <div class="stat-label">Commercial-use gate (<code>TMIP_COMMERCIAL_MODE</code>)</div>
+  <div class="stat-label">Commercial mode (<code>TMIP_COMMERCIAL_MODE</code>) — informational only, does not itself block anything</div>
   {% if commercial_mode %}
-  <span class="badge error">ON — non-commercially-licensed sources must not be used</span>
+  <span class="badge neutral">ON — go review sources below and set `rejected=True` on anything that shouldn't be used commercially</span>
   {% else %}
-  <span class="badge success">OFF — no restriction in effect (this product isn't monetized yet)</span>
+  <span class="badge success">OFF — this product isn't monetized yet</span>
   {% endif %}
+  <div class="stat-label" style="margin-top: 4px;">Ingestion is never gated by anything on this page — collection always runs. Only an explicit <strong>Rejected</strong> status below blocks a source from being used by any future feature.</div>
 </div>
 
 {% if sources %}
@@ -21,6 +22,7 @@
   <thead>
     <tr>
       <th>Source</th>
+      <th>What we take</th>
       <th>Licence</th>
       <th>Status</th>
       <th>Commercial use</th>
@@ -31,16 +33,17 @@
     {% for s in sources %}
     <tr>
       <td>{{ s.source }}</td>
+      <td>{{ s.data_summary }}</td>
       <td>{% if s.licence_url %}<a href="{{ s.licence_url }}" target="_blank" rel="noopener">{{ s.licence }}</a>{% else %}{{ s.licence }}{% endif %}</td>
       <td>
-        {% if s.status == 'pending' %}<span class="badge neutral">Pending</span>
-        {% elif s.status == 'not_licensed' %}<span class="badge error">Not licensed</span>
+        {% if s.status == 'rejected' %}<span class="badge error">Rejected</span>
+        {% elif s.status == 'pending' %}<span class="badge neutral">Pending</span>
         {% else %}<span class="badge success">Licensed</span>{% endif %}
       </td>
       <td>
-        {% if not s.confirmed %}<span class="stat-label">Unknown — treat as non-commercial</span>
-        {% elif s.permits_commercial_use %}<span class="stat-label">Commercial use OK</span>
-        {% else %}<span class="stat-label">Non-commercial only{% if s.status == 'licensed' %} (currently fine — commercial mode is off){% endif %}</span>{% endif %}
+        {% if not s.confirmed %}<span class="stat-label">Unknown</span>
+        {% elif s.permits_commercial_use %}<span class="stat-label">Licence permits it</span>
+        {% else %}<span class="stat-label">Licence says non-commercial only{% if s.status == 'licensed' %} — not yet rejected, but worth reviewing{% endif %}</span>{% endif %}
       </td>
       <td>{{ s.attribution_text }}</td>
     </tr>

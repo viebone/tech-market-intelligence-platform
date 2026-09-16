@@ -86,18 +86,16 @@ def ingest_adapter(adapter_cls, robots_store, page_store) -> dict:
     propagated, so one bad source can't abort the run (fault isolation,
     same pattern as ingest_employment_events.ingest_adapter).
 
-    **Ingestion always proceeds regardless of TMIP_COMMERCIAL_MODE** — added
-    2026-09-16, revised same day per explicit direction: collecting the data
-    has value on its own (internal analysis, a future re-negotiated licence,
-    ...) independent of whether it can currently be *used* commercially.
-    The commercial-use kill switch (source_licences.is_source_usable)
-    gates *use* — any future query/display function reading this data back
-    out, per backend/specs/scraped-data-sources/api.md's forward-binding
-    requirement — never gates collection. The only thing that happens here
-    is a visible, non-blocking log line when commercial mode is on and a
-    source's licence doesn't (yet) confirm commercial-use rights, so nobody
-    is surprised later about what's sitting in the database uncleared for
-    that purpose — see research/2026-09-16-commercial-mode-kill-switch.md.
+    **Ingestion always proceeds, full stop — never gated by anything in
+    source_licences.py.** Revised 2026-09-16 per explicit direction: "make
+    sure that ingestions always work... in any case the ingestions can work
+    until we say the opposite." Collecting has value on its own, independent
+    of whether the data can currently be *used* (see
+    source_licences.py's own module note — two separate lifecycles). The
+    only thing that happens here is a visible, non-blocking log line when a
+    source has been explicitly `rejected=True` for use, so nobody is
+    surprised later about what's sitting in the database that isn't cleared
+    for use yet — see research/2026-09-16-commercial-mode-kill-switch.md.
 
     Enforces run cadence (Business Logic rule 8) before a single request is
     made — a source not yet due for its next run is skipped, not
@@ -108,10 +106,9 @@ def ingest_adapter(adapter_cls, robots_store, page_store) -> dict:
 
     if not is_source_usable(name):
         logger.info(
-            "ingest_scraped_sources[%s]: TMIP_COMMERCIAL_MODE is on and this source's licence "
-            "doesn't yet confirm commercial-use rights — collecting anyway (ingestion is never "
-            "gated on this), but this data must be excluded wherever it's actually used until "
-            "that changes.",
+            "ingest_scraped_sources[%s]: this source is marked rejected=True for USE — "
+            "collecting anyway (ingestion is never gated on this), but this data must be "
+            "excluded wherever it's actually used until that's reversed.",
             name,
         )
 
@@ -161,10 +158,11 @@ def run() -> None:
     init_schema()
     if is_commercial_mode():
         logger.info(
-            "ingest_scraped_sources: TMIP_COMMERCIAL_MODE is ON — ingestion still collects "
-            "every registered source (collection is never gated on this); any source without a "
-            "confirmed commercial-use licence is logged per-adapter, below, and must be excluded "
-            "by whatever future function actually uses this data, not by this script."
+            "ingest_scraped_sources: TMIP_COMMERCIAL_MODE is ON — this is informational only, "
+            "a reminder to go review source_licences.py's SOURCE_LICENCES and set rejected=True "
+            "on anything that shouldn't be used commercially. Ingestion collects every "
+            "registered source regardless (collection is never gated on this or on `rejected`); "
+            "any explicitly rejected source is logged per-adapter, below."
         )
     robots_store = PostgresRobotsCacheStore()
     page_store = PostgresPageCacheStore()

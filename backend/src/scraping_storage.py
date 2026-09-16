@@ -112,23 +112,32 @@ class PostgresPageCacheStore:
 def _warn_if_licence_unconfirmed(source: str, row_count: int, kind: str) -> None:
     """
     "Always flag if the CC licence isn't confirmed — never block on it, but
-    always highlight the warning" (research/2026-09-16-scraping-good-practices-refinement.md).
-    A WARNING-level log (not INFO — this must be visible in operational
-    logs even if nobody's specifically looking, unlike the routine
-    unchanged-skip note above) every time data from an unconfirmed-licence
-    source is actually stored. This is the ingestion-time half of the
-    warning; the `licence_confirmed` column on the row itself is what lets
-    every future consumer (a chat reasoning trace, an MCP tool's response
-    envelope, an admin view) repeat this same warning without a second
-    lookup — see source_licences.py's SourceLicence and Rule 13's
-    provenance-propagation requirement.
+    always highlight the warning" (research/2026-09-16-scraping-good-practices-refinement.md),
+    extended 2026-09-16 to also flag an explicitly `rejected` source — same
+    "collect regardless, but never let it go unnoticed" principle. A
+    WARNING-level log (not INFO — this must be visible in operational logs
+    even if nobody's specifically looking) every time data from an
+    unconfirmed *or* rejected source is actually stored. This is the
+    ingestion-time half of the warning; the `licence_confirmed` column on
+    the row itself is what lets every future consumer (a chat reasoning
+    trace, an MCP tool's response envelope, an admin view) repeat this same
+    warning without a second lookup — see source_licences.py's
+    SourceLicence and Rule 13's provenance-propagation requirement.
     """
     import logging
     from source_licences import get_licence
 
     licence = get_licence(source)
-    if not licence.confirmed:
-        logging.getLogger(__name__).warning(
+    logger = logging.getLogger(__name__)
+    if licence.rejected:
+        logger.warning(
+            "scraping_storage[%s]: storing %d new %s row(s) from a source marked "
+            "rejected=True for USE — collection is never gated on this, but this data must "
+            "not be surfaced, displayed, or republished anywhere until that's reversed.",
+            source, row_count, kind,
+        )
+    elif not licence.confirmed:
+        logger.warning(
             "scraping_storage[%s]: storing %d new %s row(s) under an UNCONFIRMED licence "
             "(%r) — do not surface, display, or republish this data anywhere until "
             "source_licences.py's SOURCE_LICENCES[%r].confirmed is actually True.",

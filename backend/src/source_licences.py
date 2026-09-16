@@ -39,7 +39,19 @@ class SourceLicence:
     attribution_text: str         # the exact citation string to use wherever this data is shown/republished
     licence_url: str
     confirmed: bool                # True only once a human has read the source's own licence statement
-    permits_commercial_use: bool   # see "Commercial-use kill switch," below
+    permits_commercial_use: bool   # informational — does the licence itself say commercial use is OK?
+                                    # Feeds a human's decision on `rejected`, below; does not by itself
+                                    # block anything (see "Per-source switch," below, for why).
+    rejected: bool = False          # added 2026-09-16 — the ONE thing that actually blocks use. An
+                                     # explicit, git-tracked, human decision — "we reviewed this
+                                     # source and decided its data can't be used" — never inferred
+                                     # automatically from confirmed/permits_commercial_use/commercial
+                                     # mode. Defaults to False: every source is usable until someone
+                                     # deliberately says otherwise. See "Per-source switch," below.
+    data_summary: str = ""         # added 2026-09-16 — plain-language "what do we actually take from
+                                    # this source" (field-level detail lives in DATA_SOURCES.md; this is
+                                    # the one-line version, kept next to the licence itself so nobody has
+                                    # to cross-reference two files to answer "is this specific data covered")
 
 
 # itjobswatch: CONFIRMED 2026-09-16 — read directly off itjobswatch.co.uk's own
@@ -75,6 +87,7 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         licence_url="https://creativecommons.org/licenses/by-nc-sa/4.0/",
         confirmed=True,
         permits_commercial_use=False,  # the "NC" clause — see below
+        data_summary="Aggregate UK IT market stats only — demand rank, vacancy share, salary percentiles, weighted role/skill associations. No individual postings, no PII.",
     ),
     "sec_edgar_8k": SourceLicence(
         source="sec_edgar_8k",
@@ -83,6 +96,7 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         licence_url="https://www.sec.gov/privacy",
         confirmed=True,
         permits_commercial_use=True,
+        data_summary="Per-filing: company name, filing date, CIK, accession number, US state, SEC's own Item 2.05 classification. Filing metadata only, not the filing's full text.",
     ),
     "companies_house_insolvency": SourceLicence(
         source="companies_house_insolvency",
@@ -91,6 +105,7 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         licence_url="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
         confirmed=True,
         permits_commercial_use=True,
+        data_summary="Per-case: company number (no company name — the stream doesn't provide one), case dates, insolvency type. No PII beyond the public company register.",
     ),
     "eurofound_erm": SourceLicence(
         source="eurofound_erm",
@@ -99,6 +114,7 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         licence_url="https://www.eurofound.europa.eu/en/about-eurofound/legal-and-data-protection-notices",
         confirmed=False,  # medium confidence only — see module docstring
         permits_commercial_use=True,
+        data_summary="Per-event: company name, event date, restructuring type, sector, country, jobs affected. Full CSV row kept verbatim in raw_response.",
     ),
     "us_warn": SourceLicence(
         source="us_warn",
@@ -107,17 +123,48 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         licence_url="https://www.warnfirehose.com/terms",
         confirmed=False,  # our specific use hasn't been checked against WARN Firehose's actual ToS
         permits_commercial_use=True,
+        data_summary="Per-notice: company name, industry (mapped to sector), jobs affected, event date, US state, WARN Firehose's own source URL for the underlying filing.",
+    ),
+    # greenhouse / lever / ashby: added 2026-09-16, per direct research against each
+    # platform's own official API docs (docs.greenhouse.io, github.com/lever/postings-api,
+    # developers.ashbyhq.com) — none publish a formal data-reuse licence. All three
+    # describe the API's *intended* use as "let the hiring company build its own careers
+    # page" — but all three endpoints are public and unauthenticated (no API key), and
+    # Lever's own docs go further, explicitly acknowledging third-party access: "Note
+    # that all job postings in the published state are publicly viewable. These jobs may
+    # be scraped by third parties." Greenhouse's and Ashby's docs neither state nor
+    # prohibit third-party read access — recorded honestly as "no restriction found,"
+    # not manufactured into a formal licence that doesn't exist. `confirmed=True` here
+    # reflects that the *source's own current documentation* was actually read (not
+    # guessed) — not that a formal reuse licence was found, because none exists.
+    "greenhouse": SourceLicence(
+        source="greenhouse",
+        licence="No formal data-reuse licence published. Public, unauthenticated API — Greenhouse's own docs describe the intended use as letting the hiring company build its own careers page; third-party read access is neither addressed nor prohibited.",
+        attribution_text="Job posting data originally published by the hiring company via its Greenhouse-hosted job board",
+        licence_url="https://docs.greenhouse.io/job-board.html",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary="Per-posting: title, company, full raw job-object response (description HTML, location, department) kept verbatim; parsed country/city/salary where structured data is present.",
+    ),
+    "lever": SourceLicence(
+        source="lever",
+        licence="No formal data-reuse licence published. Public, unauthenticated API — Lever's own docs explicitly state: \"all job postings in the published state are publicly viewable. These jobs may be scraped by third parties.\"",
+        attribution_text="Job posting data originally published by the hiring company via its Lever-hosted job board",
+        licence_url="https://github.com/lever/postings-api",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary="Per-posting: title, company, full raw job-object response kept verbatim; parsed country/city/salary where structured data is present.",
+    ),
+    "ashby": SourceLicence(
+        source="ashby",
+        licence="No formal data-reuse licence published. Public, unauthenticated API — Ashby's own docs describe the intended use as letting the hiring company build its own careers page; third-party read access is neither addressed nor prohibited.",
+        attribution_text="Job posting data originally published by the hiring company via its Ashby-hosted job board",
+        licence_url="https://developers.ashbyhq.com/docs/public-job-posting-api",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary="Per-posting: title, company, full raw job-object response kept verbatim (includeCompensation=true, so structured pay data is often present); parsed country/city/salary where present.",
     ),
 }
-
-# *** The "NC" (NonCommercial) clause above, and why it now has a real switch. ***
-# TMIP has a Premium paid plan tier (mcp-access). CC BY-NC-SA 4.0 permits use
-# only for non-commercial purposes. Nothing today violates this — this data
-# isn't surfaced anywhere yet — but the day this product actually starts
-# charging for anything, a source like this one needs to stop being used
-# automatically, not "whenever someone remembers." That's what
-# TMIP_COMMERCIAL_MODE / is_source_usable(), below, are for.
-
 
 def get_licence(source: str) -> SourceLicence:
     """
@@ -136,17 +183,33 @@ def get_licence(source: str) -> SourceLicence:
 
 
 # ---------------------------------------------------------------------------
-# Commercial-use kill switch — added 2026-09-16
-# (research/2026-09-16-commercial-mode-kill-switch.md). One env var, flipped
-# once, the day this product actually starts making money — everything
-# downstream of it (ingestion today; any future query/display function)
-# automatically stops using a source whose licence doesn't confirm the
-# right to use it commercially. Nobody has to remember to go source-by-
-# source and turn things off by hand.
+# Per-source switch — revised 2026-09-16, per explicit direction:
+# "we can switch on/off by sources. Just make sure that ingestions always
+# work and that insights and other functionality always work unless we say
+# license rejected. but in any case the ingestions can work until we say
+# the opposite."
 #
-# Deliberately conservative on "don't know": an *unconfirmed* licence is
-# treated the same as "doesn't permit commercial use" once commercial mode
-# is on — "we haven't checked" is not the same as "we're allowed to."
+# Two independent lifecycles, never conflated:
+#   1. INGESTION (collecting data) — always runs, for every registered
+#      adapter, regardless of anything in this file. This module is never
+#      consulted to decide whether to fetch — see ingest_scraped_sources.py.
+#      Collecting has value on its own (internal analysis, a future
+#      re-negotiated licence) independent of whether the data can currently
+#      be *used*.
+#   2. USE (a future chart, chat answer, MCP tool — anything that shows or
+#      acts on this data) — gated by exactly one thing: `SourceLicence.rejected`.
+#      Defaults to False, so every source is usable by default. The ONLY way
+#      a source stops being usable is a human explicitly setting
+#      `rejected=True` here, in this file — a deliberate, git-tracked,
+#      reviewable decision, never an automatic inference from `confirmed`,
+#      `permits_commercial_use`, or whether this product happens to be
+#      monetized. Those two fields stay in the registry as context a human
+#      reads *before* deciding whether to set `rejected` — they no longer
+#      compute anything themselves.
+#
+# `TMIP_COMMERCIAL_MODE` is kept as a plain informational signal (surfaced
+# in the admin view) — a reminder that "we're monetized now, go review
+# sources" — not an automatic gate. Nothing flips `rejected` on its own.
 # ---------------------------------------------------------------------------
 
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
@@ -154,61 +217,52 @@ _TRUE_STRINGS = {"1", "true", "yes", "on"}
 
 def is_commercial_mode() -> bool:
     """
-    True once this product is actually monetized — flip TMIP_COMMERCIAL_MODE
-    to a real value in the deployment's env (backend/.env.example documents
-    it) when that day comes. Defaults to False (not commercial) so nothing
-    changes until someone deliberately turns this on.
+    Informational only — True once TMIP_COMMERCIAL_MODE is set in the
+    deployment's env. Does not, by itself, block anything; see the module
+    note above for why gating is `rejected`-only now. Surfaced in the admin
+    view as a reminder to go review sources once this is true, not as a
+    live filter.
     """
     return os.environ.get("TMIP_COMMERCIAL_MODE", "false").strip().lower() in _TRUE_STRINGS
 
 
 def is_source_usable(source: str) -> bool:
     """
-    The one check every ingestion path (today) and every future query/
-    display function (per backend/specs/scraped-data-sources/api.md's
-    forward-binding requirement) must call before using data from `source`.
+    The one check every future query/display function must call before
+    using data from `source` (per backend/specs/scraped-data-sources/api.md's
+    forward-binding requirement). Never called by ingestion — ingestion is
+    not gated by this at all (see the module note above).
 
-    Not in commercial mode: always True — nothing changes from how this
-    product operates today.
-
-    In commercial mode: True only if the source's licence is BOTH confirmed
-    AND explicitly marked as permitting commercial use. A source this
-    product has never registered a licence for at all still raises
-    LicenceNotRegisteredError (via get_licence) rather than silently
+    True unless a human has explicitly set `rejected=True` for this source.
+    A source this product has never registered a licence for at all still
+    raises LicenceNotRegisteredError (via get_licence) rather than silently
     passing — the same "refuse rather than guess" discipline as everywhere
     else in this module.
     """
-    if not is_commercial_mode():
-        return True
-    licence = get_licence(source)
-    return licence.confirmed and licence.permits_commercial_use
+    return not get_licence(source).rejected
 
 
 # ---------------------------------------------------------------------------
-# Overall status — added 2026-09-16, per explicit request: "list all the
-# sources, and put pending if not confirmed or not licensed if cannot be
-# used." A single three-value status, for display (the admin licensing view)
-# rather than a pair of separate booleans a reader has to combine themselves.
+# Overall status — for display (the admin licensing view). A single
+# three-value status rather than separate booleans a reader has to combine.
 # ---------------------------------------------------------------------------
 
 def overall_status(source: str) -> str:
     """
-    'pending'      — licence not yet confirmed. We genuinely don't know yet
-                     — never shown as if it were resolved either way.
-    'not_licensed' — confirmed, but this source cannot currently be used
-                     (is_source_usable() is False — i.e. commercial mode is
-                     on and this licence doesn't clear it). A real, active
-                     conflict, not a "maybe."
-    'licensed'     — confirmed, and currently fine to use.
+    'rejected' — a human has explicitly set `rejected=True` for this
+                 source. Always wins, regardless of confirmation status —
+                 an explicit decision is an explicit decision.
+    'pending'  — not rejected, but licence not yet confirmed. We genuinely
+                 don't know yet — never shown as if it were resolved.
+    'licensed' — not rejected, and confirmed. Currently fine to use.
 
-    As of 2026-09-16, with TMIP_COMMERCIAL_MODE off, no source can be
-    'not_licensed' — that state only becomes reachable once the switch is
-    on and a confirmed-but-non-commercial licence (e.g. itjobswatch's) is
-    actually in conflict with it.
+    As of 2026-09-16, no registered source has `rejected=True` — "we don't
+    have any rejected just yet" is a true statement about the data, checked
+    against the real registry, not assumed.
     """
     licence = get_licence(source)
+    if licence.rejected:
+        return "rejected"
     if not licence.confirmed:
         return "pending"
-    if not is_source_usable(source):
-        return "not_licensed"
     return "licensed"

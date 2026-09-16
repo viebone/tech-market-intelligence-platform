@@ -394,11 +394,13 @@ def licensing(request: Request):
         {
             "source": licence.source,
             "licence": licence.licence,
-            "status": overall_status(licence.source),  # "pending" | "licensed" | "not_licensed"
+            "status": overall_status(licence.source),  # "pending" | "licensed" | "rejected"
             "confirmed": licence.confirmed,
             "permits_commercial_use": licence.permits_commercial_use,
+            "rejected": licence.rejected,
             "attribution_text": licence.attribution_text,
             "licence_url": licence.licence_url,
+            "data_summary": licence.data_summary,
         }
         for licence in sorted(SOURCE_LICENCES.values(), key=lambda l: l.source)
     ]

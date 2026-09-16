@@ -101,7 +101,18 @@ remember per adapter.
 | `attribution_text` | `str` | The exact text to show wherever this data is displayed or republished, satisfying that licence's own attribution requirement — not just the licence name, the actual citation string. |
 | `licence_url` | `str` | Link to the licence deed/source's own licence statement, for anyone who needs to verify terms later. |
 | `confirmed` | `bool` | `False` until a human has actually read the source's own licence statement and confirmed the variant — never set `True` by inference or guess. A registry entry existing at all is not the same as it being confirmed. |
-| `permits_commercial_use` | `bool` | Added 2026-09-16 (`research/2026-09-16-commercial-mode-kill-switch.md`) — does this source's confirmed licence actually allow commercial use? IT Jobs Watch's CC BY-NC-SA 4.0 sets this `False` (the "NC" clause) — this is what the commercial-use kill switch checks, below. |
+| `permits_commercial_use` | `bool` | Added 2026-09-16 — **informational only**, revised same day: does this source's licence itself say commercial use is OK? IT Jobs Watch's CC BY-NC-SA 4.0 sets this `False` (the "NC" clause). Feeds a human's decision on `rejected`, below; does not by itself block anything. |
+| `rejected` | `bool` | Added 2026-09-16, default `False` — the **only** field that actually gates use. Set `True` only by a human deliberately editing this file after reviewing a source's terms — never inferred from `confirmed`, `permits_commercial_use`, or commercial mode. See "Per-source switch," below. |
+| `data_summary` | `str` | Added 2026-09-16 (`research/2026-09-16-job-posting-source-licensing.md`) — plain-language "what do we actually take from this source," shown next to the licence itself in the admin view so nobody has to cross-reference `DATA_SOURCES.md` to answer "is this specific data covered." |
+
+**This registry now covers every adapter in the codebase, not only scraped ones** — job-posting
+sources (`greenhouse`/`lever`/`ashby`) and employment-event sources
+(`sec_edgar_8k`/`companies_house_insolvency`/`eurofound_erm`/`us_warn`) are registered here too,
+alongside `itjobswatch`. `backend/tests/test_source_licences.py` enforces full coverage: every
+adapter registered in `ALL_SOURCE_ADAPTERS`, `ALL_EMPLOYMENT_EVENT_ADAPTERS`, or
+`ALL_SCRAPED_SOURCE_ADAPTERS` must have a matching entry here, and vice versa (no stale
+entries either) — this is what makes "every bit of data can be tracked against a licence" an
+enforced fact rather than a hope.
 
 Looking up an unregistered source is a hard error (`LicenceNotRegisteredError`, or equivalent) —
 an adapter can't silently ship with no licence answer, the same "refuses rather than proceeds
@@ -128,31 +139,37 @@ reasoning surface for data derived from this table, an unconfirmed-licence row's
 render there too — not dropped once it leaves storage. Binding on whichever future change
 eventually builds that surface, not on this one (nothing surfaces this data yet).
 
-**Commercial-use kill switch — gates USE, never gates COLLECTION.** Added 2026-09-16
-(`research/2026-09-16-commercial-mode-kill-switch.md`), revised same day per explicit direction:
+**Per-source switch — gates USE, never gates COLLECTION.** Added 2026-09-16
+(`research/2026-09-16-commercial-mode-kill-switch.md`), revised twice same day. First revision:
 *"we want to keep all sources in the ingestion runs... we would exclude the data later if we
-don't get a license."* Collecting the data has value independent of whether it can currently be
-used commercially — a licence can be re-negotiated, and internal analysis isn't "use" in the
-sense the licence restricts. So this switch has exactly one job: tell a *consumer* of this data
-whether a given source is currently clear to use, never tell the *ingestion* pipeline to stop
-collecting.
+don't get a license"* — collection is never gated. Second revision, replacing an earlier
+automatic-inference design: *"we can switch on/off by sources. Just make sure that ingestions
+always work and that insights and other functionality always work unless we say license
+rejected. but in any case the ingestions can work until we say the opposite."*
 
-One env var, `TMIP_COMMERCIAL_MODE` (default `false` — nothing changes until this product is
-actually monetized), read by `source_licences.is_commercial_mode()`.
-`source_licences.is_source_usable(source)` is the one gate: when commercial mode is off,
-always `True`; when it's on, `True` only if that source's licence is **both** `confirmed`
-**and** `permits_commercial_use` — an unconfirmed licence is treated the same as "not allowed,"
-deliberately conservative, since "we haven't checked" is not the same as "we're allowed to."
+`SourceLicence.rejected` (Data Models, above) is now the **only** thing that gates use — a
+plain boolean, defaulting to `False`, flipped only by a human deliberately editing
+`source_licences.py`. `source_licences.is_source_usable(source)` is exactly
+`not get_licence(source).rejected` — nothing else. `confirmed` and `permits_commercial_use`
+remain in the registry as context a human reads *before* deciding whether to set `rejected`;
+neither computes a block by itself anymore. `TMIP_COMMERCIAL_MODE`/`is_commercial_mode()` is
+kept as a purely informational signal (surfaced in the admin view — "you're monetized now, go
+review sources") — it does not, by itself, change any source's usability. This is a deliberate
+simplification over the first design (which auto-inferred a block from
+`confirmed`/`permits_commercial_use`/commercial mode): a single, explicit, git-tracked human
+decision is both simpler and more honest than encoding every real-world nuance (e.g. WARN
+Firehose's redistribution-only restriction, which was never cleanly a "commercial use" question)
+into automated boolean logic.
 
 **What actually calls it today**: `ingest_scraped_sources.py` calls it once per adapter, purely
-to log a visible, non-blocking note when commercial mode is on and a source isn't (yet) cleared
-— ingestion proceeds regardless. **Forward-binding on any future query/display function**: per
-the same discipline as `licence_confirmed`'s propagation requirement above, any future code that
-reads `market_observations`/`skill_associations` back out to actually *use* it (a chart, a chat
+to log a visible, non-blocking note when a source is explicitly `rejected` — ingestion proceeds
+regardless, always. **Forward-binding on any future query/display function**: per the same
+discipline as `licence_confirmed`'s propagation requirement above, any future code that reads
+`market_observations`/`skill_associations` back out to actually *use* it (a chart, a chat
 answer, an MCP tool, anything shown to or acted on by a person or another system) **must** call
 `is_source_usable(row.source)` and exclude what it returns `False` for — this is the real
 enforcement point, specified now for whichever later change builds that reader. Collection and
-use are deliberately two different gates.
+use are, and remain, two different gates — ingestion has no gate at all.
 
 #### IngestionRun (`scrape_ingestion_runs` table) — added 2026-09-16, enforced weekly cadence
 Tracks the last completed run per source, so "run once a week" is an enforced guard in code —
@@ -311,13 +328,14 @@ oversight.
    accumulate one near-duplicate row per week per entity forever, none of them carrying any new
    information. `skill_associations` gets the same treatment, compared on `job_count`/
    `percentage`/`rank`.
-10. **Commercial-use kill switch gates use, not collection.** Added 2026-09-16, revised same day
-    (Data Models — `SourceLicence.permits_commercial_use`, above). `TMIP_COMMERCIAL_MODE` never
-    stops an adapter from running — ingestion collects every registered source regardless. When
-    the switch is on, ingestion only logs (non-blocking) that a source isn't yet cleared for
-    commercial use; the actual exclusion is required of any future function that reads this data
-    back out to use it. Off by default; this product isn't monetized today, so nothing changes
-    until someone deliberately flips it.
+10. **The per-source `rejected` switch gates use, never collection.** Added 2026-09-16, revised
+    twice same day (Data Models — `SourceLicence.rejected`, above). Nothing in this file ever
+    stops an adapter from running — ingestion collects every registered source regardless,
+    always. `rejected` defaults to `False`; the only thing that flips it is a human deliberately
+    editing `source_licences.py`. When a source is rejected, ingestion only logs (non-blocking)
+    that it isn't cleared for use; the actual exclusion is required of any future function that
+    reads this data back out to use it. `TMIP_COMMERCIAL_MODE` is informational only — it never
+    flips `rejected` on its own.
 
 ### IT Jobs Watch adapter — what to extract, priority order, and what's confirmed vs. still open
 

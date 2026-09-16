@@ -370,8 +370,11 @@ event), so the full detail is the list itself.
 **Auth required**: yes
 **Data source**: reads `source_licences.SOURCE_LICENCES` directly — an in-memory Python
 registry, **not** a database table (see Tech Decisions, below, for why this is a deliberate
-difference from every other route on this page). No filtering, sorting, or pagination — the
-registry is small (one entry per scraped source) and every entry matters equally.
+difference from every other route on this page). Covers every adapter in the codebase, not only
+scraped ones — 8 sources as of 2026-09-16 (`greenhouse`/`lever`/`ashby` job postings,
+`sec_edgar_8k`/`companies_house_insolvency`/`eurofound_erm`/`us_warn` employment events,
+`itjobswatch` scraped) — enforced complete by `backend/tests/test_source_licences.py`. No
+filtering, sorting, or pagination — the registry is small and every entry matters equally.
 **Response**: `licensing.html`, rendered with one row per registered source:
 ```json
 {
@@ -379,10 +382,12 @@ registry is small (one entry per scraped source) and every entry matters equally
     {
       "source": "itjobswatch",
       "licence": "CC BY-NC-SA 4.0",
+      "status": "licensed",
       "confirmed": true,
       "permits_commercial_use": false,
       "attribution_text": "Source: IT Jobs Watch (itjobswatch.co.uk)",
-      "licence_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+      "licence_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+      "data_summary": "Aggregate UK IT market stats only — demand rank, vacancy share, salary percentiles, weighted role/skill associations. No individual postings, no PII."
     }
   ],
   "commercial_mode": false

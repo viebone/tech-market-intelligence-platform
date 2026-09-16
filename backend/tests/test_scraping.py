@@ -379,46 +379,46 @@ def _set_commercial_mode(value: str) -> None:
     os.environ["TMIP_COMMERCIAL_MODE"] = value
 
 
-def test_kill_switch_off_by_default_everything_usable():
+def test_usable_by_default_regardless_of_commercial_mode():
+    # Revised 2026-09-16: usability is rejected-only now, never inferred
+    # from commercial mode or permits_commercial_use.
+    for mode in ("false", "true"):
+        _set_commercial_mode(mode)
+        assert is_source_usable("itjobswatch")  # confirmed, NC — but not rejected, so usable
     _set_commercial_mode("false")
-    assert is_source_usable("itjobswatch")  # NC-licensed, but mode is off — usable
-    assert is_source_usable("some-source-not-even-registered")  # not even checked when mode is off
 
 
-def test_kill_switch_on_blocks_a_noncommercial_source():
-    _set_commercial_mode("true")
-    try:
-        assert not is_source_usable("itjobswatch")  # CC BY-NC-SA 4.0 — NonCommercial
-    finally:
-        _set_commercial_mode("false")
-
-
-def test_kill_switch_on_allows_a_confirmed_commercial_source():
-    licences_module.SOURCE_LICENCES["_test_commercial_source"] = SourceLicence(
-        source="_test_commercial_source", licence="Public domain", attribution_text="x",
+def test_rejected_source_is_not_usable_regardless_of_commercial_mode():
+    licences_module.SOURCE_LICENCES["_test_rejected"] = SourceLicence(
+        source="_test_rejected", licence="Whatever", attribution_text="x",
         licence_url="https://example.org", confirmed=True, permits_commercial_use=True,
+        rejected=True,
     )
-    _set_commercial_mode("true")
     try:
-        assert is_source_usable("_test_commercial_source")
+        for mode in ("false", "true"):
+            _set_commercial_mode(mode)
+            assert not is_source_usable("_test_rejected")
     finally:
         _set_commercial_mode("false")
-        del licences_module.SOURCE_LICENCES["_test_commercial_source"]
+        del licences_module.SOURCE_LICENCES["_test_rejected"]
 
 
-def test_kill_switch_on_blocks_an_unconfirmed_source_even_if_it_might_permit_commercial_use():
-    # Conservative on "don't know" — unconfirmed is treated as not-yet-allowed,
-    # even if permits_commercial_use happens to be set.
-    licences_module.SOURCE_LICENCES["_test_unconfirmed_commercial"] = SourceLicence(
-        source="_test_unconfirmed_commercial", licence="Unclear", attribution_text="x",
-        licence_url="https://example.org", confirmed=False, permits_commercial_use=True,
+def test_commercial_mode_is_purely_informational():
+    # Flipping the env var must not, by itself, change any source's
+    # usability — only an explicit `rejected=True` does that now.
+    licences_module.SOURCE_LICENCES["_test_permissive"] = SourceLicence(
+        source="_test_permissive", licence="Whatever", attribution_text="x",
+        licence_url="https://example.org", confirmed=False, permits_commercial_use=False,
     )
-    _set_commercial_mode("true")
     try:
-        assert not is_source_usable("_test_unconfirmed_commercial")
+        _set_commercial_mode("false")
+        before = is_source_usable("_test_permissive")
+        _set_commercial_mode("true")
+        after = is_source_usable("_test_permissive")
+        assert before == after == True  # noqa: E712 — explicit for clarity
     finally:
         _set_commercial_mode("false")
-        del licences_module.SOURCE_LICENCES["_test_unconfirmed_commercial"]
+        del licences_module.SOURCE_LICENCES["_test_permissive"]
 
 
 def test_overall_status_pending_when_unconfirmed():
@@ -432,28 +432,32 @@ def test_overall_status_pending_when_unconfirmed():
         del licences_module.SOURCE_LICENCES["_test_status_pending"]
 
 
-def test_overall_status_licensed_when_confirmed_and_usable():
-    # itjobswatch: confirmed, NC-only — but commercial mode is off, so it's
-    # currently usable -> "licensed", not "not_licensed".
+def test_overall_status_licensed_when_confirmed_and_not_rejected():
     _set_commercial_mode("false")
     assert overall_status("itjobswatch") == "licensed"
 
 
-def test_overall_status_not_licensed_only_when_confirmed_and_actually_blocked():
-    _set_commercial_mode("true")
+def test_overall_status_rejected_wins_even_if_confirmed():
+    licences_module.SOURCE_LICENCES["_test_status_rejected"] = SourceLicence(
+        source="_test_status_rejected", licence="Whatever", attribution_text="x",
+        licence_url="https://example.org", confirmed=True, permits_commercial_use=True,
+        rejected=True,
+    )
     try:
-        assert overall_status("itjobswatch") == "not_licensed"  # confirmed, but NC + mode on
+        assert overall_status("_test_status_rejected") == "rejected"
     finally:
-        _set_commercial_mode("false")
+        del licences_module.SOURCE_LICENCES["_test_status_rejected"]
 
 
-def test_overall_status_never_not_licensed_while_commercial_mode_is_off():
-    # As of 2026-09-16: nothing should read as "not_licensed" today, for any
-    # registered source, while the switch is off — matches the real current
-    # state ("we don't have any rejected just yet").
+def test_overall_status_never_rejected_while_nobody_set_the_flag():
+    # As of 2026-09-16: "we don't have any rejected just yet" — checked
+    # against the real registry, not assumed. True regardless of commercial
+    # mode, since rejection is now purely an explicit, manual decision.
+    for mode in ("false", "true"):
+        _set_commercial_mode(mode)
+        for source in list(licences_module.SOURCE_LICENCES):
+            assert overall_status(source) != "rejected"
     _set_commercial_mode("false")
-    for source in list(licences_module.SOURCE_LICENCES):
-        assert overall_status(source) != "not_licensed"
 
 
 def test_does_not_warn_for_a_confirmed_licence_source():
@@ -467,6 +471,26 @@ def test_does_not_warn_for_a_confirmed_licence_source():
         logger.removeHandler(handler)
 
     assert len(handler.records) == 0
+
+
+def test_warns_loudly_when_storing_from_a_rejected_source():
+    licences_module.SOURCE_LICENCES["_test_warn_rejected"] = SourceLicence(
+        source="_test_warn_rejected", licence="Whatever", attribution_text="x",
+        licence_url="https://example.org", confirmed=True, permits_commercial_use=True,
+        rejected=True,
+    )
+    handler = _ListHandler()
+    logger = logging.getLogger("scraping_storage")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        _warn_if_licence_unconfirmed("_test_warn_rejected", 2, "market observation")
+    finally:
+        logger.removeHandler(handler)
+        del licences_module.SOURCE_LICENCES["_test_warn_rejected"]
+
+    assert len(handler.records) == 1
+    assert "rejected=True" in handler.records[0].getMessage()
 
 
 def test_association_unchanged_detects_identical_and_changed_values():
