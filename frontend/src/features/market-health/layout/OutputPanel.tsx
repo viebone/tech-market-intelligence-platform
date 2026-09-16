@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Message } from "ai";
-import { TabSwitcher } from "../../components/TabSwitcher";
-import { SettingsTab } from "../mcp-access/SettingsTab";
+import { TabSwitcher } from "../../../components/TabSwitcher";
+import { SettingsTab } from "../../mcp-access/SettingsTab";
 
 interface OutputRef {
   id: string;

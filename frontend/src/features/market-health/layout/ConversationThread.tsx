@@ -2,10 +2,10 @@ import { useRef, useEffect, ReactNode } from "react";
 import type { Message } from "ai";
 import { UserTurn } from "./UserTurn";
 import { AITurn } from "./AITurn";
-import { OPENING_PROMPT } from "./MarketBriefingMessage";
-import { ReasoningTrace } from "../../components/ReasoningPanel";
-import { DataStoryMessage, DataStoryResult } from "./DataStoryMessage";
-import { WelcomeMessage, WelcomeResult } from "./WelcomeMessage";
+import { OPENING_PROMPT } from "../hiring-status/MarketBriefingMessage";
+import { ReasoningTrace } from "../../../components/ReasoningPanel";
+import { DataStoryMessage, DataStoryResult } from "../stories/DataStoryMessage";
+import { WelcomeMessage, WelcomeResult } from "../stories/WelcomeMessage";
 import { SuggestedQuestions } from "./SuggestedQuestions";
 import { WELCOME_TASK_ID, HIRING_STATUS_TASK_ID } from "./TaskPanel";
 

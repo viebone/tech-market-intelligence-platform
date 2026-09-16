@@ -11,9 +11,12 @@ any code exists.
 
 ## New here?
 
+- **[`OVERVIEW.md`](OVERVIEW.md)** — a 2-minute, plain-language map of what this platform
+  actually does and offers today. Start here if you just want to understand the product, not
+  build on it.
 - **[`ONBOARDING.md`](ONBOARDING.md)** — a guided reading path through this repo: what to
-  read, in what order, to actually understand the platform (sources, architecture, UX, all of
-  it). Start there.
+  read, in what order, to actually understand how it's built (sources, architecture, UX, all of
+  it). Start here once you're ready to build on it.
 - **[`CLAUDE.md`](CLAUDE.md)** — project instructions: tech stack, how to run it locally, the
   spec-chain status, and key constraints.
 - **[`DATA_SOURCES.md`](DATA_SOURCES.md)** — every external data source this platform uses,

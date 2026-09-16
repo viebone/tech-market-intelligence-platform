@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { ReasoningPanel, ReasoningTrace } from "../../components/ReasoningPanel";
+import { ReasoningPanel, ReasoningTrace } from "../../../components/ReasoningPanel";
 
 interface AITurnProps {
   children: ReactNode;
