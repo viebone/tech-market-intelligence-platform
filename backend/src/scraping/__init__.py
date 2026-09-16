@@ -34,7 +34,7 @@ from scraping.base import (
     ScrapeResult,
 )
 from scraping.itjobswatch import ItJobsWatchAdapter
-from scraping.licences import (
+from source_licences import (
     LicenceNotRegisteredError,
     SourceLicence,
     get_licence,

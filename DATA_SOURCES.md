@@ -174,7 +174,7 @@ rules, triggered here for the first time by a real, named, conditional permissio
   since the entire adapter's right to exist rests on the permission it was granted under.
 - Every stored fact carries mandatory attribution (`source_url`, `licence`, `fetched_at`) — never
   optional, since satisfying the licence's attribution condition later depends on capturing it
-  now. The `licence` value itself always comes from `scraping/licences.py`'s registry, never an
+  now. The `licence` value itself always comes from `source_licences.py`'s registry, never an
   adapter-local guess — an unregistered source is a hard error.
 - **Run cadence is enforced, not scheduled** (added 2026-09-16) — 7 days per source by default,
   checked before any request is made, regardless of how often the ingestion script itself is
@@ -196,7 +196,7 @@ after real research against the live site) — checked against the real code, no
 
 | Source | Run cadence (enforced how) | `robots.txt`/pacing | New-only fetching | Licence (confirmed?) |
 |---|---|---|---|---|
-| `itjobswatch` | 7 days — checked in `ingest_scraped_sources.ingest_adapter()` via `scraping_storage.is_due()` against `scrape_ingestion_runs`, *before* the adapter is even constructed; survives the script being invoked more often than intended | ✅ `scraping/base.py`'s `PoliteScraper._check_robots()` + `_pace()`, called on every `get()` | ✅ `scraping_storage.insert_market_observations()` / `insert_skill_associations()` compare against the most recently stored row per entity and skip an unchanged one, even under a new id | **CC BY-NC-SA 4.0 — ✅ confirmed** 2026-09-16 (read directly off itjobswatch.co.uk's own copyright page — `scraping/licences.py`'s `SOURCE_LICENCES["itjobswatch"].confirmed = True`) |
+| `itjobswatch` | 7 days — checked in `ingest_scraped_sources.ingest_adapter()` via `scraping_storage.is_due()` against `scrape_ingestion_runs`, *before* the adapter is even constructed; survives the script being invoked more often than intended | ✅ `scraping/base.py`'s `PoliteScraper._check_robots()` + `_pace()`, called on every `get()` | ✅ `scraping_storage.insert_market_observations()` / `insert_skill_associations()` compare against the most recently stored row per entity and skip an unchanged one, even under a new id | **CC BY-NC-SA 4.0 — ✅ confirmed** 2026-09-16 (read directly off itjobswatch.co.uk's own copyright page — `source_licences.py`'s `SOURCE_LICENCES["itjobswatch"].confirmed = True`) |
 
 **Not a clean sweep, though — the confirmation itself surfaced a real, separate flag**: the "NC"
 (NonCommercial) clause. This product has a Premium paid tier. Nothing today violates this
@@ -382,8 +382,8 @@ Everything tunable, and where it lives. Grouped by area.
 | `robots.txt` cache TTL | 24h | `backend/src/scraping/base.py` — `ROBOTS_CACHE_TTL_HOURS` |
 | **Run cadence (added 2026-09-16)** | 7 days, per source, **enforced** via `scrape_ingestion_runs` — a source not due yet is skipped before any request is made, no matter how often the script is invoked | `backend/src/scraping/__init__.py` — `MIN_RUN_INTERVAL_DAYS` / `DEFAULT_MIN_RUN_INTERVAL_DAYS`; enforcement in `scraping_storage.is_due()` |
 | **Value-level dedupe (added 2026-09-16)** | An observation/association identical to the last one stored for the same entity is never re-inserted, even under a new id ("focus on new things, not old") | `backend/src/scraping_storage.py` — `insert_market_observations()` / `insert_skill_associations()` |
-| **Per-source CC licence registry (added 2026-09-16)** | One entry per source — confirmed variant, attribution text, licence URL, `confirmed: bool`, `permits_commercial_use: bool`. Unregistered source = hard error, never a guessed placeholder | `backend/src/scraping/licences.py` — `SOURCE_LICENCES` / `get_licence()` |
-| **Commercial-use gate (added 2026-09-16, revised same day)** | `TMIP_COMMERCIAL_MODE` — `false` by default (nothing changes). Flip to `true` the day this product actually charges for anything. **Gates use, not collection** — ingestion keeps collecting every registered source regardless; any source whose licence isn't *both* confirmed and commercial-use-permitting must be excluded by whatever future function actually reads this data back out to use it | `backend/.env.example`; `backend/src/scraping/licences.py` — `is_commercial_mode()` / `is_source_usable()`; logged (non-blocking) in `ingest_scraped_sources.ingest_adapter()` |
+| **Per-source CC licence registry (added 2026-09-16)** | One entry per source — confirmed variant, attribution text, licence URL, `confirmed: bool`, `permits_commercial_use: bool`. Unregistered source = hard error, never a guessed placeholder | `backend/src/source_licences.py` — `SOURCE_LICENCES` / `get_licence()` |
+| **Commercial-use gate (added 2026-09-16, revised same day)** | `TMIP_COMMERCIAL_MODE` — `false` by default (nothing changes). Flip to `true` the day this product actually charges for anything. **Gates use, not collection** — ingestion keeps collecting every registered source regardless; any source whose licence isn't *both* confirmed and commercial-use-permitting must be excluded by whatever future function actually reads this data back out to use it | `backend/.env.example`; `backend/src/source_licences.py` — `is_commercial_mode()` / `is_source_usable()`; logged (non-blocking) in `ingest_scraped_sources.ingest_adapter()` |
 
 ### Gemini projects / keys / billing
 | Lever | File / location |

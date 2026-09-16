@@ -77,7 +77,7 @@ table, matching the product-wide rule that employment events are independent of 
 job-postings pipeline (`changes/2026-09-11-employment-events-no-company-matching.md`).
 
 **Added 2026-09-16** (`changes/2026-09-16-admin-licensing-visibility.md`): also READ-only over
-`scraping.licences.SOURCE_LICENCES` — but unlike every other data source on this page, this one
+`source_licences.SOURCE_LICENCES` — but unlike every other data source on this page, this one
 is an in-memory Python registry, not a database table (see Tech Decisions for why, and its own
 noted limitation: no history of *when* a licence was confirmed, only its current state).
 
@@ -368,7 +368,7 @@ stored, per `design/pipeline-visibility/experience.md`'s Edge Cases. Each row li
 pattern — there's no larger underlying record per source to drill into (unlike a posting or an
 event), so the full detail is the list itself.
 **Auth required**: yes
-**Data source**: reads `scraping.licences.SOURCE_LICENCES` directly — an in-memory Python
+**Data source**: reads `source_licences.SOURCE_LICENCES` directly — an in-memory Python
 registry, **not** a database table (see Tech Decisions, below, for why this is a deliberate
 difference from every other route on this page). No filtering, sorting, or pagination — the
 registry is small (one entry per scraped source) and every entry matters equally.
@@ -388,7 +388,7 @@ registry is small (one entry per scraped source) and every entry matters equally
   "commercial_mode": false
 }
 ```
-`commercial_mode` is `scraping.licences.is_commercial_mode()`'s current value, rendered once at
+`commercial_mode` is `source_licences.is_commercial_mode()`'s current value, rendered once at
 the top of the page — so the operator immediately sees whether `TMIP_COMMERCIAL_MODE` is
 actually on, not just what each source's licence says in isolation.
 **Errors**: none beyond the shared auth redirect — an empty registry renders the page's own
@@ -555,9 +555,9 @@ already produced by the existing pipeline.
   from Step 1 of `changes/2026-08-13-admin-pipeline-dashboard.md`. No fetch/XHR, no SPA state.
 - **`GET /admin/licensing` reads an in-memory registry, not a database table — the one
   deliberate exception to every other route on this page.** Added 2026-09-16
-  (`changes/2026-09-16-admin-licensing-visibility.md`). `scraping.licences.SOURCE_LICENCES` is a
+  (`changes/2026-09-16-admin-licensing-visibility.md`). `source_licences.SOURCE_LICENCES` is a
   Python dict, not a table with its own rows and history — `admin_main.py`'s new route imports
-  it directly (`from scraping.licences import SOURCE_LICENCES, is_commercial_mode`) and renders
+  it directly (`from source_licences import SOURCE_LICENCES, is_commercial_mode`) and renders
   it, no query function needed. This is fine for what the view needs today (current licence
   status, not a history of how it changed) but is a real design constraint worth naming: if a
   future need arises to show *when* a licence was confirmed, or an audit trail of changes to it,

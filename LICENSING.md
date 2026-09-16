@@ -19,14 +19,23 @@ Last reviewed: 2026-09-16.
 
 ## 1. Per-source licence status
 
-| Source | Access | Licence | Confirmed? | Commercial use permitted? | Attribution required |
+**All five real sources below are registered in code** (`backend/src/source_licences.py`'s
+`SOURCE_LICENCES`), not just documented here — and each gets a computed, single **Status**
+(`overall_status()`): **Pending** (not yet confirmed — we genuinely don't know), **Licensed**
+(confirmed and currently fine to use), or **Not licensed** (confirmed, but currently blocked —
+only reachable once `TMIP_COMMERCIAL_MODE` is on and the licence doesn't clear it). See it live
+in the admin dashboard's **Sources & Licensing** view (§4). As of 2026-09-16, with the
+commercial-use gate off, nothing is (or can be) **Not licensed** — that state is real and
+implemented, just not currently reachable by any registered source.
+
+| Source | Access | Licence | Confirmed? | Status today | Commercial use permitted? |
 |---|---|---|---|---|---|
-| **IT Jobs Watch** | Scraped (`scraping/itjobswatch.py`) | **CC BY-NC-SA 4.0** | ✅ Yes — read directly off itjobswatch.co.uk's own `/copyright.aspx` page, 2026-09-16 | ❌ **No** — the "NC" (NonCommercial) clause | ✅ Yes — "Source: IT Jobs Watch" |
-| **SEC EDGAR** (8-K Item 2.05) | API (`employment_events/sec_edgar.py`) | Public domain / no copyright restriction | ✅ Yes — sec.gov's own reuse statement, 2026-09-16 | ✅ Yes | Not required, but this product cites its source anyway (provenance discipline) |
-| **UK Companies House** | Streaming API (`employment_events/companies_house.py`) | Open Government Licence v3.0 | ✅ Yes — Companies House developer docs / gov.uk, 2026-09-16 | ✅ Yes | ✅ Yes — attribute Companies House / Crown copyright |
-| **Eurofound ERM** | Keyless CSV export (`employment_events/eurofound_erm.py`) | The EU's own bespoke reuse policy (attribution required, no distortion) — not literally Creative Commons, similar in spirit | 🟡 Medium — general EU reuse framework confirmed; Eurofound's own copyright page rate-limited on direct fetch, 2026-09-16 (worth a direct re-check if this ever becomes higher-stakes) | ✅ Yes | ✅ Yes |
-| **US WARN notices** (via WARN Firehose) | API (`employment_events/us_warn.py`) | Underlying government WARN data: public record, no copyright. **WARN Firehose's own Terms of Service separately restrict redistribution/resale of raw API access, bulk downloads, or data exports** without a commercial licence agreement | 🟡 Partial — the government-data layer is confirmed; WARN Firehose's own ToS as applied to *this account's actual use* is **not resolved** | ⚠️ **Unresolved** — see §3 | Attribution to WARN Firehose required if presenting derived data as original research |
-| Greenhouse / Lever / Ashby (job postings) | Public APIs (`sources/*.py`) | Not a content-licensing question — these are structured job-posting feeds under each ATS's own API Terms of Service, not published/licensed editorial content | N/A | N/A (this product's own job postings, not republished third-party content) | N/A |
+| **IT Jobs Watch** | Scraped (`scraping/itjobswatch.py`) | **CC BY-NC-SA 4.0** | ✅ Yes — read directly off itjobswatch.co.uk's own `/copyright.aspx` page, 2026-09-16 | **Licensed** | ❌ **No** — the "NC" (NonCommercial) clause |
+| **SEC EDGAR** (8-K Item 2.05) | API (`employment_events/sec_edgar.py`) | Public domain / no copyright restriction | ✅ Yes — sec.gov's own reuse statement, 2026-09-16 | **Licensed** | ✅ Yes |
+| **UK Companies House** | Streaming API (`employment_events/companies_house.py`) | Open Government Licence v3.0 | ✅ Yes — Companies House developer docs / gov.uk, 2026-09-16 | **Licensed** | ✅ Yes |
+| **Eurofound ERM** | Keyless CSV export (`employment_events/eurofound_erm.py`) | The EU's own bespoke reuse policy (attribution required, no distortion) — not literally Creative Commons, similar in spirit | 🟡 Medium confidence only — general EU reuse framework confirmed, but Eurofound's own copyright page rate-limited on direct fetch, 2026-09-16, so the registry honestly records this as **not** confirmed | **Pending** | Believed yes, not formally confirmed |
+| **US WARN notices** (via WARN Firehose) | API (`employment_events/us_warn.py`) | Underlying government WARN data: public record, no copyright. **WARN Firehose's own Terms of Service separately restrict redistribution/resale of raw API access, bulk downloads, or data exports** without a commercial licence agreement | 🟡 The government-data layer is confirmed; WARN Firehose's own ToS as applied to *this account's actual use* is **not resolved**, so the registry records this as not confirmed | **Pending** | Believed yes for the government data itself; the redistribution question is separate — see §3 |
+| Greenhouse / Lever / Ashby (job postings) | Public APIs (`sources/*.py`) | Not a content-licensing question — these are structured job-posting feeds under each ATS's own API Terms of Service, not published/licensed editorial content | N/A — not in the registry at all, deliberately | N/A | N/A (this product's own job postings, not republished third-party content) |
 
 Full technical detail (adapters, fields, access mechanism) for each of these lives in
 `DATA_SOURCES.md`. Full research trail:
@@ -47,7 +56,7 @@ about it, both deliberate:
 running — every registered scraped source keeps being ingested regardless, because the data has
 value independent of whether it's currently usable commercially (a licence can be
 re-negotiated; internal analysis isn't "use" in the sense a licence restricts). What changes is
-that `scraping.licences.is_source_usable(source)` starts returning `False` for a
+that `source_licences.is_source_usable(source)` starts returning `False` for a
 non-commercially-licensed source — and **every future function that reads this data back out to
 actually show or act on it (a chart, a chat answer, an MCP tool) is required to call that
 function and exclude what it returns `False` for.** Nothing reads this data anywhere yet, so
@@ -92,7 +101,7 @@ made.
 | Ingestion (`ingest_scraped_sources.py`) | ✅ Live — logs (non-blocking) when a collected source isn't commercially cleared; never skips collection |
 | Storage (`market_observations` / `skill_associations`) | ✅ Live — every row carries `licence`, `licence_confirmed`; an unconfirmed source's ingestion also logs a `WARNING` |
 | Any future query/display function | 📋 **Specified, not built** — must call `is_source_usable()` per source and exclude accordingly. Nothing reads this data anywhere in the product yet. |
-| Operator visibility (an admin view listing every source's licence/commercial-use status) | 📋 **Requested, not yet speced** — see the change request this prompted |
+| Operator visibility (admin dashboard, **Sources & Licensing**, `/admin/licensing`) | ✅ **Live** (2026-09-16) — every registered source, its Pending/Licensed/Not-licensed status, commercial-use permission, and attribution text, in one view |
 
 ---
 
@@ -102,7 +111,7 @@ made.
 - `ACCESS.md` — what's reachable from the frontend, backend API, and MCP, capability by capability
 - `backend/specs/scraped-data-sources/api.md` — the full technical spec (Data Models,
   Business Logic, Tech Decisions) behind everything in §2 above
-- `backend/src/scraping/licences.py` — the actual code: `SOURCE_LICENCES`, `get_licence()`,
+- `backend/src/source_licences.py` — the actual code: `SOURCE_LICENCES`, `get_licence()`,
   `is_commercial_mode()`, `is_source_usable()`
 - `changes/2026-09-16-polite-scraping-adapters.md` — the full change history and decision log
   behind this entire file

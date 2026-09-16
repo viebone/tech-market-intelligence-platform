@@ -56,6 +56,29 @@ endpoint serving it).
 - [x] Step 6: Manual edit — `ACCESS.md`'s Operator-only capabilities table, new row
 - [x] Step 7: Manual edit — `OVERVIEW.md`'s operator-only bullet, mentions licensing status
 
+## Decision Log (continued — same-day refinement)
+- 2026-09-16 (`research/2026-09-16-all-sources-licensing-status.md`): user asked for a single
+  computed status per source (Pending / Not licensed / an implicit "OK") instead of two separate
+  booleans, and to "list all the sources" — which surfaced that the registry
+  (`scraping/licences.py` at the time) only covered IT Jobs Watch, not the four employment-event
+  API sources already researched in `research/2026-09-16-existing-source-licensing-audit.md`.
+  Moved the registry to `backend/src/source_licences.py` (generalized — a name like
+  `scraping.licences` was never right for API sources with no scraping involved at all;
+  `scraping/base.py`'s cadence/robots/pacing constraints stay scraping-specific, only the
+  licence-registry concept generalizes). Registered all four employment-event sources with their
+  real researched status — SEC EDGAR and UK Companies House confirmed; Eurofound ERM and US WARN
+  (via WARN Firehose) deliberately left `confirmed=False`, honestly reflecting that neither was
+  checked to the same standard, not a known problem. Added `overall_status()` — `"pending"` /
+  `"licensed"` / `"not_licensed"`, the last only reachable when a source is both confirmed and
+  actually blocked by the commercial-use gate. Verified against the real running admin page:
+  today, with the gate off, 3 Licensed, 2 Pending, 0 Not licensed — exactly matching the
+  operator's own statement, not asserted, checked. Found and fixed a genuine pre-existing test
+  bug in the process (a leaked registry entry from an earlier test with no cleanup). 29 tests
+  passing (up from 25). Updated `LICENSING.md`, `DATA_SOURCES.md`, `backend/specs/pipeline-visibility/api.md`,
+  and `backend/specs/scraped-data-sources/api.md` for the new module path and status model;
+  left `changes/2026-09-16-polite-scraping-adapters.md`'s own decision log untouched as
+  historical record of what was true when it was written.
+
 ## Decision Log
 - 2026-09-16: Triaged as Bucket A against `outcomes/pipeline-processing-visibility.md` — same
   "operator can see X without querying the DB/reading code" shape already extended once for

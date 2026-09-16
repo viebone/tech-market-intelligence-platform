@@ -20,7 +20,7 @@ Before this adapter is trusted with real data:
   2. Confirm the real URL structure (this guesses `{BASE_URL}/jobtitles/{slug}.aspx`
      from common IT-Jobs-Watch-style URL conventions — not verified).
   3. Confirm the real, specific CC licence variant and update its registered
-     entry in `scraping/licences.py` (`SOURCE_LICENCES["itjobswatch"]`)
+     entry in `source_licences.py` (`SOURCE_LICENCES["itjobswatch"]`)
      and replace it before storing or republishing anything for real.
   4. Confirm how much historical depth (the source claims data back to
      2004) is actually reachable from a single rendered page vs. requiring
@@ -47,7 +47,7 @@ from scraping.base import (
     ScrapeFetchError,
     ScrapeResult,
 )
-from scraping.licences import get_licence
+from source_licences import get_licence
 
 logger = logging.getLogger(__name__)
 

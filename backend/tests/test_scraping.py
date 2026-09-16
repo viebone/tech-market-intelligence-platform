@@ -34,12 +34,13 @@ from scraping.base import (  # noqa: E402
 )
 import logging  # noqa: E402
 
-import scraping.licences as licences_module  # noqa: E402
-from scraping.licences import (  # noqa: E402
+import source_licences as licences_module  # noqa: E402
+from source_licences import (  # noqa: E402
     LicenceNotRegisteredError,
     SourceLicence,
     get_licence,
     is_source_usable,
+    overall_status,
 )
 from scraping_storage import (  # noqa: E402
     _association_unchanged,
@@ -264,7 +265,7 @@ def test_fetched_skill_association_requires_attribution_fields():
 
 def test_licence_registry_returns_a_registered_source():
     # Confirmed 2026-09-16 against itjobswatch.co.uk's own copyright page —
-    # see scraping/licences.py's module comment for the exact quoted wording.
+    # see source_licences.py's module comment for the exact quoted wording.
     lic = get_licence("itjobswatch")
     assert lic.source == "itjobswatch"
     assert lic.licence == "CC BY-NC-SA 4.0"
@@ -418,6 +419,41 @@ def test_kill_switch_on_blocks_an_unconfirmed_source_even_if_it_might_permit_com
     finally:
         _set_commercial_mode("false")
         del licences_module.SOURCE_LICENCES["_test_unconfirmed_commercial"]
+
+
+def test_overall_status_pending_when_unconfirmed():
+    licences_module.SOURCE_LICENCES["_test_status_pending"] = SourceLicence(
+        source="_test_status_pending", licence="Unclear", attribution_text="x",
+        licence_url="https://example.org", confirmed=False, permits_commercial_use=True,
+    )
+    try:
+        assert overall_status("_test_status_pending") == "pending"
+    finally:
+        del licences_module.SOURCE_LICENCES["_test_status_pending"]
+
+
+def test_overall_status_licensed_when_confirmed_and_usable():
+    # itjobswatch: confirmed, NC-only — but commercial mode is off, so it's
+    # currently usable -> "licensed", not "not_licensed".
+    _set_commercial_mode("false")
+    assert overall_status("itjobswatch") == "licensed"
+
+
+def test_overall_status_not_licensed_only_when_confirmed_and_actually_blocked():
+    _set_commercial_mode("true")
+    try:
+        assert overall_status("itjobswatch") == "not_licensed"  # confirmed, but NC + mode on
+    finally:
+        _set_commercial_mode("false")
+
+
+def test_overall_status_never_not_licensed_while_commercial_mode_is_off():
+    # As of 2026-09-16: nothing should read as "not_licensed" today, for any
+    # registered source, while the switch is off — matches the real current
+    # state ("we don't have any rejected just yet").
+    _set_commercial_mode("false")
+    for source in list(licences_module.SOURCE_LICENCES):
+        assert overall_status(source) != "not_licensed"
 
 
 def test_does_not_warn_for_a_confirmed_licence_source():

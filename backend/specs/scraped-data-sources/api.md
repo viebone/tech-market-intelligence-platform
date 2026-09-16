@@ -86,7 +86,7 @@ entire reason scraping is permitted here is the licence condition attached to it
 | `fetched_at` | `datetime` | **Mandatory** — when this was scraped, so a consumer can judge staleness. |
 | `raw_response` | dict/text | The scraped fragment, verbatim — same "never project down, it's the only chance to capture it" discipline as `raw_postings.raw_response`. |
 
-#### SourceLicence (in-memory registry, `scraping/licences.py` — not a table)
+#### SourceLicence (in-memory registry, `source_licences.py` — not a table)
 Added 2026-09-16 (`research/2026-09-16-scraping-good-practices-refinement.md`), replacing a
 per-adapter hardcoded placeholder string. Every scraped source, current or future, must be
 registered here before its adapter can produce a single row — there is no path to a stored
@@ -138,8 +138,8 @@ whether a given source is currently clear to use, never tell the *ingestion* pip
 collecting.
 
 One env var, `TMIP_COMMERCIAL_MODE` (default `false` — nothing changes until this product is
-actually monetized), read by `scraping.licences.is_commercial_mode()`.
-`scraping.licences.is_source_usable(source)` is the one gate: when commercial mode is off,
+actually monetized), read by `source_licences.is_commercial_mode()`.
+`source_licences.is_source_usable(source)` is the one gate: when commercial mode is off,
 always `True`; when it's on, `True` only if that source's licence is **both** `confirmed`
 **and** `permits_commercial_use` — an unconfirmed licence is treated the same as "not allowed,"
 deliberately conservative, since "we haven't checked" is not the same as "we're allowed to."
@@ -350,7 +350,7 @@ already applies to WARN Firehose's reporting lag and Eurofound ERM's access mech
 - ~~The specific CC licence variant~~ — **confirmed 2026-09-16**, read directly off
   itjobswatch.co.uk's own copyright page: **CC BY-NC-SA 4.0**, attribution wording "Source: IT
   Jobs Watch," with vacancy listings and third-party material explicitly excluded (not relevant
-  here — this adapter never touches vacancy listings). Recorded in `scraping/licences.py`,
+  here — this adapter never touches vacancy listings). Recorded in `source_licences.py`,
   `confirmed=True`. **One real, unresolved flag this confirmation surfaced**: the "NC"
   (NonCommercial) clause. TMIP has a Premium paid tier — nothing today violates this (this data
   isn't surfaced anywhere yet), but *before* this data is ever exposed through anything
@@ -483,7 +483,7 @@ insert as a new row under a new id. `scraping_storage.py`'s insert functions add
 the most recently stored row for the same entity key and skip the insert if nothing comparable
 changed, logging it as a no-op rather than a write.
 
-**Licence registry — `scraping/licences.py`, a hard dependency, not an adapter-local constant.**
+**Licence registry — `source_licences.py`, a hard dependency, not an adapter-local constant.**
 Added 2026-09-16 (Data Models — `SourceLicence`). Every adapter looks up its own `licence`/
 `attribution_text` from this registry; there is no code path to construct a
 `FetchedMarketObservation`/`FetchedSkillAssociation` with a licence string an adapter invented

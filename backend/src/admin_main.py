@@ -39,7 +39,7 @@ import ingestion_runs
 import raw_postings
 import requirements
 from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
-from scraping.licences import SOURCE_LICENCES, is_commercial_mode
+from source_licences import SOURCE_LICENCES, is_commercial_mode, overall_status
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
 from admin_auth import (
     SESSION_COOKIE_NAME,
@@ -394,6 +394,7 @@ def licensing(request: Request):
         {
             "source": licence.source,
             "licence": licence.licence,
+            "status": overall_status(licence.source),  # "pending" | "licensed" | "not_licensed"
             "confirmed": licence.confirmed,
             "permits_commercial_use": licence.permits_commercial_use,
             "attribution_text": licence.attribution_text,

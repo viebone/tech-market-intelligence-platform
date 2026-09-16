@@ -336,7 +336,7 @@ class FetchedMarketObservation:
     period_end: date
     source_url: str
     licence: str
-    licence_confirmed: bool   # captured at scrape time — see scraping/licences.py's SourceLicence
+    licence_confirmed: bool   # captured at scrape time — see source_licences.py's SourceLicence
     fetched_at: datetime
     rank: int | None = None
     rank_yoy_change: int | None = None

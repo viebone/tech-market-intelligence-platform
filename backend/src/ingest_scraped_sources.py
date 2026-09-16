@@ -90,7 +90,7 @@ def ingest_adapter(adapter_cls, robots_store, page_store) -> dict:
     2026-09-16, revised same day per explicit direction: collecting the data
     has value on its own (internal analysis, a future re-negotiated licence,
     ...) independent of whether it can currently be *used* commercially.
-    The commercial-use kill switch (scraping.licences.is_source_usable)
+    The commercial-use kill switch (source_licences.is_source_usable)
     gates *use* — any future query/display function reading this data back
     out, per backend/specs/scraped-data-sources/api.md's forward-binding
     requirement — never gates collection. The only thing that happens here

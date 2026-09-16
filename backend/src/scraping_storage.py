@@ -120,18 +120,18 @@ def _warn_if_licence_unconfirmed(source: str, row_count: int, kind: str) -> None
     warning; the `licence_confirmed` column on the row itself is what lets
     every future consumer (a chat reasoning trace, an MCP tool's response
     envelope, an admin view) repeat this same warning without a second
-    lookup — see scraping/licences.py's SourceLicence and Rule 13's
+    lookup — see source_licences.py's SourceLicence and Rule 13's
     provenance-propagation requirement.
     """
     import logging
-    from scraping.licences import get_licence
+    from source_licences import get_licence
 
     licence = get_licence(source)
     if not licence.confirmed:
         logging.getLogger(__name__).warning(
             "scraping_storage[%s]: storing %d new %s row(s) under an UNCONFIRMED licence "
             "(%r) — do not surface, display, or republish this data anywhere until "
-            "scraping/licences.py's SOURCE_LICENCES[%r].confirmed is actually True.",
+            "source_licences.py's SOURCE_LICENCES[%r].confirmed is actually True.",
             source, row_count, kind, licence.licence, source,
         )
 
