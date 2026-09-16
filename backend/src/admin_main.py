@@ -39,6 +39,7 @@ import ingestion_runs
 import raw_postings
 import requirements
 from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
+from scraping.licences import SOURCE_LICENCES, is_commercial_mode
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
 from admin_auth import (
     SESSION_COOKIE_NAME,
@@ -376,6 +377,37 @@ def employment_event_detail(request: Request, event_id: str):
     return templates.TemplateResponse(
         request, "employment_event_detail.html",
         {"active_page": "employment_events", "event": event},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sources & Licensing — added 2026-09-16,
+# changes/2026-09-16-admin-licensing-visibility.md. A flat list, not List ->
+# Detail (unlike every route above) — SOURCE_LICENCES is a small in-memory
+# registry, not a database table (see backend/specs/pipeline-visibility/
+# api.md — Tech Decisions for why this is a deliberate exception).
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/licensing", dependencies=[Depends(require_admin_session)])
+def licensing(request: Request):
+    sources = [
+        {
+            "source": licence.source,
+            "licence": licence.licence,
+            "confirmed": licence.confirmed,
+            "permits_commercial_use": licence.permits_commercial_use,
+            "attribution_text": licence.attribution_text,
+            "licence_url": licence.licence_url,
+        }
+        for licence in sorted(SOURCE_LICENCES.values(), key=lambda l: l.source)
+    ]
+    return templates.TemplateResponse(
+        request, "licensing.html",
+        {
+            "active_page": "licensing",
+            "sources": sources,
+            "commercial_mode": is_commercial_mode(),
+        },
     )
 
 

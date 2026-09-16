@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, **Employment Events** (added 2026-09-11 — `changes/2026-09-11-employment-events-admin-visibility.md`). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, **Sources & Licensing** (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`). Always visible. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
@@ -123,6 +123,15 @@ data read directly from the pipeline's own stored results.
    by source, event type, direction, confidence, or country, and clicks a row to see that
    event's full stored record (including the source's raw response, verbatim) — the same
    List → Detail shape as Postings, applied to a different table.
+9. **(Added 2026-09-16.)** Independently of every pipeline above, the operator can navigate to
+   **Sources & Licensing** from the sidebar to see, at a glance, every registered external data
+   source's licence status: the source's name, its confirmed licence variant (or an honest
+   "not yet confirmed" state), whether commercial use is permitted, the exact attribution text
+   to use if this data is ever shown or republished, and a link to the licence itself. No
+   filtering or drill-down — this is a single flat list, not a List → Detail pattern, since the
+   full detail *is* the list (there's no larger underlying record to drill into, unlike a
+   posting or an event). This view answers "can we actually use this data, and how do we credit
+   it" without opening `LICENSING.md` or reading `scraping/licences.py` directly.
 
 ---
 
@@ -158,6 +167,20 @@ over unchanged. This is the same visual language, applied to a different layout 
 - **Detail view**: a single-column stacked layout of labelled fields, using the same
   Surface/card treatment (`gray-800`, `border-gray-700`, `rounded-lg`) as the rest of the
   product.
+- **Sources & Licensing table** (added 2026-09-16): same table tokens as Postings/Ingestion
+  Runs. Two status badges per row, each pairing colour with a plain-language label — never a
+  raw `True`/`False` or the bare word "confirmed":
+  - **Confirmation status**: `emerald-600` "Licence confirmed" vs. `amber-600` "Not yet
+    confirmed" — amber, not red, since an unconfirmed licence is a real, honest, working state
+    in this codebase (per Business Logic — polite scraping), not an error.
+  - **Commercial-use status**: `emerald-600` "Commercial use OK" vs. `red-600` "Non-commercial
+    only" — red here (unlike the confirmation badge) because using non-commercial-licensed data
+    commercially would be a real problem, not a benign pending state. A source that's
+    unconfirmed shows this badge as `amber-600` "Unknown — treat as non-commercial," never a
+    false "OK."
+  - The attribution text and licence link render as plain text/link beneath the two badges, not
+    hidden behind a further click — per `data-legibility`'s Provenance rule, this is exactly
+    the kind of caveat that must be visible, not buried.
 
 ---
 
@@ -288,6 +311,13 @@ over unchanged. This is the same visual language, applied to a different layout 
   Employment Events view does not pretend otherwise: it shows a per-source "last ingested at"
   timestamp (derived from the events themselves) and, for a streaming source, its current
   cursor position — not a fabricated run history.
+- **(Added 2026-09-16.) A source's licence isn't yet confirmed.** Shown plainly as "Not yet
+  confirmed," never hidden or defaulted to looking resolved — the whole point of this view is
+  surfacing exactly this state. Its commercial-use badge reads "Unknown — treat as
+  non-commercial," the same conservative default `scraping.licences.is_source_usable()` applies
+  in code (Business Logic, `backend/specs/scraped-data-sources/api.md`).
+- **(Added 2026-09-16.) No scraped sources are registered yet.** Same "No data yet" empty-state
+  pattern as every other view here — not an error, just nothing to show yet.
 
 ---
 

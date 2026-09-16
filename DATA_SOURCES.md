@@ -50,8 +50,9 @@ market-health API + chat + data stories
 | Type | Status | What it produces | Where it lands | Notes |
 |---|---|---|---|---|
 | **Job postings** | ✅ active | One `raw_postings` row per open role | `raw_postings` → classification → requirements | The only type live today. Three adapters (§3). |
-| **Company career pages / ATS portals** | 🔲 planned | Same as job postings — a new *adapter*, not a new type | `raw_postings` | For companies not on a supported ATS (custom career sites, legacy ATS). Mechanism is scraping, not a public API — needs a per-site adapter or a generic HTML/JSON-LD adapter. Same `FetchedPosting` output. |
+| **Company career pages / ATS portals** | 🔲 planned | Same as job postings — a new *adapter*, not a new type | `raw_postings` | For companies not on a supported ATS (custom career sites, legacy ATS). Mechanism is scraping, not a public API — needs a per-site adapter or a generic HTML/JSON-LD adapter. Same `FetchedPosting` output. Can now build on the generic scraping infrastructure in §3b, once it exists. |
 | **Employment events** (renamed from "Layoff events" 2026-09-11 — scope broadened to match) | 🟡 code shipped, 2/3 adapters not yet functional | An `employment_events` row (company, event date, event type, direction, jobs affected, source) — layoffs **and** closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements | Table `employment_events` — *not* `raw_postings`, *not* classified | Feeds the broadened `Layoff Signal` (IA) and the trend chart's "Employment events strip". Data model, endpoint, chat tool, and three adapters implemented — see §3a below. `/change-request`: `changes/2026-09-11-employment-event-ingestion.md`. |
+| **Market benchmark datasets (scraped, no API)** | 🟡 code shipped 2026-09-16, not yet run against real data | A `market_observations` row (entity, employment type, location, period, rank, vacancy count/share, salary percentiles) + a `skill_associations` row (role↔skill co-occurrence, weighted) — aggregate market intelligence, not a posting or an event, source-agnostic like `employment_events` (a future second benchmark source is a new `source` value, not a new table) | New tables `market_observations`, `skill_associations` — *not* `raw_postings`, *not* `employment_events` | First source: **IT Jobs Watch** (itjobswatch.co.uk) — declined API/paid access for this project, explicitly granted scraping permission instead (CC-licensed content, conditional on politeness — robots.txt, low rate, identification, caching, attribution). Deliberately modeled as a *category* of source ("market datasets"), parallel to job postings, not a member of them — see `research/2026-09-16-itjobswatch-data-model-analysis.md`. Ingestion only so far; nothing surfaces this data yet. See §3b below and `backend/specs/scraped-data-sources/api.md`. `/change-request`: `changes/2026-09-16-polite-scraping-adapters.md`. |
 | **Research / reports / articles** | 🔲 planned | Enrichment text with market commentary | New table — explicitly *not* forced through the posting/classification shape (`job-data-source-flexibility.md` — Success looks like) | Feeds narrative + context, cited as an external source in provenance. Needs its own contract + CR. |
 
 **Out of scope for now** (per the outcome): cross-source dedupe of the same posting; automatic
@@ -99,6 +100,30 @@ implementation order, not a ranking of importance.
 | SEC EDGAR (8-K Item 2.05) | `sec_edgar_8k` | Full-text search (`efts.sec.gov/LATEST/search-index`), filtered to structured Item 2.05 ("Costs Associated with Exit or Disposal Activities") — added 2026-09-11 | **None — no key at all, keyless and free.** Requires only a descriptive `User-Agent` (`SEC_EDGAR_CONTACT` env var; falls back to a placeholder that should be replaced with a real contact before relying on this in production) | ✅ **Live — first real data ingested 2026-09-11**, 9 real filings on first run (Veritone, TScan Therapeutics, TELA Bio, PDS Biotechnology, CVD Equipment, and others). The only source so far with a genuine company name straight from the record — see `backend/src/employment_events/sec_edgar.py`. `jobs_affected` and `sector` are `NULL` (not in this index's metadata; sizing/SIC-to-sector mapping not attempted rather than guessed). |
 | ~~UK ONS HR1~~ | — | — | — | ❌ **Deliberately not integrated** — macro/aggregate only, no company names; doesn't fit `EmploymentEvent`. See the backend spec's "UK ONS HR1 (descoped)" note. |
 
+**Licensing audit (added 2026-09-16 — `research/2026-09-16-existing-source-licensing-audit.md`),
+extending the "always name the source per its licence" principle from `scraped-data-sources`
+back across every external source, not only scraped ones.** None of these four is literally
+"Creative Commons" — per the operator's own explicit decision, "no CC licence" is read as "no
+*confirmed, legitimate* reuse right," of which CC is one kind among several, not the only one
+that counts:
+- **Eurofound ERM**: the EU's own bespoke reuse policy (attribution required, no distortion) —
+  confirmed to a medium level (eurofound.europa.eu's own copyright page rate-limited on direct
+  fetch; this reflects the EU's general reuse framework rather than eurofound's own page
+  verbatim — worth a direct re-check if this ever becomes higher-stakes).
+- **UK Companies House**: Open Government Licence v3.0 — confirmed, high confidence.
+- **SEC EDGAR**: public domain, no copyright restriction, per sec.gov's own reuse statement —
+  confirmed, high confidence.
+- **US WARN notices (via WARN Firehose)**: the underlying government WARN data itself is public
+  record with no copyright — but **WARN Firehose's own Terms of Service separately prohibit
+  reselling/redistributing raw API access, bulk downloads, or data exports without a commercial
+  licence agreement.** ⚠️ **Not resolved** — whether this product's actual use (storing derived
+  structured facts, never reselling raw exports) falls inside or outside that restriction is a
+  judgement call about the operator's own agreed account terms, not something a public page can
+  settle. Needs the operator to either re-read what they actually agreed to at signup, or ask
+  WARN Firehose directly — the same move that got IT Jobs Watch's permission in the first place.
+  Not disabled pending that — flagged, per the same "always flag, never silently block" rule
+  this whole audit is built on — but this is the one open item here.
+
 **No company matching (added 2026-09-11, removed the same day —
 `changes/2026-09-11-employment-events-no-company-matching.md`).** A `matched_company` field
 and its alias map (`employment_events/company_aliases.py`) briefly linked events to the 35
@@ -123,6 +148,80 @@ implementing `EmploymentEventAdapter`, register its display name, add it to
 schema, the API endpoint, and the chat tool all already handle "however many adapters are
 registered," none of them name a specific source. Same "one adapter, one internal model"
 principle as §1's job-posting model.
+
+---
+
+## 3b. Scraped sources (spec'd 2026-09-16, code shipped same day — not yet run against real data)
+
+**Why this section exists, separate from §3/§3a.** Every source so far (job postings,
+employment events) is a public **API** — no HTML parsing, no `robots.txt`, no page cache, no
+attribution requirement. Scraping a site with no API is a different mechanism with its own
+rules, triggered here for the first time by a real, named, conditional permission grant — see
+`research/2026-09-16-itjobswatch-scraping-permission.md`. Full design:
+`backend/specs/scraped-data-sources/api.md`.
+
+**The generic mechanism** (`backend/src/scraping/base.py`, once implemented) — a
+`PoliteScraper` any future no-API source's adapter can build on, not just IT Jobs Watch's own:
+- `robots.txt` fetched, cached, and checked before every request — a disallowed path is skipped
+  and logged, never overridden.
+- A page already fetched within the cache window (default 24h) is never re-requested at all;
+  once that window passes, a conditional request (`If-None-Match`/`If-Modified-Since`) is tried
+  before a full re-fetch.
+- Pacing floor higher than the API-source `PacedFetcher` default (3s vs 1s) — scraping a whole
+  site is a different load profile than one JSON call.
+- A required, real contact identifier (`SCRAPER_CONTACT`) on every request's User-Agent — unlike
+  the API sources' optional `SEC_EDGAR_CONTACT` courtesy, this one **refuses to run** if unset,
+  since the entire adapter's right to exist rests on the permission it was granted under.
+- Every stored fact carries mandatory attribution (`source_url`, `licence`, `fetched_at`) — never
+  optional, since satisfying the licence's attribution condition later depends on capturing it
+  now. The `licence` value itself always comes from `scraping/licences.py`'s registry, never an
+  adapter-local guess — an unregistered source is a hard error.
+- **Run cadence is enforced, not scheduled** (added 2026-09-16) — 7 days per source by default,
+  checked before any request is made, regardless of how often the ingestion script itself is
+  invoked. "Should not overwhelm the server" holds even against a human running the script by
+  hand more often than intended.
+- **Value-level dedupe on top of id-level dedupe** (added 2026-09-16) — an observation/
+  association identical to the last one stored for the same entity is skipped even under a new
+  id, so a shifting rolling window doesn't pile up near-duplicate rows carrying no new
+  information ("focus on new things, not old").
+
+**Market benchmark datasets are their own source *category*** (revised 2026-09-16 —
+`research/2026-09-16-itjobswatch-data-model-analysis.md`), stored source-agnostically in
+`market_observations` + `skill_associations` — parallel to job postings and employment events,
+not a member of either. IT Jobs Watch is the first adapter; a future benchmark source (e.g. ONS)
+is a new `source` value in the same two tables, not a new table.
+
+**Good-practice review (`polite-scraping-review` skill, run 2026-09-16, licence updated same day
+after real research against the live site) — checked against the real code, not assumed:**
+
+| Source | Run cadence (enforced how) | `robots.txt`/pacing | New-only fetching | Licence (confirmed?) |
+|---|---|---|---|---|
+| `itjobswatch` | 7 days — checked in `ingest_scraped_sources.ingest_adapter()` via `scraping_storage.is_due()` against `scrape_ingestion_runs`, *before* the adapter is even constructed; survives the script being invoked more often than intended | ✅ `scraping/base.py`'s `PoliteScraper._check_robots()` + `_pace()`, called on every `get()` | ✅ `scraping_storage.insert_market_observations()` / `insert_skill_associations()` compare against the most recently stored row per entity and skip an unchanged one, even under a new id | **CC BY-NC-SA 4.0 — ✅ confirmed** 2026-09-16 (read directly off itjobswatch.co.uk's own copyright page — `scraping/licences.py`'s `SOURCE_LICENCES["itjobswatch"].confirmed = True`) |
+
+**Not a clean sweep, though — the confirmation itself surfaced a real, separate flag**: the "NC"
+(NonCommercial) clause. This product has a Premium paid tier. Nothing today violates this
+(this data isn't surfaced anywhere yet, on the Free tier or the Premium one) — but before this
+data is ever exposed through anything monetized, that clause needs its own explicit resolution
+first. Also unresolved, unrelated to licensing: the HTML parser is still unverified against the
+real site (`scraping/itjobswatch.py`'s own docstring) — this data isn't ready to be trusted for
+real figures yet regardless of the licence being settled.
+
+**All four scraped rows now also carry `licence_confirmed: bool`** (added 2026-09-16, mandatory
+field, mirrors `licence` itself) — so an unconfirmed source's caveat travels with the data into
+storage and any future consumer inherits it with no second lookup. Storing data from any
+`confirmed=False` source logs a `WARNING` at ingestion time (`scraping_storage.py`) — always
+flagged, never silently blocked. See `data-legibility`'s Provenance section (extended
+2026-09-16) for the framework-wide version of this rule: wherever this platform ever builds a
+"show your thinking" surface for this data, an unconfirmed-licence caveat must render there too.
+
+| Adapter | `name` | Target | Status |
+|---|---|---|---|
+| IT Jobs Watch | `itjobswatch` | itjobswatch.co.uk — UK IT demand rank, vacancy share, salary percentiles, regional breakdowns, weighted role↔skill associations, no API, scraping explicitly permitted (CC-licensed content) | 🟡 Code shipped 2026-09-16 (`scraping/itjobswatch.py`), verified only by import-level tests and a mocked HTTP transport — **never run against the real site.** Its HTML-parsing logic is an explicitly-flagged placeholder (see that file's own docstring) — real page structure, exactly how much historical depth is reachable by scraping, and the specific CC licence variant all still need confirming against the live site before this is trusted with real data. First cut prioritizes demand trend, salary distributions, geography, and skill co-occurrence over contractor rates and live-job counts, per the analysis's own ranking. |
+
+**Add a new scraped source**: same shape as any other adapter — write a class implementing
+`ScrapedSourceAdapter`, register it in `ALL_SCRAPED_SOURCE_ADAPTERS`, get the target's own
+scraping-permission terms in writing first (this mechanism exists *because* a permission was
+explicitly granted, not as a default right to scrape anything with no API).
 
 ---
 
@@ -273,6 +372,19 @@ Everything tunable, and where it lives. Grouped by area.
 | Source-event cursors | resumable stream position, per source | `employment_event_cursors` table (Postgres) |
 | Ingestion schedule | `0 7 * * *` (07:00 UTC — offset 1h from job-sync's 06:00 UTC, own service) | `backend/railway.employment-events.json` — `cronSchedule` |
 
+### Scraped sources (spec'd 2026-09-16)
+| Lever | Value | File |
+|---|---|---|
+| Registered scraped-source adapters | IT Jobs Watch (code shipped, unverified against the real site) | `backend/src/scraping/__init__.py` — `ALL_SCRAPED_SOURCE_ADAPTERS` |
+| Scraper contact (required — refuses to run if unset) | env var, no fallback placeholder | `SCRAPER_CONTACT` — `backend/.env.example` |
+| Pacing floor | 3.0s min interval (vs. API sources' 1.0s) | `backend/src/scraping/base.py` — `PoliteScraper` default |
+| Page cache freshness | 24h — no re-fetch within this window | `backend/src/scraping/base.py` — `min_refetch_interval` default |
+| `robots.txt` cache TTL | 24h | `backend/src/scraping/base.py` — `ROBOTS_CACHE_TTL_HOURS` |
+| **Run cadence (added 2026-09-16)** | 7 days, per source, **enforced** via `scrape_ingestion_runs` — a source not due yet is skipped before any request is made, no matter how often the script is invoked | `backend/src/scraping/__init__.py` — `MIN_RUN_INTERVAL_DAYS` / `DEFAULT_MIN_RUN_INTERVAL_DAYS`; enforcement in `scraping_storage.is_due()` |
+| **Value-level dedupe (added 2026-09-16)** | An observation/association identical to the last one stored for the same entity is never re-inserted, even under a new id ("focus on new things, not old") | `backend/src/scraping_storage.py` — `insert_market_observations()` / `insert_skill_associations()` |
+| **Per-source CC licence registry (added 2026-09-16)** | One entry per source — confirmed variant, attribution text, licence URL, `confirmed: bool`, `permits_commercial_use: bool`. Unregistered source = hard error, never a guessed placeholder | `backend/src/scraping/licences.py` — `SOURCE_LICENCES` / `get_licence()` |
+| **Commercial-use gate (added 2026-09-16, revised same day)** | `TMIP_COMMERCIAL_MODE` — `false` by default (nothing changes). Flip to `true` the day this product actually charges for anything. **Gates use, not collection** — ingestion keeps collecting every registered source regardless; any source whose licence isn't *both* confirmed and commercial-use-permitting must be excluded by whatever future function actually reads this data back out to use it | `backend/.env.example`; `backend/src/scraping/licences.py` — `is_commercial_mode()` / `is_source_usable()`; logged (non-blocking) in `ingest_scraped_sources.ingest_adapter()` |
+
 ### Gemini projects / keys / billing
 | Lever | File / location |
 |---|---|
@@ -296,3 +408,6 @@ Everything tunable, and where it lives. Grouped by area.
 - `changes/2026-07-28-multi-source-job-data-ingestion.md` — the change that replaced Adzuna with the three ATS adapters
 - `changes/2026-09-11-employment-event-ingestion.md` — the change that added employment events
   (§2, §3a above); source evaluation in `research/2026-09-11-employment-event-data-sources.md`
+- `backend/specs/scraped-data-sources/api.md` — the generic scraping-adapter mechanism and IT
+  Jobs Watch's own data model (§2, §3b above); `changes/2026-09-16-polite-scraping-adapters.md`;
+  permission grant in `research/2026-09-16-itjobswatch-scraping-permission.md`

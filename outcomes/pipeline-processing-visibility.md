@@ -39,6 +39,14 @@ both pipelines, read independently — visibility into one is not evidence about
 matching the pipelines' own data independence
 (`changes/2026-09-11-employment-events-no-company-matching.md`).
 
+**Extended 2026-09-16** (`changes/2026-09-16-admin-licensing-visibility.md`): a third pipeline —
+scraped market benchmark sources (`backend/specs/scraped-data-sources/api.md`) — introduced its
+own real, source-specific licence question (see `LICENSING.md`): is a source's licence
+confirmed, does it permit commercial use, and under what exact attribution terms may this
+platform use its data. The same operator need applies again: seeing that status without reading
+code or a markdown file directly, the same "don't make me query/grep for it" pattern this
+outcome already serves for postings, runs, and employment events.
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)
@@ -52,6 +60,9 @@ matching the pipelines' own data independence
 - The operator can see, at a glance, how many employment events exist per source, per
   direction (contraction/expansion), and when each source last ingested — and drill into any
   single event's full stored record
+- The operator can see, at a glance, every registered scraped source's licence status —
+  confirmed or not, commercial-use permitted or not, the exact attribution text, and a link to
+  the licence itself — without opening `LICENSING.md` or reading code (added 2026-09-16)
 - Only the operator — not end users or the public — can access this view
 - Using this view answers "what has the pipeline actually done" faster than writing a
   one-off SQL query would

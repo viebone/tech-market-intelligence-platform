@@ -406,6 +406,13 @@ job-posting-side context on anyway. **Note**: this does **not** gate or filter
 
 ### What's deliberately not a tool
 
+See also `ACCESS.md` (product root) for the full picture across *every* capability this product
+has, not just the ones already considered for MCP — including operator-only and platform-UI-only
+capabilities this section doesn't cover. This section, and any future addition to it, is
+maintained via the `mcp-access-review` skill (framework level) — run whenever a backend spec
+(this one or any other) introduces or changes a capability, so nothing ships with an undecided
+MCP-exposure status.
+
 - **Company-level job-demand** (e.g. "how many roles is Company X hiring for") — `query_market_data`
   has no `company` filter today (`raw_postings.company` exists in the database but was never
   exposed to the *in-app* chat tool either). Adding it here would mean trusting new,
@@ -419,6 +426,12 @@ job-posting-side context on anyway. **Note**: this does **not** gate or filter
   comparing by asking, not this platform pre-building a comparison feature").
 - **Any "compare X vs Y" tool** — same reasoning; the calling AI calls `get_job_demand` (or any
   tool) once per thing being compared and composes the comparison itself.
+- **Market benchmark datasets** (`backend/specs/scraped-data-sources/api.md`, 2026-09-16,
+  revised same day) — **deferred**, not decided against. That spec ships ingestion only;
+  nothing in this product, not even an internal query function, reads `market_observations` or
+  `skill_associations` back out yet. There is concretely nothing to expose. Revisit once a real
+  decision exists on whether/how this data surfaces anywhere at all — see that spec's "What this
+  doesn't decide" and `ACCESS.md`'s row for it.
 
 ---
 

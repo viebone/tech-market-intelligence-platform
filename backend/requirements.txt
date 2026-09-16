@@ -33,3 +33,11 @@ bcrypt>=4.0.0
 # is newest, which itself then conflicts with the pinned starlette.
 mcp==1.9.4
 sse-starlette==3.0.3
+
+# Scraped market-benchmark sources (scraping/) — see backend/specs/
+# scraped-data-sources/api.md. First HTML-parsing need in this codebase —
+# none of the three ATS adapters need one (all JSON APIs). lxml as the
+# parser backend (faster, more lenient with real-world malformed HTML than
+# Python's built-in html.parser).
+beautifulsoup4>=4.12.0
+lxml>=5.0.0

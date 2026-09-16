@@ -14,9 +14,15 @@ every change ever made lives there, in order, each with its trigger and reasonin
 - [`CLAUDE.md`](CLAUDE.md) — start here. What this product is, the tech stack, the spec-chain
   status table (what's built vs. pending), key constraints, and pointers to everything else.
 - [`DATA_SOURCES.md`](DATA_SOURCES.md) — the master reference for every external data source
-  this platform touches (job boards **and** employment-event registries): what's live, what
-  isn't, and the control-lever index (env vars, keys, tunables) mapped to the file that owns
-  each one. Open this whenever "where does X data come from" comes up.
+  this platform touches (job boards, employment-event registries, **and** scraped market
+  benchmark sources): what's live, what isn't, and the control-lever index (env vars, keys,
+  tunables) mapped to the file that owns each one. Open this whenever "where does X data come
+  from" comes up.
+- [`LICENSING.md`](LICENSING.md) — the companion reference for what we're actually *allowed* to
+  do with each source's data (confirmed licence, commercial-use rights, open flags). Open this
+  before building anything that displays, republishes, or monetizes data from an external
+  source — `DATA_SOURCES.md` tells you where data comes from, this tells you what you may do
+  with it once you have it.
 
 ## 2. Why it exists (15 min) — `outcomes/`
 

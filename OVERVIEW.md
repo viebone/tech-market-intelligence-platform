@@ -36,7 +36,9 @@ data — sign up, connect it from the Settings tab, and ask your own AI the same
 questions, using *your* AI subscription instead of this platform's. Revoke access anytime.
 
 **(Operator only) See what the data pipeline actually did.** A separate, password-protected
-dashboard shows every job posting and employment event ingested, classified, and indexed — not
+dashboard shows every job posting and employment event ingested, classified, and indexed, plus
+_(new, 2026-09-16)_ every external data source's licence status — confirmed or not, commercial
+use permitted or not, and under what attribution terms this platform may use its data. Not
 something an end user ever sees or needs.
 
 ## How it's built, in one paragraph
@@ -56,7 +58,11 @@ Two scheduled jobs feed that database daily. Full detail: [`DEPLOYMENT.md`](DEPL
 ## Want more detail on any of this?
 
 - **How to actually build on it**: [`ONBOARDING.md`](ONBOARDING.md) — the full guided reading path
+- **Exactly what's reachable from where** (frontend, backend, or this platform's MCP server):
+  [`ACCESS.md`](ACCESS.md)
 - **Where the data comes from**: [`DATA_SOURCES.md`](DATA_SOURCES.md)
+- **What we're actually allowed to do with each data source** (licence, commercial-use rights,
+  open flags): [`LICENSING.md`](LICENSING.md)
 - **Why any specific decision was made**: [`changes/`](changes/) — every change, dated, with its reasoning
 - **What's deployed where**: [`DEPLOYMENT.md`](DEPLOYMENT.md)
 

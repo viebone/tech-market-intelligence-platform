@@ -49,6 +49,14 @@ depends on.
   the platform's market-health narrative without being forced into the posting/classification
   shape it doesn't fit
 - No feature or endpoint's business logic branches on which source a given record came from
+- A source with no public API is not a dead end — scraping is a legitimate adapter mechanism
+  alongside API-calling, when the source's own terms permit it (added 2026-09-16, per
+  `changes/2026-09-16-polite-scraping-adapters.md`, prompted by IT Jobs Watch explicitly granting
+  scrape permission under conditions). A scraping adapter carries its own class of rules the
+  same way an API adapter carries rate limits — respecting `robots.txt`, pacing requests,
+  identifying itself (User-Agent + contact), caching instead of re-fetching unchanged pages, and
+  preserving attribution wherever that source's data is later used — enforced once, generically,
+  not re-implemented per scraped source
 
 ## Out of scope
 - Building every source connector immediately — this outcome is about the model and adapter

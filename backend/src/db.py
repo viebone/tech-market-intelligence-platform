@@ -442,6 +442,109 @@ CREATE TABLE IF NOT EXISTS mcp_usage (
     request_count  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (connection_id, usage_date)
 );
+
+-- Scraped market-benchmark sources (added 2026-09-16, revised same day —
+-- see backend/specs/scraped-data-sources/api.md, changes/2026-09-16-polite-
+-- scraping-adapters.md). Four brand-new tables, plain CREATE IF NOT EXISTS.
+-- First real scraping (as opposed to API-calling) source in this product —
+-- triggered by IT Jobs Watch explicitly granting permission, on politeness
+-- conditions, after declining API/paid access.
+
+-- Per-host robots.txt cache — checked before every request to that host.
+CREATE TABLE IF NOT EXISTS scrape_robots_cache (
+    host         TEXT PRIMARY KEY,
+    raw_body     TEXT,
+    fetched_at   TIMESTAMPTZ NOT NULL,
+    http_status  INTEGER NOT NULL
+);
+
+-- Per-page cache — "cache rather than re-fetch unchanged pages" made real.
+-- A page fetched within PoliteScraper's min_refetch_interval is served from
+-- here with zero network calls; content_hash/etag/last_modified support a
+-- conditional request once that window has passed.
+CREATE TABLE IF NOT EXISTS scrape_page_cache (
+    url            TEXT PRIMARY KEY,
+    source         TEXT NOT NULL,
+    raw_body       TEXT NOT NULL,
+    content_hash   TEXT NOT NULL,
+    etag           TEXT,
+    last_modified  TEXT,
+    fetched_at     TIMESTAMPTZ NOT NULL,
+    http_status    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scrape_page_cache_source ON scrape_page_cache (source);
+
+-- Market benchmark observations — source-agnostic (source-agnostic like
+-- employment_events: IT Jobs Watch is the first `source` value, a future
+-- second benchmark source is a new value, not a new table). Immutable, same
+-- discipline as raw_postings/employment_events. Mandatory attribution
+-- (source_url/licence/fetched_at NOT NULL) — the whole reason this data can
+-- ever be shown or republished later depends on capturing it now, never
+-- reconstructed after the fact.
+CREATE TABLE IF NOT EXISTS market_observations (
+    id                  TEXT PRIMARY KEY,
+    source              TEXT NOT NULL,
+    entity_type         TEXT NOT NULL,
+    entity_name         TEXT NOT NULL,
+    taxonomy_match      TEXT,
+    employment_type     TEXT NOT NULL,
+    location            TEXT NOT NULL,
+    period_start        DATE NOT NULL,
+    period_end          DATE NOT NULL,
+    rank                INTEGER,
+    rank_yoy_change     INTEGER,
+    vacancy_count       INTEGER,
+    vacancy_share       NUMERIC,
+    live_jobs           INTEGER,
+    salary_sample_size  INTEGER,
+    salary_p10          NUMERIC,
+    salary_p25          NUMERIC,
+    salary_median       NUMERIC,
+    salary_p75          NUMERIC,
+    salary_p90          NUMERIC,
+    salary_unit         TEXT,
+    salary_yoy_change   NUMERIC,
+    source_url          TEXT NOT NULL,
+    licence             TEXT NOT NULL,
+    licence_confirmed   BOOLEAN NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL,
+    raw_response        JSONB NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_market_observations_entity ON market_observations (entity_type, entity_name);
+CREATE INDEX IF NOT EXISTS idx_market_observations_source ON market_observations (source);
+
+-- The market-derived, weighted role<->skill graph. Same independence from
+-- raw_postings/employment_events as market_observations — no FK to either.
+CREATE TABLE IF NOT EXISTS skill_associations (
+    id                    TEXT PRIMARY KEY,
+    source                TEXT NOT NULL,
+    role_name             TEXT NOT NULL,
+    role_taxonomy_match   TEXT,
+    skill_name            TEXT NOT NULL,
+    skill_taxonomy_match  TEXT,
+    period_start          DATE NOT NULL,
+    period_end            DATE NOT NULL,
+    job_count             INTEGER,
+    percentage            NUMERIC,
+    rank                  INTEGER,
+    source_url            TEXT NOT NULL,
+    licence               TEXT NOT NULL,
+    licence_confirmed     BOOLEAN NOT NULL,
+    fetched_at            TIMESTAMPTZ NOT NULL,
+    raw_response          JSONB NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_skill_associations_role ON skill_associations (role_name);
+
+-- Enforced run cadence (added 2026-09-16 — Business Logic rule 8,
+-- research/2026-09-16-scraping-good-practices-refinement.md): "run once a
+-- week" checked in code before an adapter's fetch() is even called, not
+-- left to whatever eventually triggers ingest_scraped_sources.py.
+CREATE TABLE IF NOT EXISTS scrape_ingestion_runs (
+    source        TEXT PRIMARY KEY,
+    last_run_at   TIMESTAMPTZ NOT NULL
+);
 """
 
 

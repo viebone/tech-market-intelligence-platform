@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Sources & Licensing — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Sources &amp; Licensing</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  What we're actually allowed to do with each external data source's data. Full detail:
+  <code>LICENSING.md</code> at the product root.
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+  <div class="stat-label">Commercial-use gate (<code>TMIP_COMMERCIAL_MODE</code>)</div>
+  {% if commercial_mode %}
+  <span class="badge error">ON — non-commercially-licensed sources must not be used</span>
+  {% else %}
+  <span class="badge success">OFF — no restriction in effect (this product isn't monetized yet)</span>
+  {% endif %}
+</div>
+
+{% if sources %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Licence</th>
+      <th>Confirmed?</th>
+      <th>Commercial use</th>
+      <th>Attribution</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sources %}
+    <tr>
+      <td>{{ s.source }}</td>
+      <td>{% if s.licence_url %}<a href="{{ s.licence_url }}" target="_blank" rel="noopener">{{ s.licence }}</a>{% else %}{{ s.licence }}{% endif %}</td>
+      <td>
+        {% if s.confirmed %}<span class="badge success">Licence confirmed</span>
+        {% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+      </td>
+      <td>
+        {% if not s.confirmed %}<span class="badge neutral">Unknown — treat as non-commercial</span>
+        {% elif s.permits_commercial_use %}<span class="badge success">Commercial use OK</span>
+        {% else %}<span class="badge error">Non-commercial only</span>{% endif %}
+      </td>
+      <td>{{ s.attribution_text }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card"><div class="empty-state">No sources registered yet.</div></div>
+{% endif %}
+{% endblock %}
