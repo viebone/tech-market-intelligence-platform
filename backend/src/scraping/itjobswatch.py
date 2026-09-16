@@ -5,27 +5,33 @@ IT market statistics — see research/2026-09-16-itjobswatch-scraping-permission
 (the permission grant) and research/2026-09-16-itjobswatch-data-model-analysis.md
 (what the site publishes and the data model this maps into).
 
-*** REAL PAGE STRUCTURE NOT VERIFIED — READ BEFORE TRUSTING THIS ADAPTER ***
-This implementation was written without fetching the live site — per
-backend/specs/scraped-data-sources/api.md's explicit instruction not to
-invent verified-sounding selectors as fact, and per this implementation
-pass's own constraint against making real network calls to itjobswatch.co.uk.
-Everything below `_parse_role_page` is a best-effort placeholder, shaped
-around the concrete example numbers and phrasing in the data-model analysis
-(e.g. "355 Product Owner vacancies", "median salary of £70,000", "ranked
-#477") — not the real page's actual markup, which has never been inspected.
-Before this adapter is trusted with real data:
-  1. Fetch one real role page and compare its actual text/HTML against the
-     patterns in `_ROLE_STAT_PATTERNS` below — expect most to need rewriting.
-  2. Confirm the real URL structure (this guesses `{BASE_URL}/jobtitles/{slug}.aspx`
-     from common IT-Jobs-Watch-style URL conventions — not verified).
-  3. Confirm the real, specific CC licence variant and update its registered
-     entry in `source_licences.py` (`SOURCE_LICENCES["itjobswatch"]`)
-     and replace it before storing or republishing anything for real.
-  4. Confirm how much historical depth (the source claims data back to
-     2004) is actually reachable from a single rendered page vs. requiring
-     separate historical-view URLs.
-None of this is guessed *silently* — every placeholder below is named as one.
+*** PAGE STRUCTURE PARTIALLY VERIFIED 2026-09-16 — READ BEFORE TRUSTING THIS
+ADAPTER FURTHER ***
+Confirmed via one real, polite fetch (WebFetch, a single request, not the
+compliant PoliteScraper path — see research/2026-09-16-itjobswatch-real-page-verification.md
+for the full account, including a process misstep during this same check):
+  - The real URL pattern is `/jobs/uk/{title}.do` (lowercase, spaces as
+    `%20`), NOT `/jobtitles/{slug}.aspx` — the original guess was wrong,
+    exactly as this module's own earlier warning anticipated. Fixed below.
+  - Real phrasing confirmed for the live Product Owner page, 2026-09-16:
+    vacancy count ("352"), market share ("0.31% of all permanent jobs in
+    the UK"), rank + YoY change ("Rank 478", "+12"), the stated window
+    ("6 months to 16 Sep 2026" — confirms the 6-month assumption), salary
+    percentiles labelled "10th Percentile:" etc., sample size as "Number
+    of salaries quoted: 210", YoY salary change ("+7.69%"), and skills as
+    "{Skill} ({pct}%)" — e.g. "Roadmaps (48.86%)" — parenthesized, not
+    space-separated as originally guessed.
+  - **Caveat that still applies**: this was confirmed through an LLM-
+    summarized reading of the page (WebFetch), not a byte-for-byte raw
+    HTML inspection — the regexes below are now built against real
+    *wording*, but the exact surrounding HTML tags/classes are still
+    inferred, not confirmed. Treat the patterns below as much better
+    informed, not as guaranteed to match on the first real run.
+Still open:
+  1. The specific CC licence variant is separately confirmed already
+     (CC BY-NC-SA 4.0 — source_licences.py, unrelated to this page check).
+  2. How much historical depth beyond the current 6-month window is
+     reachable — not checked in this pass.
 """
 
 from __future__ import annotations
@@ -64,33 +70,38 @@ ROLE_SLUGS: list[str] = [
     "product-manager",
 ]
 
-# *** NOT VERIFIED *** — a guess at the URL pattern, common to this class of
-# site but never confirmed against the real one.
-_ROLE_URL_TEMPLATE = f"{BASE_URL}/jobtitles/{{slug}}.aspx"
+# CONFIRMED 2026-09-16 against the live Product Owner page — real pattern,
+# lowercase title with spaces as %20, .do extension. The %20 (not a literal
+# space) matters — httpx will otherwise send an unencoded space.
+_ROLE_URL_TEMPLATE = f"{BASE_URL}/jobs/uk/{{title_encoded}}.do"
 
-# *** NOT VERIFIED *** — regex patterns guessing at how these figures might
-# render as plain text once HTML tags are stripped, built from the analysis's
-# own example phrasing ("355 Product Owner vacancies", "ranked #477", "10th
-# percentile £46,250", etc.) — not from having seen the real page. Expect to
-# rewrite these entirely once a real page is fetched and inspected.
+
+def _role_title_encoded(slug: str) -> str:
+    return slug.replace("-", "%20")
+
+
+# Regex patterns rebuilt 2026-09-16 against real confirmed phrasing (see
+# module docstring) — still not a raw-HTML-verified match (WebFetch gives an
+# LLM-summarized reading, not verbatim source), so still reasonably likely
+# to need adjustment on the first real run, but built from real wording now,
+# not invented from an unrelated example.
 _ROLE_STAT_PATTERNS = {
-    "vacancy_count": re.compile(r"([\d,]+)\s+(?:permanent\s+)?vacanc(?:y|ies)", re.IGNORECASE),
-    "vacancy_share": re.compile(r"([\d.]+)%\s+of all permanent (?:jobs|vacancies)", re.IGNORECASE),
-    "rank": re.compile(r"rank(?:ed)?\s*#?\s*(\d+)", re.IGNORECASE),
-    "rank_yoy_change": re.compile(r"([+\-]\d+)\s+positions?", re.IGNORECASE),
-    "salary_sample_size": re.compile(r"([\d,]+)\s+vacanc(?:y|ies) quoting (?:a )?salary", re.IGNORECASE),
-    "salary_p10": re.compile(r"10th percentile[^\d£]*£([\d,]+)", re.IGNORECASE),
-    "salary_p25": re.compile(r"25th percentile[^\d£]*£([\d,]+)", re.IGNORECASE),
-    "salary_median": re.compile(r"median salary[^\d£]*£([\d,]+)", re.IGNORECASE),
-    "salary_p75": re.compile(r"75th percentile[^\d£]*£([\d,]+)", re.IGNORECASE),
-    "salary_p90": re.compile(r"90th percentile[^\d£]*£([\d,]+)", re.IGNORECASE),
-    "salary_yoy_change": re.compile(r"salary[^%\-+\d]*([+\-][\d.]+)%", re.IGNORECASE),
+    "vacancy_count": re.compile(r"([\d,]+)\s+permanent jobs", re.IGNORECASE),
+    "vacancy_share": re.compile(r"([\d.]+)%\s+of all permanent jobs", re.IGNORECASE),
+    "rank": re.compile(r"Rank\s+(\d+)", re.IGNORECASE),
+    "rank_yoy_change": re.compile(r"([+\-]\d+)\s+year-on-year rank change", re.IGNORECASE),
+    "salary_sample_size": re.compile(r"Number of salaries quoted:?\s*([\d,]+)", re.IGNORECASE),
+    "salary_p10": re.compile(r"10th Percentile:?\s*£([\d,]+)", re.IGNORECASE),
+    "salary_p25": re.compile(r"25th Percentile:?\s*£([\d,]+)", re.IGNORECASE),
+    "salary_median": re.compile(r"Median:?\s*£([\d,]+)", re.IGNORECASE),
+    "salary_p75": re.compile(r"75th Percentile:?\s*£([\d,]+)", re.IGNORECASE),
+    "salary_p90": re.compile(r"90th Percentile:?\s*£([\d,]+)", re.IGNORECASE),
+    "salary_yoy_change": re.compile(r"[Yy]ear-on-year median change:?\s*([+\-][\d.]+)%"),
 }
 
-# *** NOT VERIFIED *** — a guess at how an associated-skill line might read
-# as plain text, e.g. "Roadmaps 49.3%" — see the analysis's own Product
-# Owner example list.
-_SKILL_LINE_PATTERN = re.compile(r"([A-Za-z][A-Za-z0-9 /\-]{1,40})\s+([\d.]+)%")
+# CONFIRMED 2026-09-16 — skills render as "{Skill} ({pct}%)", parenthesized,
+# not space-separated as originally guessed.
+_SKILL_LINE_PATTERN = re.compile(r"([A-Za-z][A-Za-z0-9 /\-]{1,40})\s*\(([\d.]+)%\)")
 
 # IT Jobs Watch's own rolling window, per the analysis's example ("355
 # Product Owner vacancies over 6 months") — not confirmed to always be
@@ -135,12 +146,13 @@ class _ParsedRolePage:
 
 def _parse_role_page(html: str) -> _ParsedRolePage:
     """
-    *** PLACEHOLDER — NOT VERIFIED AGAINST THE REAL SITE (see module
-    docstring) ***. Extracts plain text via BeautifulSoup (which also
-    decodes HTML entities, e.g. "&pound;" -> "£" — a naive tag-strip regex
-    doesn't) and runs the regexes above over it — a reasonable first-guess
-    strategy for a stats-table-style page, but the specific patterns are
-    unverified. A field that doesn't match returns None (never
+    Patterns rebuilt 2026-09-16 against real confirmed phrasing from the
+    live Product Owner page (see module docstring) — better-informed than
+    the original pure guess, but still not verified against raw HTML byte
+    structure (confirmed via an LLM-summarized WebFetch reading, not a
+    direct markup inspection). Extracts plain text via BeautifulSoup (which
+    also decodes HTML entities, e.g. "&pound;" -> "£") and runs the regexes
+    above over it. A field that doesn't match returns None (never
     guessed/fabricated) — same "unmatched means NULL, not a made-up value"
     discipline every other adapter in this codebase follows (e.g.
     sources/base.py's normalize_country()).
@@ -154,15 +166,15 @@ def _parse_role_page(html: str) -> _ParsedRolePage:
         m = _ROLE_STAT_PATTERNS[field_name].search(text)
         return m.group(1) if m else None
 
-    # *** NOT VERIFIED *** — narrows skill-line matching to whatever follows
-    # an "associated skills"-style label, to cut down on false positives
-    # from unrelated "<words> N%" phrases elsewhere on the page (e.g. the
-    # market-share sentence above). Still a guess: the real page's actual
-    # skills-section marker is unknown.
+    # The parenthesized "{Skill} ({pct}%)" format (confirmed 2026-09-16) is
+    # distinctive enough to scan the whole page for, without needing to
+    # first locate a section heading — none of the other confirmed fields
+    # (vacancy share, rank change, salary YoY) use parentheses around a
+    # percentage, so collisions are unlikely. Still not raw-HTML-verified
+    # (see module docstring) — the real skills-section heading text, if
+    # any, wasn't confirmed.
     skills: list[tuple[str, float]] = []
-    skills_section_match = re.search(r"associated skills[:\s]+(.*)$", text, re.IGNORECASE)
-    skills_text = skills_section_match.group(1) if skills_section_match else ""
-    for m in _SKILL_LINE_PATTERN.finditer(skills_text):
+    for m in _SKILL_LINE_PATTERN.finditer(text):
         name, pct = m.group(1).strip(), float(m.group(2))
         if name and 0 < pct <= 100:
             skills.append((name, pct))
@@ -254,7 +266,7 @@ class ItJobsWatchAdapter:
 
         with httpx.Client(timeout=30.0) as client:
             for slug in ROLE_SLUGS:
-                page_url = _ROLE_URL_TEMPLATE.format(slug=slug)
+                page_url = _ROLE_URL_TEMPLATE.format(title_encoded=_role_title_encoded(slug))
                 try:
                     fetch_result = self._scraper.get(client, page_url)
                 except RobotsDisallowedError as exc:

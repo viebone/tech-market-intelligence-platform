@@ -208,3 +208,14 @@ accessed by API."
   sources view in the admin dashboard) is real new operator-facing functionality — routed
   through its own `/change-request` rather than bundled here, since it's a genuinely separate
   capability, not a continuation of this one.
+- 2026-09-16 (real page partially verified, `research/2026-09-16-itjobswatch-real-page-verification.md`):
+  the user asked what data comes from IT Jobs Watch and how it's stored, then "what do you need
+  me to do?" — leading to one approved WebFetch check against the live Product Owner page.
+  Confirmed the guessed URL was wrong (`/jobtitles/{slug}.aspx` → real `/jobs/uk/{title}.do`) and
+  real page phrasing for every extracted field; `scraping/itjobswatch.py`'s URL template and
+  regexes rewritten accordingly, verified against a fixture built from the real confirmed text.
+  **Disclosed openly**: the same check also included an uncontrolled `curl` request outside the
+  compliant `PoliteScraper` path (no prior `robots.txt` check, a placeholder identifier) — low
+  volume, nothing disallowed, but a real process misstep, not repeated. The actual `PoliteScraper`
+  path has still never made a real request; raw HTML structure and historical depth remain
+  unverified. 29 tests still passing.

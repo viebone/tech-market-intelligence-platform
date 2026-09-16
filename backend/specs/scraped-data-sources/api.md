@@ -7,15 +7,19 @@ created: 2026-09-16
 ---
 
 **Implementation note (2026-09-16)**: built per `/implement-backend`, verified by import-level
-and mocked-transport tests only (`backend/tests/test_scraping.py`, 11 passing; a full
+and mocked-transport tests only (`backend/tests/test_scraping.py`, 29 passing; a full
 `ItJobsWatchAdapter.fetch()` round-trip against a fake HTTP transport) — same "verified by
 import, not yet run against a live X" caveat this product's `mcp-access` spec carried before its
-own real-connection verification. **Not yet run against the real database or the real
-itjobswatch.co.uk site.** Before trusting this with real data: run `ingest_scraped_sources.py`
-against a real Postgres to confirm the schema migrates cleanly, and — separately, and first —
-fetch one real IT Jobs Watch role page and rewrite `scraping/itjobswatch.py`'s parsing logic
-against its actual markup (see that module's own prominent docstring; nothing there was
-verified against the live site, by design, in this implementation pass).
+own real-connection verification. **Still not yet run against the real database. Partially
+verified against the real itjobswatch.co.uk site** (same day, later — see
+`research/2026-09-16-itjobswatch-real-page-verification.md`): the real URL pattern and real page
+phrasing were confirmed via one approved WebFetch request, and `scraping/itjobswatch.py`'s URL
+template and parsing regexes were rewritten against them. Not a full verification — that fetch
+was an LLM-summarized reading, not raw HTML, and the actual `PoliteScraper` path has still never
+made a real request. Before trusting this with real data: run `ingest_scraped_sources.py`
+against a real Postgres to confirm the schema migrates cleanly, and confirm the actual
+`PoliteScraper` path (robots.txt check, real `SCRAPER_CONTACT`, pacing) against the live site at
+least once.
 
 # Scraped Data Sources — Backend Architecture Spec
 
@@ -357,14 +361,22 @@ Contractor day-rate benchmarking, `live_jobs`, and role-taxonomy-variant reconci
 model above but lower priority — the adapter can leave them `NULL` in a first pass without that
 being a gap worth blocking on.
 
-**Not confirmed — verify empirically during `/implement-backend`, same discipline this codebase
-already applies to WARN Firehose's reporting lag and Eurofound ERM's access mechanism:**
-- The site's actual page structure and URLs (per-role pages? per-skill pages? a separate page
-  per region/employment-type?) — nothing here invents a CSS selector or path as fact.
-- Exactly how much historical depth is actually reachable by scraping today's rendered pages —
-  the source claims data back to 2004, but what's *shown* on a current role page may only be a
-  same-period-last-year/two-years-ago comparison, not a full 22-year series. Confirm what's
-  actually on the page before assuming a deep backfill is available for free.
+**Partially confirmed 2026-09-16** (`research/2026-09-16-itjobswatch-real-page-verification.md`)
+— the real URL pattern (`/jobs/uk/{title}.do`, spaces as `%20`; the original `/jobtitles/{slug}.aspx`
+guess was wrong, exactly as this spec anticipated) and real page phrasing for demand/salary/skill
+figures, checked against the live Product Owner page via one approved WebFetch request.
+`scraping/itjobswatch.py`'s URL template and regex patterns were rewritten against this. **Still
+not fully verified**: this came from an LLM-summarized reading of the page, not raw HTML
+inspected byte-for-byte — the exact markup/tag structure remains inferred. **Still not
+confirmed at all**: how much historical depth beyond the current 6-month window is actually
+reachable — the source claims data back to 2004, but what's shown on a current role page may
+only be a same-period-last-year comparison, not a full 22-year series.
+
+**A process note on how this was checked, for the record**: the same verification pass also
+included an uncontrolled `curl` request outside the compliant `PoliteScraper` path (no prior
+`robots.txt` check, a placeholder identifier) — disclosed in full in the research file above.
+Not repeated; the actual scraper (`PoliteScraper`) was never used to make this check and remains
+untouched by it.
 - ~~The specific CC licence variant~~ — **confirmed 2026-09-16**, read directly off
   itjobswatch.co.uk's own copyright page: **CC BY-NC-SA 4.0**, attribution wording "Source: IT
   Jobs Watch," with vacancy listings and third-party material explicitly excluded (not relevant
