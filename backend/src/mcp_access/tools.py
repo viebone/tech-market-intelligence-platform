@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import industries
 from employment_events.base import SOURCE_DISPLAY_NAMES
-from mcp_access.envelope import build_envelope, time_window_label
+from mcp_access.envelope import build_envelope, no_data, time_window_label
 from market_query import (
     query_compensation_data,
     query_employment_events_data,
+    query_market_benchmark_data,
     query_market_data,
     query_requirements_data,
 )
@@ -35,6 +36,10 @@ TOOL_SCOPES: dict[str, str] = {
     "get_salary_stats": "compensation.read",
     "get_employment_risk": "companies.read",
     "list_tracked_companies": "companies.read",
+    # Added 2026-09-18 (changes/2026-09-18-market-benchmark-mcp-tool.md) —
+    # reuses jobs.read deliberately (same conceptual grant, a different
+    # source) rather than a new scope; see backend/specs/mcp-access/api.md.
+    "get_market_benchmark": "jobs.read",
 }
 
 # Tools that additionally require the Premium plan, regardless of scope.
@@ -211,4 +216,38 @@ def list_tracked_companies() -> dict:
         time_window={"from": None, "to": None, "label": "not applicable — a static, curated list"},
         source="This platform's curated company list (reviewed periodically, not exhaustive)",
         total_matching=len(companies),
+    )
+
+
+def get_market_benchmark(entity_name: list[str] | None = None) -> dict:
+    """
+    An independent, third-party market benchmark (IT Jobs Watch) — demand
+    (vacancy count), typical pay (median salary), and the skills most
+    associated with a curated set of tracked roles. This is NOT this
+    platform's own job-postings data (get_job_demand/get_salary_stats/
+    get_skill_demand) — it's a separate source, measuring a different
+    population by a different method. Never compare or blend a figure from
+    this tool with a figure from those tools; present them as two
+    independent reads, exactly as this platform's own "Independent market
+    benchmark" story does.
+
+    Covers only a hand-curated set of tracked roles (see tracked_role_count
+    vs. observed_role_count in the response), not the full market.
+    """
+    result = query_market_benchmark_data(entity_name=entity_name)
+    if not result["usable"]:
+        return no_data("This data source isn't currently available.")
+    return build_envelope(
+        {
+            "roles": result["roles"],
+            "skills": result["skills"],
+            "tracked_role_count": result["tracked_role_count"],
+            "observed_role_count": result["observed_role_count"],
+        },
+        unit="vacancy count and median annual salary per role; job_count summed across roles for skills",
+        scope=_scope_description({"entity_name": entity_name}),
+        time_window={"from": None, "to": None, "label": "most recent observation per role"},
+        source="IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an independent third-party "
+        "benchmark, not this platform's own job-postings data",
+        total_matching=result["total_matching"],
     )

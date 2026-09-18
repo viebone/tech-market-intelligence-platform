@@ -337,8 +337,9 @@ This is per the MCP spec's own transport — JSON-RPC over HTTP; this platform d
 second, REST-shaped tool API alongside it. Every tool call carries a Bearer access token; every
 tool implementation runs the same three checks before touching data — see Business Logic, below.
 
-Six tools. Each is a genuine data primitive already proven inside this platform's own chat
-feature (`backend/specs/market-health/api.md`) — nothing here is new, untested query logic.
+Seven tools. Each is a genuine data primitive already proven inside this platform's own chat
+feature or story catalogue (`backend/specs/market-health/api.md`) — nothing here is new,
+untested query logic.
 
 ### `get_taxonomy`
 **Scope**: none. **Purpose**: returns the canonical enum values so a calling AI never has to
@@ -404,6 +405,39 @@ job-posting-side context on anyway. **Note**: this does **not** gate or filter
 `get_employment_risk` — that tool answers for any company the registries cover, tracked or not
 (`EMPLOYMENT_EVENTS.md` — "no relationship to `raw_postings`"). This tool is metadata only.
 
+### `get_market_benchmark`
+**Added 2026-09-18** (`changes/2026-09-18-market-benchmark-mcp-tool.md`) — the first tool built
+on `market_observations`/`skill_associations`, reversing the "deferred" call recorded 2026-09-16
+now that a real consumer surface exists for this data (`design/market-health/data-stories.md`
+— Story 3). **Scope**: `jobs.read` — deliberately reused rather than a new scope, since this is
+the same conceptual grant ("job demand and skill trends") from a different source; a dedicated
+scope is a real option later if separate consent granularity ever matters, not built now on
+spec alone. **Not** in `PREMIUM_ONLY_TOOLS` — available on every plan tier, same reasoning
+already applied to the consumer web story: this platform has no paid feature this data would
+be gating behind, so there's nothing for the CC BY-NC-SA 4.0 NonCommercial clause to conflict
+with. **Wraps**: `query_market_benchmark_data` (new — no existing internal function to reuse,
+since nothing read this data back out before today).
+**Gate**: calls `source_licences.is_source_usable("itjobswatch")` before querying anything —
+if `False`, returns `envelope.no_data("This data source isn't currently available.")` rather
+than an error or stale data (same rule `scraped-data-sources/api.md`'s Business Logic already
+specified for "any future function that reads this data back out").
+**Parameters**: `entity_name` (optional list — filter to specific tracked roles; omit for
+every currently-observed role).
+**Response**: same envelope shape; `data.roles` carries `{entity_name, vacancy_count,
+salary_median, salary_sample_size}` per tracked role, `data.skills` carries the top 10
+`{skill_name, job_count}` summed across the (filtered) roles; `meta.source` states the licence
+and attribution explicitly (`"IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an
+independent third-party benchmark, not this platform's own job-postings data"`) since an
+external AI may quote a figure from this tool verbatim with no framing of its own (Part 2's
+binding contract, `design/mcp-access/experience.md`); `meta.total_matching` is the count of
+currently-observed roles (out of the full tracked-role set), so a caller can tell a genuine
+coverage gap from a zero-result answer. **Docstring explicitly instructs the calling AI never
+to compare this tool's output against `get_job_demand`/`get_salary_stats`/`get_skill_demand`**
+— same "different populations, not directly comparable" discipline `get_employment_risk`
+already states for its own independence from the job-postings tools, applied here for the same
+underlying reason this platform's own spec has never built that comparison itself
+(`scraped-data-sources/api.md` — "What this doesn't decide").
+
 ### What's deliberately not a tool
 
 See also `ACCESS.md` (product root) for the full picture across *every* capability this product
@@ -426,12 +460,18 @@ MCP-exposure status.
   comparing by asking, not this platform pre-building a comparison feature").
 - **Any "compare X vs Y" tool** — same reasoning; the calling AI calls `get_job_demand` (or any
   tool) once per thing being compared and composes the comparison itself.
-- **Market benchmark datasets** (`backend/specs/scraped-data-sources/api.md`, 2026-09-16,
-  revised same day) — **deferred**, not decided against. That spec ships ingestion only;
-  nothing in this product, not even an internal query function, reads `market_observations` or
-  `skill_associations` back out yet. There is concretely nothing to expose. Revisit once a real
-  decision exists on whether/how this data surfaces anywhere at all — see that spec's "What this
-  doesn't decide" and `ACCESS.md`'s row for it.
+- ~~**Market benchmark datasets** — deferred, not decided against.~~ **Resolved 2026-09-18** —
+  exposed as `get_market_benchmark`, above, now that a real consumer surface (Story 3) exists
+  to decide against. Marked here for history, per this project's "mark removed, don't erase"
+  convention — see `changes/2026-09-18-market-benchmark-mcp-tool.md`.
+- **Cross-source comparison between `get_market_benchmark` and any job-postings tool** — same
+  reasoning as "Any 'compare X vs Y' tool," above, now naming the concrete case: the two
+  datasets measure different populations by different methods, and this platform has never
+  built that reconciliation logic even for its own internal use
+  (`scraped-data-sources/api.md` — "What this doesn't decide"). `get_market_benchmark`'s own
+  docstring instructs the calling AI not to attempt it; there is no server-side enforcement
+  possible once an AI holds both tools' outputs, which is itself a real, named limitation of
+  exposing two independently-sourced primitives rather than one pre-composed comparison.
 
 ---
 

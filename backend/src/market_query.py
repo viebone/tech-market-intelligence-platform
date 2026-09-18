@@ -687,3 +687,107 @@ def query_employment_events_data(
         "sources_checked": [a.name for a in ALL_EMPLOYMENT_EVENT_ADAPTERS],
         "total_matching": len(events),
     }
+
+
+def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
+    """
+    Query the independent third-party market benchmark (IT Jobs Watch),
+    filtered to source="itjobswatch" — added 2026-09-18
+    (changes/2026-09-18-market-benchmark-mcp-tool.md), the first function to
+    read market_observations/skill_associations back out of storage. Gated
+    on source_licences.is_source_usable("itjobswatch") — see
+    backend/specs/scraped-data-sources/api.md's Business Logic rule 10.
+
+    Deliberately never joined to raw_postings/classifications — this is a
+    separate benchmark, not this platform's own postings data, and the two
+    are never blended or compared here (design/market-health/data-stories.md
+    — Story 3; scraped-data-sources/api.md — "What this doesn't decide").
+
+    Args:
+        entity_name: optional list of tracked role names to filter to (e.g.
+            ["Product Owner"]). Omit for every currently-observed role.
+
+    Returns:
+        A dict with:
+        - roles: [{entity_name, vacancy_count, salary_median, salary_sample_size}],
+          most recent observation per role
+        - skills: [{skill_name, job_count}], top 10 by job_count summed across
+          the (filtered) roles' skill associations
+        - tracked_role_count, observed_role_count: coverage — how many roles
+          this platform tracks on IT Jobs Watch vs. how many currently have
+          an observation
+        - total_matching: observed_role_count (the real denominator)
+        - usable: False if this source is not currently cleared for use
+          (source_licences.is_source_usable) — roles/skills are empty in
+          that case, never a stale render of previously-fetched rows
+    """
+    from scraping.itjobswatch import ROLE_SLUGS
+    from source_licences import is_source_usable
+
+    tracked_role_count = len(ROLE_SLUGS)
+
+    if not is_source_usable("itjobswatch"):
+        return {
+            "roles": [], "skills": [], "tracked_role_count": tracked_role_count,
+            "observed_role_count": 0, "total_matching": 0, "usable": False,
+        }
+
+    entity_names = _as_list(entity_name)
+    where = ["source = %s"]
+    params: list = ["itjobswatch"]
+    if entity_names:
+        where.append("entity_name = ANY(%s)")
+        params.append(entity_names)
+    where_sql = " AND ".join(where)
+
+    with get_connection() as conn:
+        observation_rows = conn.execute(
+            f"""
+            SELECT DISTINCT ON (entity_name)
+                entity_name, vacancy_count, salary_median, salary_sample_size
+            FROM market_observations
+            WHERE {where_sql}
+            ORDER BY entity_name, period_end DESC
+            """,
+            params,
+        ).fetchall()
+
+        skill_where = ["source = %s"]
+        skill_params: list = ["itjobswatch"]
+        if entity_names:
+            skill_where.append("role_name = ANY(%s)")
+            skill_params.append(entity_names)
+        skill_rows = conn.execute(
+            f"""
+            SELECT skill_name, sum(job_count) AS job_count
+            FROM skill_associations
+            WHERE {' AND '.join(skill_where)}
+            GROUP BY skill_name
+            ORDER BY job_count DESC
+            LIMIT 10
+            """,
+            skill_params,
+        ).fetchall()
+
+    roles = [
+        {
+            "entity_name": r[0], "vacancy_count": r[1],
+            # NUMERIC -> Decimal from psycopg; cast to float so this is
+            # JSON-serializable by the plain envelope path (same real bug
+            # already found and fixed for the consumer web story, Story 3 —
+            # backend/specs/market-health/api.md).
+            "salary_median": float(r[2]) if r[2] is not None else None,
+            "salary_sample_size": r[3],
+        }
+        for r in observation_rows
+    ]
+    skills = [{"skill_name": r[0], "job_count": r[1]} for r in skill_rows]
+
+    return {
+        "roles": roles,
+        "skills": skills,
+        "tracked_role_count": tracked_role_count,
+        "observed_role_count": len(roles),
+        "total_matching": len(roles),
+        "usable": True,
+    }

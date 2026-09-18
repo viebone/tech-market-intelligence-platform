@@ -257,6 +257,17 @@ def create_mcp_server():
         industry where tagged. Requires the 'companies.read' scope."""
         return _enforce_and_call("list_tracked_companies", tools.list_tracked_companies, {})
 
+    @mcp_server.tool()
+    def get_market_benchmark(entity_name: list[str] | None = None) -> dict:
+        """An independent third-party market benchmark (IT Jobs Watch) —
+        demand, pay, and skills for a curated set of tracked roles. NOT
+        this platform's own postings data; never compare against
+        get_job_demand/get_salary_stats/get_skill_demand. Requires the
+        'jobs.read' scope. Available on every plan."""
+        return _enforce_and_call("get_market_benchmark", tools.get_market_benchmark, dict(
+            entity_name=entity_name,
+        ))
+
     return mcp_server
 
 

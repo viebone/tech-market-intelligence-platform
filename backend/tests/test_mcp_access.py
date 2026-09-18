@@ -111,11 +111,20 @@ def test_tool_scopes_cover_every_scoped_tool():
     # Every tool server.py registers behind _enforce_and_call must have an
     # entry here — a missing one would raise a KeyError at call time
     # instead of failing this test up front.
-    for tool_name in ("get_job_demand", "get_skill_demand", "get_salary_stats", "get_employment_risk", "list_tracked_companies"):
+    for tool_name in (
+        "get_job_demand", "get_skill_demand", "get_salary_stats", "get_employment_risk",
+        "list_tracked_companies", "get_market_benchmark",
+    ):
         assert tool_name in tools.TOOL_SCOPES
     assert tools.TOOL_SCOPES["get_salary_stats"] == "compensation.read"
     assert "get_salary_stats" in tools.PREMIUM_ONLY_TOOLS
     assert "get_job_demand" not in tools.PREMIUM_ONLY_TOOLS
+    # get_market_benchmark (added 2026-09-18) is deliberately available on
+    # every plan — the consumer web app has no tier system to gate this
+    # NC-licensed data against, so it isn't restricted here either. See
+    # backend/specs/mcp-access/api.md.
+    assert tools.TOOL_SCOPES["get_market_benchmark"] == "jobs.read"
+    assert "get_market_benchmark" not in tools.PREMIUM_ONLY_TOOLS
 
 
 if __name__ == "__main__":
