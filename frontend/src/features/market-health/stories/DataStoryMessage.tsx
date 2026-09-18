@@ -3,6 +3,7 @@ import { StoryBlock } from "./StoryBlock";
 import { Meter } from "./Meter";
 import { YearOnYearBars, type YearOnYearContent } from "./YearOnYearBars";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
+import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -31,6 +32,11 @@ export interface DataStoryResult {
     query_time: string;
   };
   limitations: string[];
+  /** Added 2026-09-18 (Story 3, market-benchmark) — a source's licence
+   * attribution text, when the story's data requires visible credit on the
+   * page itself, not only in the Reasoning Panel. Absent for every other
+   * story. */
+  attribution_text?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,6 +92,9 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   // build). market-data-briefing keeps rendering inline below, unchanged.
   if (story.story_id === "employment-risk-overview") {
     return <EmploymentRiskStoryMessage story={story} />;
+  }
+  if (story.story_id === "market-benchmark") {
+    return <MarketBenchmarkStoryMessage story={story} />;
   }
 
   const roles = section(story, "roles-offered");

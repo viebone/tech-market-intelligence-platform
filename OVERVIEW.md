@@ -26,9 +26,12 @@ collected data, never a guess.
 exactly what data it looked at and how it got there — so you can verify it instead of just
 trusting it.
 
-**Read fixed data stories with no AI involved.** Two standing reports — "What we know about the
-market" and "Employment risk across the market" — are built straight from the data, no model
-call, so they're instant and can't be wrong in the way an AI answer occasionally can be.
+**Read fixed data stories with no AI involved.** Three standing reports — "What we know about
+the market," "Employment risk across the market," and _(new, 2026-09-18)_ "Independent market
+benchmark" (a second, outside read on hiring demand and pay from a specialist third-party site,
+shown separately, never blended with this platform's own numbers) — are built straight from
+the data, no model call, so they're instant and can't be wrong in the way an AI answer
+occasionally can be.
 
 **Bring your own AI.** _(New, 2026-09-15.)_ Rather than only using this platform's own chat, you
 can connect Claude, ChatGPT, Gemini, or any compatible AI assistant directly to this platform's
@@ -37,9 +40,11 @@ questions, using *your* AI subscription instead of this platform's. Revoke acces
 
 **(Operator only) See what the data pipeline actually did.** A separate, password-protected
 dashboard shows every job posting and employment event ingested, classified, and indexed, plus
-_(new, 2026-09-16)_ every external data source's licence status — confirmed or not, commercial
-use permitted or not, and under what attribution terms this platform may use its data. Not
-something an end user ever sees or needs.
+every external data source's licence status — confirmed or not, commercial use permitted or
+not, and under what attribution terms this platform may use its data — and _(new, 2026-09-18)_
+the raw market-benchmark data itself (demand/salary snapshots and weighted skill associations)
+plus when each scraped source last ran and whether it's due again. Not something an end user
+ever sees or needs.
 
 ## How it's built, in one paragraph
 

@@ -344,11 +344,126 @@ this briefing. Does not replace or alter the "Tech market hiring status" task or
 strip (`design/market-health/experience.md`) — the two surfaces answer different questions and
 stay independent, per the resolved Open Question in that spec.
 
+---
+
+## Story 3 - What does an independent market benchmark say?
+
+Added 2026-09-18 — `changes/2026-09-18-market-benchmark-story.md`. The first catalogue entry
+built from `market_observations`/`skill_associations` (`backend/specs/scraped-data-sources/api.md`)
+— a **third-party benchmark**, not platform-owned postings data, and deliberately never
+compared or blended against Story 1's own numbers (that comparison logic is explicitly out of
+scope — the two sources measure different populations by different methods; presenting a diff
+between them would imply a rigor this platform hasn't earned). This is what
+`outcomes/understand-market-health-before-searching.md`'s newest success criterion (added
+2026-09-18) asks for: seeing this platform's read *alongside* an independent one, not merged
+into it.
+
+### Display name
+
+**Independent market benchmark** — the Task Panel item label.
+
+### User question
+
+> What does an independent market benchmark say about tech hiring demand and pay?
+
+### Example phrasings
+- "How does this compare to an outside source?"
+- "What does IT Jobs Watch say?"
+- "Show me an independent market benchmark"
+
+### Audience job
+
+Give a professional a **second, independent read** on demand and pay for a curated set of
+tech roles — sourced from a specialist third-party site, not this platform's own observed
+postings — so they can sanity-check the platform's own numbers against an outside source
+rather than relying on one dataset alone.
+
+### Visible answer shape
+
+One movement — no year-on-year block yet (each tracked role currently has exactly one observed
+period; a comparison needs a second one to exist first, same "not enough history yet" honesty
+state Story 1 uses before its own YoY data existed).
+
+1. **Framing line** — one sentence naming this as an independent third-party benchmark, not
+   this platform's own postings data. Immediately beneath it, the source's own attribution
+   text renders visibly on the page itself (not only in the Reasoning Panel) — "Source: IT
+   Jobs Watch (itjobswatch.co.uk)" — satisfying the CC BY-NC-SA 4.0 licence's attribution
+   condition wherever this data is actually shown, per `data-legibility`'s Provenance rule.
+2. **Demand across tracked roles** — subtitle: "Permanent vacancies currently tracked by IT
+   Jobs Watch, by role." Ranked bar list, one row per role currently observed, bar length =
+   `vacancy_count`. Qualifier states this covers only the hand-curated roles this platform
+   tracks on IT Jobs Watch (`DATA_SOURCES.md` §3b), not the full market, and names how many
+   roles are tracked vs. how many currently have an observation (a role added to `ROLE_SLUGS`
+   but not yet ingested is a coverage gap, not an error — same "not due yet" honesty as any
+   other scraped-source state).
+3. **Coverage and pay data availability** — a **Hero Figure + Meter** (the second distinct
+   visual form the checklist requires, given this story's data is otherwise a single
+   dimension repeated across two rankings): Hero Figure = total permanent vacancies tracked
+   across every currently-observed role (`sum(vacancy_count)`); Meter = the share of
+   currently-observed roles that have a `salary_median` figure reported ("X of Y tracked
+   roles have salary data reported"). Its own caption states the unit inline, no separate
+   subtitle needed (Data Legibility, `visual-design.md`).
+4. **Typical pay by role** — subtitle: "Median annual salary (50th percentile), by role."
+   Ranked bar list, bar length = `salary_median`, formatted as currency. Qualifier states the
+   salary sample size per role and that the median alone understates the real spread — the
+   full 10th-90th percentile range is available in the platform's own stored data
+   (`backend/specs/scraped-data-sources/api.md`) but not charted here, to keep this block to
+   one visual form per the Visual standard checklist.
+5. **Skills most associated with these roles** — subtitle: "Summed mention count across the
+   tracked roles' vacancies, from IT Jobs Watch's own weighted skill data." Ranked bar list,
+   top 10 skills by `job_count` summed across all currently-observed roles. Qualifier states
+   this is summed across the hand-curated role set, not a market-wide skill ranking.
+
+This story leans on 2 distinct visual forms (Ranked bar list, Hero Figure + Meter) rather than
+3+ — a deliberate judgment call given the data's real shape (demand and pay are each
+fundamentally one dimension per role; forcing a trend line or map here would mean inventing a
+time series or geography this data doesn't actually have yet). Revisit once a second period of
+data exists and a real year-on-year block becomes honestly possible.
+
+### Data contract
+
+Queries `market_observations`/`skill_associations` only, filtered to `source = "itjobswatch"`
+— no join to `raw_postings`/`classifications`/`employment_events`. Gated on
+`source_licences.is_source_usable("itjobswatch")` before any query runs (Business Logic,
+`backend/specs/market-health/api.md`).
+
+| Story fact | Aggregate | Required qualifier |
+|---|---|---|
+| Demand by role | `market_observations` rows for `source='itjobswatch'`, most recent `period_end` per `entity_name` | States the tracked-role set is hand-curated (`DATA_SOURCES.md` §3b), not exhaustive; states how many tracked roles have no observation yet |
+| Coverage & pay availability | `count(*)` observed roles vs. `len(ROLE_SLUGS)`; `sum(vacancy_count)`; `count(*) WHERE salary_median IS NOT NULL` | States how many tracked roles are currently observed vs. registered |
+| Pay by role | Same rows' `salary_median`, `salary_sample_size` | States the sample size per role; states the full percentile spread exists but isn't charted here |
+| Skills | `skill_associations` rows for `source='itjobswatch'`, `job_count` summed per `skill_name` across all currently-observed roles, top 10 | States this is summed across the tracked role set, not a market-wide figure |
+| Attribution | `source_licences.get_licence("itjobswatch")` | `attribution_text` rendered visibly in the framing block, always — never omitted, never only in the Reasoning Panel |
+
+### Honesty and empty states
+
+- Same base rules as Stories 1-2 (current as of query time, sample sizes stated,
+  `insufficient_data` per section, never estimated/zero-filled).
+- **A tracked role with no observation yet** (added to `ROLE_SLUGS` but not yet ingested, or a
+  source not yet due for its next run) is simply absent from the ranked lists — never
+  backfilled with a guessed value. The qualifier states the count of tracked-but-unobserved
+  roles so this reads as a coverage gap, not a hidden one.
+- **`is_source_usable("itjobswatch")` returns `False`** (a human has set `rejected=True`
+  since this was last checked): every section renders `insufficient_data` with "This data
+  source isn't currently available" — never a stale render of previously-fetched rows.
+- **Never implies a comparison with Story 1's own numbers** — this story's framing line states
+  plainly that this is an independent, separately-sourced read, not a reconciliation. Building
+  that comparison is a distinct, not-yet-taken decision (`scraped-data-sources/api.md`'s "What
+  this doesn't decide").
+
+### Relationship to the existing experience
+
+A dedicated Query Task, placed after Story 2 in the catalogue (document order). Selecting it
+replaces the working-space content with this briefing. Does not alter "Tech market hiring
+status" or "What we know about the market" — a fully independent third surface, same
+"different questions, different surfaces" discipline as Story 2.
+
 ## Future catalogue direction
 
 Later entries can cover narrower questions such as role demand, skills by specialization,
 compensation coverage, source coverage, or market changes over time — **layoff activity is
-now Story 2, above**, no longer a future direction. **Every
+now Story 2**, and **an independent third-party benchmark is now Story 3**, both above, no
+longer future directions. **Every
 one must meet "Visual standard every story must meet" (above)** — a new entry that can't be
 composed into 3–6 heading/visual/qualifier blocks with a real mix of chart forms is a sign
 the question is too narrow or too broad to be a story, not a reason to relax the standard. A

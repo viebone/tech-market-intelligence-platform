@@ -354,6 +354,38 @@ is removed, see below). No dedicated endpoint: it reuses the existing generic
 story is a catalogue operation (`design/market-health/data-stories.md`'s own "Catalogue
 rules"), not a new route. See `market_stories.py` — `build_employment_risk_overview()`.
 
+**Added 2026-09-18** (`changes/2026-09-18-market-benchmark-story.md`) — also READ-only over
+`market_observations` and `skill_associations`, both owned and fully documented by
+`backend/specs/scraped-data-sources/api.md`, not repeated here. Same independence discipline as
+employment events: never joined to `raw_postings`/`classifications` — this is a separate
+third-party benchmark, not a comparison against this platform's own postings-derived numbers
+(that comparison logic remains explicitly out of scope, per `scraped-data-sources/api.md`'s
+"What this doesn't decide").
+
+**Story 3 (`changes/2026-09-18-market-benchmark-story.md`).** "Independent market benchmark"
+is a data story built entirely from `market_observations`/`skill_associations`, filtered to
+`source = "itjobswatch"` and gated on `source_licences.is_source_usable("itjobswatch")` — the
+first real consumer of that table's data, finally exercising the rule
+`scraped-data-sources/api.md`'s Business Logic already specified ("any future function that
+reads this data back out to use it must call `is_source_usable(row.source)` and exclude what
+it returns `False` for"). Same no-new-route pattern as Story 2 — a catalogue operation. See
+`market_stories.py` — `build_market_benchmark_story()`.
+
+**Licence gate and attribution (added 2026-09-18).** Before querying anything,
+`build_market_benchmark_story()` calls `source_licences.is_source_usable("itjobswatch")`. If
+`False` (a human has since set `rejected=True`), the story returns every section as
+`insufficient_data` with a plain "this data source isn't currently available" qualifier —
+never a stale render of previously-fetched rows. The story's framing line always renders the
+source's own `attribution_text` (`source_licences.get_licence("itjobswatch").attribution_text`
+— "Source: IT Jobs Watch (itjobswatch.co.uk)") visibly on the page itself, not only in the
+Reasoning Panel — the CC BY-NC-SA 4.0 licence's attribution condition requires credit wherever
+the data is shown, not just in a provenance trace a viewer might never open (Business Logic
+rule 6, `scraped-data-sources/api.md`). **No paid/Premium gating** — the consumer web app has
+no account/tier system at all today; this story is part of the same free, open experience
+every visitor already gets. Revisit the NC clause specifically if a paid consumer feature is
+ever built on top of this data (flagged, not solved, here — see the change request's Decision
+Log).
+
 ---
 
 ## API Endpoints

@@ -37,6 +37,16 @@ STORY_CATALOGUE = (
             "Show me employment risk",
         ],
     },
+    {
+        "id": "market-benchmark",
+        "display_name": "Independent market benchmark",
+        "question": "What does an independent market benchmark say about tech hiring demand and pay?",
+        "example_phrasings": [
+            "How does this compare to an outside source?",
+            "What does IT Jobs Watch say?",
+            "Show me an independent market benchmark",
+        ],
+    },
 )
 
 # Employment risk story window — trailing 12 months, revised 2026-09-11 from
@@ -656,11 +666,164 @@ def build_employment_risk_overview() -> dict[str, Any]:
     }
 
 
+def build_market_benchmark_story() -> dict[str, Any]:
+    """
+    Story 3 — an independent third-party market benchmark (IT Jobs Watch),
+    built entirely from market_observations/skill_associations, filtered to
+    source="itjobswatch". Deliberately never joined to or compared against
+    raw_postings/classifications — a separate benchmark, not a reconciliation
+    (design/market-health/data-stories.md — Story 3;
+    backend/specs/scraped-data-sources/api.md — "What this doesn't decide").
+
+    Gated on is_source_usable("itjobswatch") before any query runs — the
+    first real consumer of this table's data, exercising the rule
+    scraped-data-sources/api.md's Business Logic already specified.
+    """
+    from scraping.itjobswatch import ROLE_SLUGS
+    from source_licences import get_licence, is_source_usable
+
+    query_time = datetime.now().astimezone()
+    licence = get_licence("itjobswatch")
+
+    if not is_source_usable("itjobswatch"):
+        return {
+            "story_id": "market-benchmark",
+            "question": STORY_CATALOGUE[2]["question"],
+            "as_of": query_time.isoformat(),
+            "sections": [
+                _section(
+                    "market-benchmark-unavailable", "Independent market benchmark", {},
+                    "This data source isn't currently available.", ready=False,
+                ),
+            ],
+            "provenance": {"sources": ["itjobswatch"], "model_used": False, "query_time": query_time.isoformat()},
+            "limitations": ["This source is not currently cleared for use — see source_licences.py."],
+        }
+
+    with get_connection() as conn:
+        # DISTINCT ON entity_name, most recent period_end first — one row per
+        # currently-tracked role, its latest observation. Mirrors
+        # scraping_storage.py's own "most recent per entity" read pattern.
+        observation_rows = _rows_as_dicts(conn.execute(
+            """
+            SELECT DISTINCT ON (entity_name)
+                entity_name, vacancy_count, salary_median, salary_sample_size
+            FROM market_observations
+            WHERE source = %s
+            ORDER BY entity_name, period_end DESC
+            """,
+            ("itjobswatch",),
+        ))
+        skill_rows = _rows_as_dicts(conn.execute(
+            """
+            SELECT skill_name, sum(job_count) AS job_count
+            FROM skill_associations
+            WHERE source = %s
+            GROUP BY skill_name
+            ORDER BY job_count DESC
+            LIMIT 10
+            """,
+            ("itjobswatch",),
+        ))
+
+    tracked_role_count = len(ROLE_SLUGS)
+    observed_role_count = len(observation_rows)
+
+    demand_rows = [
+        {"entity_name": r["entity_name"], "vacancy_count": r["vacancy_count"]}
+        for r in observation_rows if r["vacancy_count"] is not None
+    ]
+    pay_rows = [
+        {
+            # salary_median is NUMERIC -> Decimal from psycopg; JSONResponse's
+            # plain json.dumps doesn't know how to serialize Decimal (confirmed
+            # via a real TestClient call against production data, not assumed)
+            # -- cast to float here, same as every other numeric fact in this
+            # module already comes back as a plain int/float.
+            "entity_name": r["entity_name"], "salary_median": float(r["salary_median"]),
+            "salary_sample_size": r["salary_sample_size"],
+        }
+        for r in observation_rows if r["salary_median"] is not None
+    ]
+    total_vacancies_tracked = sum(
+        r["vacancy_count"] for r in observation_rows if r["vacancy_count"] is not None
+    )
+    roles_with_salary_data = sum(1 for r in observation_rows if r["salary_median"] is not None)
+    salary_coverage_share = (
+        (roles_with_salary_data / observed_role_count * 100) if observed_role_count else 0.0
+    )
+
+    sections = [
+        _section(
+            "market-benchmark-demand",
+            "Demand across tracked roles",
+            {"roles": demand_rows, "tracked_role_count": tracked_role_count, "observed_role_count": observed_role_count},
+            f"Covers {observed_role_count} of {tracked_role_count} hand-curated roles this "
+            "platform tracks on IT Jobs Watch (DATA_SOURCES.md §3b) — not the full market. A "
+            "tracked role with no bar yet simply hasn't been fetched on its latest scheduled run.",
+            ready=bool(demand_rows),
+        ),
+        _section(
+            "market-benchmark-coverage",
+            "Coverage and pay data availability",
+            {
+                "total_vacancies_tracked": total_vacancies_tracked,
+                "roles_with_salary_data": roles_with_salary_data,
+                "observed_role_count": observed_role_count,
+                "salary_coverage_share": salary_coverage_share,
+            },
+            f"Based on {observed_role_count} currently-observed role(s) out of "
+            f"{tracked_role_count} tracked.",
+            ready=observed_role_count > 0,
+        ),
+        _section(
+            "market-benchmark-pay",
+            "Typical pay by role",
+            {"roles": pay_rows},
+            "Median annual salary only — the real spread (10th-90th percentile) is wider than "
+            "this single figure per role suggests.",
+            ready=bool(pay_rows),
+        ),
+        _section(
+            "market-benchmark-skills",
+            "Skills most associated with these roles",
+            {"skills": [{"skill_name": r["skill_name"], "job_count": r["job_count"]} for r in skill_rows]},
+            "Summed across the hand-curated tracked-role set, not a market-wide skill ranking.",
+            ready=bool(skill_rows),
+        ),
+    ]
+
+    return {
+        "story_id": "market-benchmark",
+        "question": STORY_CATALOGUE[2]["question"],
+        "as_of": query_time.isoformat(),
+        "sections": sections,
+        "provenance": {
+            "sources": ["itjobswatch"],
+            "model_used": False,
+            "query_time": query_time.isoformat(),
+        },
+        "limitations": [
+            "Independent of this platform's own postings data — never blended or compared "
+            "against it.",
+            "Covers only a hand-curated set of roles, not the full market — see "
+            "DATA_SOURCES.md §3b.",
+            f"Licence: {licence.licence}. {licence.attribution_text}.",
+        ],
+        # Rendered visibly on the page itself, not only in the Reasoning Panel — the CC
+        # BY-NC-SA 4.0 licence's attribution condition requires credit wherever this data
+        # is shown (scraped-data-sources/api.md — Business Logic rule 6).
+        "attribution_text": licence.attribution_text,
+    }
+
+
 def get_story(story_id: str) -> dict[str, Any]:
     if story_id == "market-data-briefing":
         return build_market_data_briefing()
     if story_id == "employment-risk-overview":
         return build_employment_risk_overview()
+    if story_id == "market-benchmark":
+        return build_market_benchmark_story()
     raise KeyError(story_id)
 
 

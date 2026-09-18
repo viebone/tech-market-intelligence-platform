@@ -30,6 +30,10 @@ changes every downstream decision: urgency, salary targets, target companies, ge
 - Every employment-risk signal shown is traceable to its source (which registry/monitor, which
   record, when it was published) — matching the provenance bar `ai-reasoning-transparency.md`
   already sets for AI-derived answers
+- They can see how this platform's own hiring-demand read compares against an independent
+  third-party market benchmark (added 2026-09-18, once real benchmark data existed to show —
+  `changes/2026-09-18-market-benchmark-story.md`), with the benchmark's own source and licence
+  attributed plainly, never presented as if it were this platform's own data
 
 ## Out of scope
 - Application tracking or job pipeline management

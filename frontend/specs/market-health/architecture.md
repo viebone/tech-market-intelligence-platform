@@ -520,6 +520,17 @@ renders whatever `DataStoryMessage` returns for the active story, generically. T
 "Every story: the shared build" section anticipated, now exercised for the first time with a
 second catalogue entry.
 
+### Story 3: independent market benchmark (added 2026-09-18 — `changes/2026-09-18-market-benchmark-story.md`)
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `MarketBenchmarkStoryMessage` | Renders `POST /api/market-health/stories/market-benchmark`'s resolved sections: framing line (+ visible attribution text, rendered directly — not only in the Reasoning Panel) → `RankedBarList` (demand by role) → Hero Figure + Meter (total tracked vacancies + salary-data coverage) → `RankedBarList` (pay by role, currency-formatted) → `RankedBarList` (top skills, summed across roles). One movement, no year-on-year block (each tracked role has exactly one observed period so far). | `frontend/src/features/market-health/stories/MarketBenchmarkStoryMessage.tsx` |
+
+`DataStoryMessage` gains a third branch: `story.story_id === "market-benchmark"` delegates to
+`MarketBenchmarkStoryMessage` — same thin-router pattern Story 2 established, no other file
+changes. Reuses `RankedBarList`/`StoryBlock`/`Meter` — no new shared component needed, unlike
+Story 2's `WorldRiskMap` (this story's data has no geography dimension).
+
 ### Reference story: market data briefing
 
 The Task Panel item **"What we know about the market"** — `DataStoryMessage` from
