@@ -4,7 +4,7 @@ date: 2026-09-18
 trigger-type: user-feedback
 change-type: api-change
 outcome: job-data-source-flexibility
-status: in-progress
+status: complete
 ---
 
 # Change Request: Replace IT Jobs Watch regex extraction with LLM-based extraction
@@ -116,7 +116,7 @@ re-ingestion of already-cached pages before relying on it).
 - [x] Step 2: PM triage — mapped to `job-data-source-flexibility`, AI-involvement precedent recorded above
 - [x] Step 3: `/new-backend-spec` — updated `backend/specs/scraped-data-sources/api.md` in place: replaced regex-based Business Logic with LLM extraction design, added `scrape_extractions`/`ExtractionCache` to Data Models, added `extraction_model` column to `market_observations`/`skill_associations`, named `gemini-2.5-flash` explicitly under Tech Decisions
 - [x] Step 4: `/implement-backend` — built `scrape_extractions` table + `PostgresExtractionCacheStore` (`scraping_storage.py`), content-hash-gated extraction-skip logic (`scraping/itjobswatch.py::_extract_role_page`), the Gemini call (`_extract_via_llm`, `providers.gemini("gemini-2.5-flash")`), rewrote `scraping/itjobswatch.py`'s extraction end to end (regex → LLM), added `extraction_model` to both dataclasses/tables/inserts, updated `ingest_scraped_sources.py` to construct/pass the new store. Verified: 37/37 `backend/tests/test_scraping.py` + 4/4 `backend/tests/test_source_licences.py` pass; `admin_main.py`/`ingest_scraped_sources.py`/`scraping_storage.py`/`db.py` all import cleanly. **Not yet run against the real database or the real Gemini API** — same "verified by import, not yet run live" caveat every prior pass of this feature has carried honestly.
-- [ ] Step 5: Delete the 3+523 known-bad rows from production and re-run ingestion through the new path — **holding for explicit user confirmation before deleting real production rows** (see chat)
+- [x] Step 5: Deleted the 3 `market_observations` + 523 `skill_associations` known-bad rows from production (confirmed by count before deleting) and reset `scrape_ingestion_runs` for `itjobswatch` so the cadence gate allowed an immediate re-run, per explicit user confirmation. Re-ran `ingest_scraped_sources.py` for real — 3 real, paced, robots.txt-respecting requests to itjobswatch.co.uk and 3 real Gemini extraction calls. Result: 3/3 new observations, 90/90 new skill associations (30 per role — matches the page's real "Top 30 Co-Occurring Skills" heading exactly, versus the old broken run's 523, which included false matches from page furniture). Salary percentiles now populated correctly (mojibake gone); a genuinely-absent value (UX Designer's `salary_p90`) came back `null` rather than guessed. `extraction_model = "gemini-2.5-flash"` recorded on every row; `scrape_extractions` now holds all 3 pages' cached extractions keyed by content hash, so the next weekly run skips the LLM for any unchanged page.
 - [x] Step 6: `/polite-scraping-review` — re-checked all four constraints against the real current code: robots.txt/pacing and run cadence unchanged and still enforced; storage-level value dedupe unchanged; licence unchanged and still confirmed. The new `scrape_extractions` content-hash gate is an *additional*, independent dedupe layer on the extraction step itself, not a replacement for storage-level dedupe. `DATA_SOURCES.md` §3b updated accordingly.
 - [x] Step 7: Extended `backend/tests/test_scraping.py` — 8 new tests covering `_parse_extraction_response`, `_validate_extraction` (currency/percent coercion, missing→None, bad-skill filtering), and `_extract_role_page`'s content-hash dedupe (LLM called on miss, skipped on matching hash, called again on a changed hash)
 
@@ -130,3 +130,7 @@ re-ingestion of already-cached pages before relying on it).
 - 2026-09-18: Treated as internal data-processing (no experience spec) per the
   `classification.py`/`requirements.py` precedent, since `design/foundations.md` predates the
   "AI Involvement" field and no user/AI-facing surface exists over this data yet.
+- 2026-09-18: User confirmed the estimated cost (a fraction of a cent for the one-time 3-page
+  catch-up run, drawn from the existing prepaid classification/requirements Gemini project) and
+  explicitly approved deleting the known-bad production rows and re-running ingestion. Executed
+  and verified — see Step 5. Change request complete.
