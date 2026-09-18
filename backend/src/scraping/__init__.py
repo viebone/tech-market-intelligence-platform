@@ -14,7 +14,8 @@ difference.
 **Add a new scraped source — a recipe, no other file needs to change:**
   1. Create `scraping/{name}.py` implementing the `ScrapedSourceAdapter`
      protocol (base.py) — a `name: str`, a constructor accepting
-     `(robots_store, page_store)`, and a `fetch(self) -> ScrapeResult` method.
+     `(robots_store, page_store, extraction_store)`, and a
+     `fetch(self) -> ScrapeResult` method.
      Get the target's own scraping-permission terms in writing first — this
      mechanism exists because IT Jobs Watch explicitly granted it, not as a
      default right to scrape anything with no API.

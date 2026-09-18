@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import httpx  # noqa: E402
 
 from scraping.base import (  # noqa: E402
+    ExtractionCacheEntry,
     FetchedMarketObservation,
     FetchedSkillAssociation,
     PageCacheEntry,
@@ -33,6 +34,13 @@ from scraping.base import (  # noqa: E402
     ScraperConfigError,
 )
 import logging  # noqa: E402
+
+import scraping.itjobswatch as itjobswatch  # noqa: E402
+from scraping.itjobswatch import (  # noqa: E402
+    _extract_role_page,
+    _parse_extraction_response,
+    _validate_extraction,
+)
 
 import source_licences as licences_module  # noqa: E402
 from source_licences import (  # noqa: E402
@@ -86,6 +94,27 @@ class FakePageStore:
         self._entries[url] = PageCacheEntry(
             raw_body=entry.raw_body, content_hash=entry.content_hash, etag=entry.etag,
             last_modified=entry.last_modified, fetched_at=fetched_at, http_status=entry.http_status,
+        )
+
+
+class FakeExtractionStore:
+    """In-memory ExtractionCacheStore fake — same role as FakePageStore, for
+    the LLM-extraction dedupe layer (scraping/itjobswatch.py's
+    _extract_role_page, backend/specs/scraped-data-sources/api.md's
+    ExtractionCache)."""
+
+    def __init__(self):
+        self._entries: dict[str, tuple[ExtractionCacheEntry, str]] = {}
+        self.set_calls = 0
+
+    def get(self, url):
+        return self._entries.get(url)
+
+    def set(self, url, content_hash, extraction_json, model, extracted_at):
+        self.set_calls += 1
+        self._entries[url] = (
+            ExtractionCacheEntry(extraction_json=extraction_json, model=model, extracted_at=extracted_at),
+            content_hash,
         )
 
 
@@ -500,6 +529,135 @@ def test_association_unchanged_detects_identical_and_changed_values():
 
     previous_changed = {"job_count": a.job_count, "percentage": 10.0, "rank": a.rank}
     assert not _association_unchanged(a, previous_changed)
+
+
+# ---------------------------------------------------------------------------
+# LLM-based extraction (scraping/itjobswatch.py, revised 2026-09-18 —
+# changes/2026-09-18-itjobswatch-llm-extraction.md). No real Gemini call in
+# any of these — _extract_via_llm is monkeypatched to a canned async
+# function, same "test the parts that don't need a live network/database"
+# scope as the rest of this file.
+# ---------------------------------------------------------------------------
+
+def test_parse_extraction_response_strips_fences_and_parses_json():
+    raw = '```json\n{"rank": 468, "skills": []}\n```'
+    assert _parse_extraction_response(raw) == {"rank": 468, "skills": []}
+
+
+def test_parse_extraction_response_malformed_returns_empty_dict():
+    assert _parse_extraction_response("not json at all") == {}
+
+
+def test_validate_extraction_coerces_currency_and_percent_strings():
+    # The LLM might return "£46,250" or "0.31%" verbatim despite the prompt
+    # asking for bare numbers — _coerce_number must handle either shape,
+    # never crash or silently drop a real value.
+    entry = {
+        "rank": 468, "vacancy_count": "358", "vacancy_share": "0.31%",
+        "salary_p10": "£46,250", "skills": [],
+    }
+    result = _validate_extraction(entry)
+    assert result["rank"] == 468
+    assert result["vacancy_count"] == 358
+    assert result["vacancy_share"] == 0.31
+    assert result["salary_p10"] == 46250.0
+
+
+def test_validate_extraction_missing_fields_come_back_none_not_guessed():
+    result = _validate_extraction({"rank": 468})
+    assert result["rank"] == 468
+    assert result["vacancy_count"] is None
+    assert result["salary_median"] is None
+    assert result["skills"] == []
+
+
+def test_validate_extraction_skips_a_skill_missing_a_name_or_bad_percentage():
+    entry = {"skills": [
+        {"name": "Roadmaps", "percentage": 48.88, "job_count": 175, "rank": 1},
+        {"percentage": 45.25, "job_count": 162, "rank": 2},  # no name — dropped
+        {"name": "Agile", "percentage": 150, "job_count": 116, "rank": 3},  # bad percentage — dropped
+    ]}
+    result = _validate_extraction(entry)
+    assert len(result["skills"]) == 1
+    assert result["skills"][0] == {"name": "Roadmaps", "percentage": 48.88, "job_count": 175, "rank": 1}
+
+
+class _PatchedExtractViaLlm:
+    """Manual monkeypatch context — no pytest in this repo yet (see module
+    docstring), so this file's tests run as plain functions with no fixture
+    injection. Swaps itjobswatch._extract_via_llm for the duration of a
+    `with` block and restores it afterward, success or failure."""
+
+    def __init__(self, fake):
+        self._fake = fake
+        self._original = None
+
+    def __enter__(self):
+        self._original = itjobswatch._extract_via_llm
+        itjobswatch._extract_via_llm = self._fake
+        return self
+
+    def __exit__(self, *exc):
+        itjobswatch._extract_via_llm = self._original
+
+
+async def _fake_extract_via_llm_ok(text: str) -> dict:
+    return {"rank": 468, "vacancy_count": 358, "skills": []}
+
+
+def test_extract_role_page_calls_llm_on_a_cache_miss():
+    store = FakeExtractionStore()
+    with _PatchedExtractViaLlm(_fake_extract_via_llm_ok):
+        parsed, model = _extract_role_page("<html>hi</html>", "https://example.org/x", "hash-1", store)
+
+    assert parsed.rank == 468
+    assert parsed.vacancy_count == 358
+    assert model == itjobswatch.EXTRACTION_MODEL
+    assert store.set_calls == 1, "a cache miss must call the LLM and store the result"
+
+
+def test_extract_role_page_reuses_cache_on_matching_content_hash():
+    store = FakeExtractionStore()
+    calls = {"n": 0}
+
+    async def _counting_llm(text: str) -> dict:
+        calls["n"] += 1
+        return {"rank": 468, "vacancy_count": 358, "skills": []}
+
+    url = "https://example.org/x"
+    with _PatchedExtractViaLlm(_counting_llm):
+        _extract_role_page("<html>hi</html>", url, "hash-1", store)
+        assert calls["n"] == 1
+
+        # Same content_hash — a real re-run of an unchanged page must NOT
+        # call the LLM again (Business Logic rule 11, the actual
+        # cost-saving this revision exists for).
+        parsed, model = _extract_role_page("<html>hi</html>", url, "hash-1", store)
+
+    assert calls["n"] == 1, "a matching content_hash must be served from ExtractionCache, no LLM call"
+    assert parsed.rank == 468
+    assert model == itjobswatch.EXTRACTION_MODEL
+
+
+def test_extract_role_page_calls_llm_again_when_content_hash_changed():
+    store = FakeExtractionStore()
+    calls = {"n": 0}
+
+    async def _counting_llm(text: str) -> dict:
+        calls["n"] += 1
+        return {"rank": 468 + calls["n"], "vacancy_count": 358, "skills": []}
+
+    url = "https://example.org/x"
+    with _PatchedExtractViaLlm(_counting_llm):
+        _extract_role_page("<html>old</html>", url, "hash-1", store)
+        assert calls["n"] == 1
+
+        # A changed content_hash (the page actually changed) must trigger a
+        # fresh LLM call, not reuse the stale extraction.
+        parsed, _ = _extract_role_page("<html>new</html>", url, "hash-2", store)
+
+    assert calls["n"] == 2, "a changed content_hash must trigger a fresh LLM call"
+    assert parsed.rank == 470
 
 
 if __name__ == "__main__":

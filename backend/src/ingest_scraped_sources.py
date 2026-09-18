@@ -25,11 +25,12 @@ API calls — robots.txt, page caching, pacing floor, mandatory contact
 identification), and its own permission-conditioned pacing and cadence that
 must never be pressured by another pipeline's schedule.
 
-*** Real IT Jobs Watch page structure is NOT verified — see
-scraping/itjobswatch.py's module docstring. Running this script today will
-not silently fabricate data (every unmatched field stores None, never a
-guess), but it also won't reliably extract real figures until the parsing
-in that module is checked against the live site. ***
+*** Extraction is LLM-based, not regex (revised 2026-09-18 — see
+scraping/itjobswatch.py's module docstring and
+changes/2026-09-18-itjobswatch-llm-extraction.md). Running this script makes
+a real Gemini call per page that isn't already cached in scrape_extractions
+by content hash — never a fabricated value for a field the model doesn't
+return. ***
 
 Requires SCRAPER_CONTACT to be set to a real contact (backend/.env.example)
 — ItJobsWatchAdapter's construction raises ScraperConfigError immediately
@@ -60,6 +61,7 @@ from scraping import (
     is_source_usable,
 )
 from scraping_storage import (
+    PostgresExtractionCacheStore,
     PostgresPageCacheStore,
     PostgresRobotsCacheStore,
     insert_market_observations,
@@ -78,7 +80,7 @@ def _empty_result(source: str, error: str | None) -> dict:
             "skipped_not_due": False}
 
 
-def ingest_adapter(adapter_cls, robots_store, page_store) -> dict:
+def ingest_adapter(adapter_cls, robots_store, page_store, extraction_store) -> dict:
     """
     Construct, fetch, and store one adapter's results. Never raises — an
     adapter that fails (including refusing to construct because
@@ -124,7 +126,7 @@ def ingest_adapter(adapter_cls, robots_store, page_store) -> dict:
 
     now = datetime.now(timezone.utc)
     try:
-        adapter = adapter_cls(robots_store=robots_store, page_store=page_store)
+        adapter = adapter_cls(robots_store=robots_store, page_store=page_store, extraction_store=extraction_store)
         result_data = adapter.fetch()
     except ScraperConfigError as exc:
         logger.error("ingest_scraped_sources[%s]: refused to run: %s", name, exc)
@@ -166,8 +168,9 @@ def run() -> None:
         )
     robots_store = PostgresRobotsCacheStore()
     page_store = PostgresPageCacheStore()
+    extraction_store = PostgresExtractionCacheStore()
     results = [
-        ingest_adapter(adapter_cls, robots_store, page_store)
+        ingest_adapter(adapter_cls, robots_store, page_store, extraction_store)
         for adapter_cls in ALL_SCRAPED_SOURCE_ADAPTERS
     ]
 

@@ -4,6 +4,7 @@ outcome: job-data-source-flexibility
 directive: low
 status: implemented
 created: 2026-09-16
+updated: 2026-09-18
 ---
 
 **Implementation note (2026-09-16)**: built per `/implement-backend`, verified by import-level
@@ -20,6 +21,18 @@ made a real request. Before trusting this with real data: run `ingest_scraped_so
 against a real Postgres to confirm the schema migrates cleanly, and confirm the actual
 `PoliteScraper` path (robots.txt check, real `SCRAPER_CONTACT`, pacing) against the live site at
 least once.
+
+**Revision note (2026-09-18)** — `changes/2026-09-18-itjobswatch-llm-extraction.md`: the real
+first production run (2026-09-16, 3 pages, real `PoliteScraper` requests, robots.txt respected)
+confirmed the regex-based extraction above was wrong, not just unverified — the real page is a
+3-column historical comparison table (`"{label} {current} {2025} {2024}"`, not
+`"{number} {label}"`), the currency symbol wasn't decoding correctly, and the skill list is
+`"{rank} {job_count} ({pct}%) {name}"`, not `"{name} ({pct}%)"`. Regex extraction is **replaced
+by LLM-based extraction** (Gemini, via the existing `llm/` provider abstraction) — see the
+rewritten "IT Jobs Watch adapter" Business Logic subsection and the new `scrape_extractions`
+table below. The 3 `market_observations` + 523 `skill_associations` rows that first run inserted
+are known-wrong and are deleted once this revision is live (see that change request's Execution
+Plan, Step 5).
 
 # Scraped Data Sources — Backend Architecture Spec
 
@@ -74,6 +87,36 @@ not just a comment in the code.
 | `last_modified` | `str \| None` | Same idea, `If-Modified-Since`. |
 | `fetched_at` | `datetime` | Governs `min_refetch_interval` — a page fetched within that window is served from this row with **no network call at all**, conditional or otherwise (Business Logic, below). |
 | `http_status` | `int` | The status the last real fetch returned. |
+
+#### ExtractionCache (`scrape_extractions` table) — added 2026-09-18, LLM extraction dedupe
+The cost-saving layer for LLM-based extraction (`changes/2026-09-18-itjobswatch-llm-extraction.md`)
+— mirrors what `PageCache.content_hash` already does for the fetch layer, one level up: don't
+pay for an LLM call over a page whose content hasn't changed since it was last extracted.
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | `str` (PK) | The page this extraction was run against — same key as `PageCache.url`. |
+| `content_hash` | `str` | The `PageCache.content_hash` this extraction was run against. An adapter checks this against the *current* page's `content_hash` before calling the LLM at all — a match means the page is byte-identical to last time, so the stored `extraction_json` is reused with **zero LLM calls**, not just zero network calls. |
+| `extraction_json` | `jsonb` | The LLM's structured output, verbatim — kept as its own provenance record: if an extraction ever looks wrong, this is what to inspect first, without re-fetching or re-calling the LLM. |
+| `model` | `str` | Which model produced this extraction (e.g. `"gemini-2.5-flash"`) — travels onto every row built from it via `extraction_model` (Part 2, below), the same "provenance travels with the data" discipline as `licence`/`fetched_at`. |
+| `extracted_at` | `datetime` | When the LLM call happened (or, on a cache hit, when the reused extraction was *originally* made — not bumped on a hit, since nothing new was extracted). |
+
+**This is the real answer to "how do we not go through the same data once and again":** the
+adapter's flow per page is fetch (already deduped by `PageCache`, Business Logic rule 4) →
+compare `content_hash` against `ExtractionCache` → LLM call only on a miss or a changed hash →
+store/update `ExtractionCache` → build `FetchedMarketObservation`/`FetchedSkillAssociation` from
+`extraction_json` (cache hit or miss, same code path either way) → hand off to the existing
+value-level dedupe at insert time (Business Logic rule 9, unchanged). Three independent dedupe
+layers, each answering a different question: page fetch (did the network need to be touched?),
+extraction (did the LLM need to be touched?), storage insert (did the database need a new row?).
+
+**Deliberately not the real async Gemini Batch API** (`llm/gemini.py`'s `GeminiBatchAdapter`,
+already used by `requirements.py` for its own workload). Batch APIs trade higher latency
+(often hours) for lower per-call cost by amortizing overhead across many concurrent requests —
+neither side of that trade helps here: this source fetches 3 pages/week, so there's no volume to
+amortize across, and the `content_hash` gate above already eliminates the redundant calls that
+would otherwise be the cost problem. Revisit only if the number of tracked pages grows by an
+order of magnitude.
 
 #### FetchedScrapedFact (in-memory dataclass, not a table — the scraping-side counterpart to `FetchedPosting`)
 What a scraping adapter hands back to its ingestion script, before storage. Unlike
@@ -231,6 +274,7 @@ side of the analysis.
 | `licence` | `str` | Mandatory (Part 1) — the confirmed specific CC variant. |
 | `licence_confirmed` | `bool` | Mandatory (Part 1, added 2026-09-16) — copied from `SourceLicence.confirmed` at scrape time, so the "always flag if unconfirmed" caveat travels with the row itself, not just the code registry. |
 | `fetched_at` | `datetime` | Mandatory (Part 1). |
+| `extraction_model` | `str \| None` | Added 2026-09-18 — which model turned the raw page into these field values (e.g. `"gemini-2.5-flash"`), copied from `ExtractionCache.model`. `NULL` only for rows that predate this revision (none should remain once the cleanup step in `changes/2026-09-18-itjobswatch-llm-extraction.md` runs). |
 | `raw_response` | `text` | The scraped fragment, verbatim. |
 | `created_at` | `datetime` | Row insert timestamp. |
 
@@ -252,6 +296,7 @@ this platform's own existing skill extraction from job descriptions.
 | `percentage` | `numeric \| None` | `job_count` as a share of all vacancies for this role (e.g. `45.92`). |
 | `rank` | `int \| None` | This skill's rank among all skills associated with this role. |
 | `source_url` / `licence` / `licence_confirmed` / `fetched_at` | mandatory (Part 1) | Same as `MarketObservation`. |
+| `extraction_model` | `str \| None` | Added 2026-09-18 — same as `MarketObservation.extraction_model`. |
 | `raw_response` | `text` | Verbatim. |
 | `created_at` | `datetime` | Row insert timestamp. |
 
@@ -340,13 +385,56 @@ oversight.
     that it isn't cleared for use; the actual exclusion is required of any future function that
     reads this data back out to use it. `TMIP_COMMERCIAL_MODE` is informational only — it never
     flips `rejected` on its own.
+11. **Extraction is deduped independently of the fetch, via content hash.** Added 2026-09-18
+    (`ExtractionCache`, Data Models, above). Before turning a fetched page into structured
+    fields, an adapter checks `scrape_extractions` for that `url`; if a row exists and its
+    `content_hash` matches the page's current `content_hash`, the stored `extraction_json` is
+    reused and no LLM call is made. Only a page whose content actually changed since the last
+    extraction triggers a new LLM call. This is on top of, not instead of, rule 4's page-fetch
+    cache — a page can be a fetch-cache hit (served from `PageCache`, no network call) and still
+    correctly skip extraction too (served from `ExtractionCache`, no LLM call), or a page can be
+    freshly fetched (network call happened) but still be an extraction-cache hit if its content
+    turned out byte-identical to what was already stored.
 
-### IT Jobs Watch adapter — what to extract, priority order, and what's confirmed vs. still open
+### IT Jobs Watch adapter — LLM-based extraction (revised 2026-09-18, replacing regex)
 
-**Confirmed from the granted-permission email** (`research/2026-09-16-itjobswatch-scraping-permission.md`):
-the five rules above are binding conditions of the permission itself, not just good practice —
-violating them risks the permission being withdrawn, which this adapter's own refusal-to-run
-check (rule 5) is partly designed to guard against.
+**Why regex extraction was replaced.** The first real production run (2026-09-16 — real
+`PoliteScraper` requests, robots.txt respected, 3 pages fetched) surfaced confirmed-wrong
+extracted values once checked against the real cached HTML: the historical comparison table is
+3 columns (`"{label} {current} {same-period-2025} {same-period-2024}"`), not the assumed
+`"{number} {label}"`; the currency symbol wasn't decoding as `£`; and the skills list is
+`"{rank} {job_count} ({pct}%) {name}"`, not the assumed `"{name} ({pct}%)"`. Concretely: `rank`/
+`vacancy_count` picked up numbers from adjacent table cells, all 5 salary percentiles landed
+`NULL`, and every `skill_name` was garbled (e.g. `"Roadmaps 2 162"` instead of `"Roadmaps"`).
+Real page structure kept surprising a hand-written regex; an LLM reading the page's plain text is
+materially less brittle to exactly this kind of surprise, and was the direction the outcome owner
+explicitly leaned toward given it also solves the cost/dedupe question below.
+
+**What's extracted, and how:**
+1. The already-fetched, already-cached page (`PageCache.raw_body`, HTML — unchanged, still
+   governed by rules 1-7 above) is reduced to plain text via BeautifulSoup's `get_text()` — same
+   library already a dependency here, now used for text extraction instead of feeding regexes
+   directly. This also resolves the currency-mojibake issue: BeautifulSoup decodes HTML entities
+   (`&pound;` → `£`) itself, so the LLM sees a correctly-decoded `£` in the text it reads, not a
+   raw encoding bug.
+2. The plain text (not raw HTML — cheaper, and removes markup noise that isn't informative to
+   the extraction) is sent to `providers.gemini("gemini-2.5-flash")` (Tech Decisions) with a
+   system instruction asking for the same structured shape `FetchedMarketObservation`/
+   `FetchedSkillAssociation` already need: `rank`, `rank_yoy_change`, `vacancy_count`,
+   `vacancy_share`, `salary_p10`/`p25`/`median`/`p75`/`p90`, `salary_sample_size`,
+   `salary_yoy_change`, and a `skills` array of `{rank, job_count, percentage, name}` — strict
+   JSON, no prose, matching this codebase's existing `classification.py` prompt/parse idiom
+   (`_build_prompt` / `_parse_response`: strip markdown fences, `json.loads`, fields the model
+   omits or that fail validation come back `None` — never guessed or coerced, same "unmatched
+   means NULL, not a made-up value" discipline the regex version already followed).
+3. Before step 2 runs at all, `ExtractionCache` is checked by `(url, content_hash)` (Business
+   Logic rule 11) — a hit skips the LLM call entirely and reuses the stored `extraction_json`.
+4. The LLM's validated JSON is what builds `FetchedMarketObservation`/`FetchedSkillAssociation`
+   — the same dataclasses, same downstream storage/dedupe (rule 9), same mandatory attribution
+   fields (rule 6) as before. Only the step that turns page text into field values changed.
+
+**Explicitly not the real Gemini Batch API** — see `ExtractionCache`'s own note in Data Models
+for why (3 pages/week has no volume to batch; the `content_hash` gate is the actual saving).
 
 **Priority order for the first implementation cut** (per
 `research/2026-09-16-itjobswatch-data-model-analysis.md`'s own explicit ranking — don't build
@@ -361,22 +449,19 @@ Contractor day-rate benchmarking, `live_jobs`, and role-taxonomy-variant reconci
 model above but lower priority — the adapter can leave them `NULL` in a first pass without that
 being a gap worth blocking on.
 
-**Partially confirmed 2026-09-16** (`research/2026-09-16-itjobswatch-real-page-verification.md`)
-— the real URL pattern (`/jobs/uk/{title}.do`, spaces as `%20`; the original `/jobtitles/{slug}.aspx`
-guess was wrong, exactly as this spec anticipated) and real page phrasing for demand/salary/skill
-figures, checked against the live Product Owner page via one approved WebFetch request.
-`scraping/itjobswatch.py`'s URL template and regex patterns were rewritten against this. **Still
-not fully verified**: this came from an LLM-summarized reading of the page, not raw HTML
-inspected byte-for-byte — the exact markup/tag structure remains inferred. **Still not
-confirmed at all**: how much historical depth beyond the current 6-month window is actually
-reachable — the source claims data back to 2004, but what's shown on a current role page may
-only be a same-period-last-year comparison, not a full 22-year series.
+**Confirmed 2026-09-16/18, against real cached HTML (`scrape_page_cache.raw_body`), not a
+paraphrase**: the real URL pattern (`/jobs/uk/{title}.do`, spaces as `%20`), the real 3-column
+historical table structure, the real `"{rank} {job_count} ({pct}%) {name}"` skills format, and
+that the page lists exactly 30 co-occurring skills ("Top 30 Co-Occurring Skills & Capabilities").
+**Still not confirmed**: how much historical depth beyond the current 6-month rolling window is
+actually reachable on this same page shape — the source claims data back to 2004, but what's
+shown here is only a 3-period (current/2025/2024) comparison, not a full series.
 
-**A process note on how this was checked, for the record**: the same verification pass also
+**A process note on how the 2026-09-16 check was done, for the record**: that verification pass
 included an uncontrolled `curl` request outside the compliant `PoliteScraper` path (no prior
-`robots.txt` check, a placeholder identifier) — disclosed in full in the research file above.
-Not repeated; the actual scraper (`PoliteScraper`) was never used to make this check and remains
-untouched by it.
+`robots.txt` check, a placeholder identifier) — disclosed in full in
+`research/2026-09-16-itjobswatch-real-page-verification.md`. Not repeated since; the actual
+scraper (`PoliteScraper`) was never used to make either check and remains untouched by it.
 - ~~The specific CC licence variant~~ — **confirmed 2026-09-16**, read directly off
   itjobswatch.co.uk's own copyright page: **CC BY-NC-SA 4.0**, attribution wording "Source: IT
   Jobs Watch," with vacancy listings and third-party material explicitly excluded (not relevant
@@ -438,10 +523,16 @@ framing (`employment_market: permanent | contract`).
   the explicit permission described in `research/2026-09-16-itjobswatch-scraping-permission.md`,
   bound by the five rules above.
 - `httpx` — already a dependency; reused for fetching (same client library `PacedFetcher` uses).
-- **New dependency**: an HTML parser (`beautifulsoup4` or `lxml`) — none of the three existing
-  ATS adapters need one (all three are JSON APIs); this is scraping's first HTML-parsing need in
-  this codebase. Pick whichever `/implement-backend` finds gives the cleaner extraction once the
-  real page structure is known.
+- `beautifulsoup4` + `lxml` — already a dependency (added 2026-09-16). Used for plain-text
+  extraction (`get_text()`) since the 2026-09-18 revision, not just as a stepping-stone to regex.
+- **Gemini, `gemini-2.5-flash`, via the existing `backend/src/llm/` provider abstraction**
+  (`providers.gemini("gemini-2.5-flash")`) — added 2026-09-18. Same model
+  `classification.py` already uses for the same kind of job (turn messy real-world text into
+  validated structured fields); reused rather than a new consumer/key, given the tiny added
+  volume (3 pages/week). Uses the classification project's existing key
+  (`GEMINI_API_KEY_CLASSIFICATION`) — no new Gemini project or key needed at this volume; revisit
+  if this source's page count grows enough to meaningfully compete with the classification
+  pipeline's own quota.
 - Python stdlib `urllib.robotparser` — `robots.txt` parsing, no new dependency.
 
 ---
@@ -521,6 +612,30 @@ locally. An unregistered source is a hard error at adapter-construction or first
 "refuse rather than proceed with a guess" discipline `SCRAPER_CONTACT`'s check already
 established for identification, now applied to licensing too.
 
-**Migration** — five new tables via the existing `CREATE TABLE IF NOT EXISTS` schema-on-startup
+**Migration** — six tables via the existing `CREATE TABLE IF NOT EXISTS` schema-on-startup
 pattern already used for every other table in `db.py`: `scrape_robots_cache`,
-`scrape_page_cache`, `market_observations`, `skill_associations`, `scrape_ingestion_runs`.
+`scrape_page_cache`, `market_observations`, `skill_associations`, `scrape_ingestion_runs`, and
+(added 2026-09-18) `scrape_extractions`. `extraction_model` is added to `market_observations`
+and `skill_associations` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, same pattern already
+used elsewhere in `db.py` for a column added after a table's first creation.
+
+**LLM extraction — reuse `classification.py`'s prompt/parse idiom, don't invent a new one.**
+Added 2026-09-18. `SYSTEM_INSTRUCTION`/`_build_prompt`/`_parse_response` in `classification.py`
+already establish this codebase's pattern for "ask Gemini for strict JSON, strip markdown
+fences, `json.loads`, treat anything that fails validation as `None` rather than guessing" — the
+new `scraping/itjobswatch.py` extraction step follows the same shape (its own system instruction
+and prompt builder, scoped to this adapter's fields) rather than a different JSON-extraction
+convention. No retry/backoff loop is added to match `classification.py`'s
+`_complete_with_retry` — at 3 pages/week, a page that fails extraction this run is simply
+skipped (rule 7, fault isolation) and picked up cleanly next week; the retry complexity
+`classification.py` needs to protect a daily batch budget doesn't apply here.
+
+**Known follow-up, not blocking this revision**: the 3 `market_observations` + 523
+`skill_associations` rows the 2026-09-16 run inserted under the regex extraction are confirmed
+wrong and must be deleted once this revision is implemented and verified, then the same 3 pages
+re-ingested through the new path — see `changes/2026-09-18-itjobswatch-llm-extraction.md`,
+Execution Plan Step 5. `IngestionRun.last_run_at`/`MIN_RUN_INTERVAL_DAYS` (rule 8) is keyed on
+successful runs regardless of what got extracted, so re-ingesting immediately after a code fix
+needs either waiting out the 7-day window or a deliberate one-time manual reset of that row —
+call this out explicitly when actually running the cleanup, don't silently bypass the cadence
+guard in code to do it.

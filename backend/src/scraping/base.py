@@ -146,6 +146,32 @@ class PageCacheStore(Protocol):
 class PageFetchResult:
     raw_body: str
     from_cache: bool  # True if served from PageCacheStore with no network call at all
+    content_hash: str  # added 2026-09-18 — lets a caller check ExtractionCache without
+                        # re-hashing raw_body itself; always populated, cache hit or miss
+
+
+@dataclass
+class ExtractionCacheEntry:
+    extraction_json: dict
+    model: str
+    extracted_at: datetime
+
+
+class ExtractionCacheStore(Protocol):
+    """
+    Added 2026-09-18 (changes/2026-09-18-itjobswatch-llm-extraction.md) — the
+    LLM-extraction-dedupe counterpart to PageCacheStore. Keyed on url; a
+    caller compares the entry's own content_hash (not carried on this
+    protocol's get() return value directly — see scraping_storage.py's
+    concrete implementation) against the current page's content_hash before
+    deciding whether an LLM call is needed at all.
+    """
+    def get(self, url: str) -> tuple[ExtractionCacheEntry, str] | None:
+        """Returns (entry, content_hash_this_extraction_was_run_against), or
+        None if nothing is cached for this url yet."""
+        ...
+
+    def set(self, url: str, content_hash: str, extraction_json: dict, model: str, extracted_at: datetime) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +292,7 @@ class PoliteScraper:
         now = datetime.now(timezone.utc)
         if cached is not None and (now - cached.fetched_at) < self._min_refetch_interval:
             # Rule 4 — fresh enough, no network call at all, not even conditional.
-            return PageFetchResult(raw_body=cached.raw_body, from_cache=True)
+            return PageFetchResult(raw_body=cached.raw_body, from_cache=True, content_hash=cached.content_hash)
 
         headers = {"User-Agent": self._user_agent}
         if cached is not None:
@@ -282,7 +308,7 @@ class PoliteScraper:
                 response = client.get(url, headers=headers)
                 if response.status_code == 304 and cached is not None:
                     self._page_store.touch(url, now)
-                    return PageFetchResult(raw_body=cached.raw_body, from_cache=True)
+                    return PageFetchResult(raw_body=cached.raw_body, from_cache=True, content_hash=cached.content_hash)
                 response.raise_for_status()
                 raw_body = response.text
                 content_hash = hashlib.sha256(raw_body.encode("utf-8")).hexdigest()
@@ -291,7 +317,7 @@ class PoliteScraper:
                     response.headers.get("ETag"), response.headers.get("Last-Modified"),
                     now, response.status_code,
                 )
-                return PageFetchResult(raw_body=raw_body, from_cache=False)
+                return PageFetchResult(raw_body=raw_body, from_cache=False, content_hash=content_hash)
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status not in RETRYABLE_STATUS_CODES:
@@ -352,6 +378,7 @@ class FetchedMarketObservation:
     salary_unit: str | None = None       # "GBP/year" | "GBP/day" — see spec, never inferred silently
     salary_yoy_change: float | None = None
     taxonomy_match: str | None = None    # reserved — reconciliation deferred, see spec
+    extraction_model: str | None = None  # added 2026-09-18 — which model produced these field values, see ExtractionCache
     raw_response: dict = field(default_factory=dict)
 
 
@@ -372,6 +399,7 @@ class FetchedSkillAssociation:
     rank: int | None = None
     role_taxonomy_match: str | None = None
     skill_taxonomy_match: str | None = None
+    extraction_model: str | None = None  # added 2026-09-18 — see FetchedMarketObservation
     raw_response: dict = field(default_factory=dict)
 
 

@@ -545,6 +545,27 @@ CREATE TABLE IF NOT EXISTS scrape_ingestion_runs (
     source        TEXT PRIMARY KEY,
     last_run_at   TIMESTAMPTZ NOT NULL
 );
+
+-- LLM-extraction dedupe (added 2026-09-18 — Business Logic rule 11,
+-- changes/2026-09-18-itjobswatch-llm-extraction.md): don't pay for an LLM
+-- call over a page whose content hasn't changed since it was last
+-- extracted. Keyed on url; a caller compares content_hash against the
+-- current PageCache row's content_hash before deciding an LLM call is
+-- needed at all.
+CREATE TABLE IF NOT EXISTS scrape_extractions (
+    url               TEXT PRIMARY KEY,
+    content_hash      TEXT NOT NULL,
+    extraction_json   JSONB NOT NULL,
+    model             TEXT NOT NULL,
+    extracted_at      TIMESTAMPTZ NOT NULL
+);
+
+-- Provenance: which model actually produced a stored row's field values
+-- (added 2026-09-18, replacing regex extraction — see
+-- changes/2026-09-18-itjobswatch-llm-extraction.md). ALTER, not just
+-- CREATE, since both tables already existed.
+ALTER TABLE market_observations ADD COLUMN IF NOT EXISTS extraction_model TEXT;
+ALTER TABLE skill_associations ADD COLUMN IF NOT EXISTS extraction_model TEXT;
 """
 
 

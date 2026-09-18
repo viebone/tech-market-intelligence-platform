@@ -192,19 +192,32 @@ not a member of either. IT Jobs Watch is the first adapter; a future benchmark s
 is a new `source` value in the same two tables, not a new table.
 
 **Good-practice review (`polite-scraping-review` skill, run 2026-09-16, licence updated same day
-after real research against the live site) — checked against the real code, not assumed:**
+after real research against the live site; re-run 2026-09-18 after replacing regex extraction
+with LLM-based extraction — `changes/2026-09-18-itjobswatch-llm-extraction.md`) — checked against
+the real code, not assumed:**
 
 | Source | Run cadence (enforced how) | `robots.txt`/pacing | New-only fetching | Licence (confirmed?) |
 |---|---|---|---|---|
-| `itjobswatch` | 7 days — checked in `ingest_scraped_sources.ingest_adapter()` via `scraping_storage.is_due()` against `scrape_ingestion_runs`, *before* the adapter is even constructed; survives the script being invoked more often than intended | ✅ `scraping/base.py`'s `PoliteScraper._check_robots()` + `_pace()`, called on every `get()` | ✅ `scraping_storage.insert_market_observations()` / `insert_skill_associations()` compare against the most recently stored row per entity and skip an unchanged one, even under a new id | **CC BY-NC-SA 4.0 — ✅ confirmed** 2026-09-16 (read directly off itjobswatch.co.uk's own copyright page — `source_licences.py`'s `SOURCE_LICENCES["itjobswatch"].confirmed = True`) |
+| `itjobswatch` | 7 days — checked in `ingest_scraped_sources.ingest_adapter()` via `scraping_storage.is_due()` against `scrape_ingestion_runs`, *before* the adapter is even constructed; survives the script being invoked more often than intended | ✅ `scraping/base.py`'s `PoliteScraper._check_robots()` + `_pace()`, called on every `get()` — **unchanged by the 2026-09-18 revision** | ✅ `scraping_storage.insert_market_observations()` / `insert_skill_associations()` compare against the most recently stored row per entity and skip an unchanged one, even under a new id — **unchanged by the 2026-09-18 revision**. Plus a new, independent second dedupe layer above storage: `scrape_extractions` (`scraping/itjobswatch.py::_extract_role_page`) skips the LLM call itself when a page's `content_hash` matches what it was last extracted against — this is a cost/re-work guard on the *extraction* step, not a substitute for the storage-level value dedupe, which still runs unchanged after it | **CC BY-NC-SA 4.0 — ✅ confirmed** 2026-09-16 (read directly off itjobswatch.co.uk's own copyright page — `source_licences.py`'s `SOURCE_LICENCES["itjobswatch"].confirmed = True`) — **unchanged by the 2026-09-18 revision** |
 
 **Not a clean sweep, though — the confirmation itself surfaced a real, separate flag**: the "NC"
 (NonCommercial) clause. This product has a Premium paid tier. Nothing today violates this
 (this data isn't surfaced anywhere yet, on the Free tier or the Premium one) — but before this
 data is ever exposed through anything monetized, that clause needs its own explicit resolution
-first. Also unresolved, unrelated to licensing: the HTML parser is still unverified against the
-real site (`scraping/itjobswatch.py`'s own docstring) — this data isn't ready to be trusted for
-real figures yet regardless of the licence being settled.
+first.
+
+**2026-09-18 revision — why extraction changed, and what's still open.** The first real
+production run (2026-09-16) surfaced confirmed-wrong extracted values once checked against the
+real cached HTML — not just unverified ones (the historical table is 3 columns, the currency
+symbol wasn't decoding, the skills list order was reversed). Regex extraction is replaced by
+LLM-based extraction (Gemini `gemini-2.5-flash`, via the existing `llm/` provider abstraction) —
+see `backend/specs/scraped-data-sources/api.md`'s "IT Jobs Watch adapter" Business Logic
+subsection. Verified by 37 passing unit tests (`backend/tests/test_scraping.py`, up from 29,
+covering the new extraction validation and the `scrape_extractions` content-hash dedupe) — **not
+yet run against a live Postgres or the real Gemini API**. The 3 `market_observations` + 523
+`skill_associations` rows the 2026-09-16 run stored under the old regex extraction are
+confirmed wrong and are deleted once this revision is verified live (pending explicit
+confirmation before deleting real production rows — see the change request's Execution Plan).
 
 **All four scraped rows now also carry `licence_confirmed: bool`** (added 2026-09-16, mandatory
 field, mirrors `licence` itself) — so an unconfirmed source's caveat travels with the data into
@@ -216,7 +229,7 @@ flagged, never silently blocked. See `data-legibility`'s Provenance section (ext
 
 | Adapter | `name` | Target | Status |
 |---|---|---|---|
-| IT Jobs Watch | `itjobswatch` | itjobswatch.co.uk — UK IT demand rank, vacancy share, salary percentiles, regional breakdowns, weighted role↔skill associations, no API, scraping explicitly permitted (CC-licensed content) | 🟡 Code shipped 2026-09-16 (`scraping/itjobswatch.py`), verified by import-level tests, a mocked HTTP transport, **and — same day, later — the real URL pattern and page phrasing, confirmed via one approved WebFetch request** (`research/2026-09-16-itjobswatch-real-page-verification.md`): the guessed URL (`/jobtitles/{slug}.aspx`) was wrong, corrected to the real `/jobs/uk/{title}.do`; parsing regexes rewritten against real confirmed wording. **The actual compliant `PoliteScraper` path has still never made a real request** — that check used WebFetch, not the real scraper, and used an LLM-summarized reading, not raw HTML, so exact markup structure remains unverified. Historical depth beyond the current 6-month window is still unchecked. Licence is separately confirmed (CC BY-NC-SA 4.0). First cut prioritizes demand trend, salary distributions, geography, and skill co-occurrence over contractor rates and live-job counts, per the analysis's own ranking. |
+| IT Jobs Watch | `itjobswatch` | itjobswatch.co.uk — UK IT demand rank, vacancy share, salary percentiles, regional breakdowns, weighted role↔skill associations, no API, scraping explicitly permitted (CC-licensed content) | 🟡 Code shipped 2026-09-16, **extraction rewritten 2026-09-18** (`scraping/itjobswatch.py`) after the real 2026-09-16 production run (real `PoliteScraper` requests, robots.txt respected, 3 pages) showed the regex extraction it originally shipped with was confirmed wrong against the real page structure (3-column historical table, currency mojibake, reversed skill-list order) — replaced with LLM-based extraction (Gemini `gemini-2.5-flash`), gated by a new `scrape_extractions` content-hash cache so an unchanged page is never re-extracted. Verified by 37 passing unit tests (up from 29). **Still not run against a live Postgres or the real Gemini API.** The 3 observation + 523 skill-association rows the 2026-09-16 run stored are confirmed wrong and are deleted once this revision is verified live. Historical depth beyond the current 3-period comparison is still unchecked. Licence is separately confirmed (CC BY-NC-SA 4.0). First cut prioritizes demand trend, salary distributions, geography, and skill co-occurrence over contractor rates and live-job counts, per the analysis's own ranking. See `changes/2026-09-18-itjobswatch-llm-extraction.md`. |
 
 **Add a new scraped source**: same shape as any other adapter — write a class implementing
 `ScrapedSourceAdapter`, register it in `ALL_SCRAPED_SOURCE_ADAPTERS`, get the target's own

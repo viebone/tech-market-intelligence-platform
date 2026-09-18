@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 from db import get_connection
 from scraping.base import (
+    ExtractionCacheEntry,
     FetchedMarketObservation,
     FetchedSkillAssociation,
     PageCacheEntry,
@@ -106,6 +107,44 @@ class PostgresPageCacheStore:
             conn.execute(
                 "UPDATE scrape_page_cache SET fetched_at = %s WHERE url = %s",
                 (fetched_at, url),
+            )
+
+
+class PostgresExtractionCacheStore:
+    """
+    Added 2026-09-18 (changes/2026-09-18-itjobswatch-llm-extraction.md) — the
+    LLM-extraction-dedupe counterpart to PostgresPageCacheStore. A caller
+    (an adapter's fetch()) checks get(url), compares the returned
+    content_hash against the page it just fetched/read from PageCacheStore,
+    and only calls the LLM (then set()) on a miss or a changed hash.
+    """
+    def get(self, url: str) -> tuple[ExtractionCacheEntry, str] | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT content_hash, extraction_json, model, extracted_at FROM scrape_extractions WHERE url = %s",
+                (url,),
+            ).fetchone()
+        if row is None:
+            return None
+        content_hash, extraction_json, model, extracted_at = row
+        return (
+            ExtractionCacheEntry(extraction_json=extraction_json, model=model, extracted_at=extracted_at),
+            content_hash,
+        )
+
+    def set(self, url: str, content_hash: str, extraction_json: dict, model: str, extracted_at: datetime) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO scrape_extractions (url, content_hash, extraction_json, model, extracted_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (url) DO UPDATE SET
+                    content_hash = EXCLUDED.content_hash,
+                    extraction_json = EXCLUDED.extraction_json,
+                    model = EXCLUDED.model,
+                    extracted_at = EXCLUDED.extracted_at
+                """,
+                (url, content_hash, json.dumps(extraction_json), model, extracted_at),
             )
 
 
@@ -293,11 +332,11 @@ def insert_market_observations(source: str, observations: list[FetchedMarketObse
                     location, period_start, period_end, rank, rank_yoy_change, vacancy_count,
                     vacancy_share, live_jobs, salary_sample_size, salary_p10, salary_p25,
                     salary_median, salary_p75, salary_p90, salary_unit, salary_yoy_change,
-                    source_url, licence, licence_confirmed, fetched_at, raw_response
+                    source_url, licence, licence_confirmed, fetched_at, extraction_model, raw_response
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (id) DO NOTHING
                 """,
@@ -308,7 +347,7 @@ def insert_market_observations(source: str, observations: list[FetchedMarketObse
                         o.vacancy_count, o.vacancy_share, o.live_jobs, o.salary_sample_size,
                         o.salary_p10, o.salary_p25, o.salary_median, o.salary_p75, o.salary_p90,
                         o.salary_unit, o.salary_yoy_change, o.source_url, o.licence,
-                        o.licence_confirmed, o.fetched_at, json.dumps(o.raw_response),
+                        o.licence_confirmed, o.fetched_at, o.extraction_model, json.dumps(o.raw_response),
                     )
                     for oid, o in new
                 ],
@@ -360,9 +399,9 @@ def insert_skill_associations(source: str, associations: list[FetchedSkillAssoci
                 INSERT INTO skill_associations (
                     id, source, role_name, role_taxonomy_match, skill_name, skill_taxonomy_match,
                     period_start, period_end, job_count, percentage, rank,
-                    source_url, licence, licence_confirmed, fetched_at, raw_response
+                    source_url, licence, licence_confirmed, fetched_at, extraction_model, raw_response
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 [
@@ -370,7 +409,7 @@ def insert_skill_associations(source: str, associations: list[FetchedSkillAssoci
                         aid, source, a.role_name, a.role_taxonomy_match, a.skill_name,
                         a.skill_taxonomy_match, a.period_start, a.period_end, a.job_count,
                         a.percentage, a.rank, a.source_url, a.licence, a.licence_confirmed,
-                        a.fetched_at, json.dumps(a.raw_response),
+                        a.fetched_at, a.extraction_model, json.dumps(a.raw_response),
                     )
                     for aid, a in new
                 ],
