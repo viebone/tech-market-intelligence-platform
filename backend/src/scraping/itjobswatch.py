@@ -77,11 +77,24 @@ BASE_URL = "https://www.itjobswatch.co.uk"
 # exhaustive" discipline sources/*.py's COMPANIES lists already follow
 # (DATA_SOURCES.md §4). Each slug's URL must resolve (HTTP 200) before being
 # trusted — confirmed 2026-09-16 for product-owner; ux-designer/product-manager
-# not independently re-checked, but use the same confirmed URL template.
+# not independently re-checked at the time, but use the same confirmed URL
+# template. Expanded 2026-09-18 (changes/2026-09-18-itjobswatch-expanded-role-
+# coverage.md) to cover all 3 of this platform's own job-posting taxonomy
+# categories (classification.py's ROLE_CATEGORIES) — the original 3 slugs
+# skewed toward Product Manager/Designer with zero Engineer coverage. Each
+# new slug verified against the real live site (real rank/vacancy figures
+# quoted, not guessed) before being added — see DATA_SOURCES.md §3b's table
+# for the full list, what role_category each maps to, and the add/retire
+# procedure.
 ROLE_SLUGS: list[str] = [
     "product-owner",
-    "ux-designer",
     "product-manager",
+    "ux-designer",
+    "product-designer",
+    "software-developer",
+    "devops-engineer",
+    "data-engineer",
+    "full-stack-developer",
 ]
 
 # CONFIRMED 2026-09-16 against the live Product Owner page — real pattern,
@@ -208,8 +221,18 @@ def _validate_extraction(entry: dict) -> dict:
     return result
 
 
+# str.title() gets most slugs right ("full-stack-developer" -> "Full Stack
+# Developer") but is wrong for names with non-standard internal capitalization
+# that a plain word-split can't infer — added 2026-09-18 alongside the
+# expanded ROLE_SLUGS list, since "devops-engineer" would otherwise store as
+# "Devops Engineer" instead of the real page's own "DevOps Engineer".
+_ROLE_NAME_OVERRIDES = {
+    "devops-engineer": "DevOps Engineer",
+}
+
+
 def _slug_to_role_name(slug: str) -> str:
-    return slug.replace("-", " ").title()
+    return _ROLE_NAME_OVERRIDES.get(slug, slug.replace("-", " ").title())
 
 
 def _page_plain_text(html: str) -> str:

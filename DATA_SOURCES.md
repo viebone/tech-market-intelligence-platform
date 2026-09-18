@@ -151,7 +151,7 @@ principle as §1's job-posting model.
 
 ---
 
-## 3b. Scraped sources (spec'd 2026-09-16, code shipped same day — not yet run against real data)
+## 3b. Scraped sources (spec'd 2026-09-16, code shipped same day; real production data since 2026-09-18)
 
 **Why this section exists, separate from §3/§3a.** Every source so far (job postings,
 employment events) is a public **API** — no HTML parsing, no `robots.txt`, no page cache, no
@@ -230,6 +230,47 @@ flagged, never silently blocked. See `data-legibility`'s Provenance section (ext
 | Adapter | `name` | Target | Status |
 |---|---|---|---|
 | IT Jobs Watch | `itjobswatch` | itjobswatch.co.uk — UK IT demand rank, vacancy share, salary percentiles, regional breakdowns, weighted role↔skill associations, no API, scraping explicitly permitted (CC-licensed content) | 🟡 Code shipped 2026-09-16, **extraction rewritten 2026-09-18** (`scraping/itjobswatch.py`) after the real 2026-09-16 production run (real `PoliteScraper` requests, robots.txt respected, 3 pages) showed the regex extraction it originally shipped with was confirmed wrong against the real page structure (3-column historical table, currency mojibake, reversed skill-list order) — replaced with LLM-based extraction (Gemini `gemini-2.5-flash`), gated by a new `scrape_extractions` content-hash cache so an unchanged page is never re-extracted. Verified by 37 passing unit tests (up from 29). **Still not run against a live Postgres or the real Gemini API.** The 3 observation + 523 skill-association rows the 2026-09-16 run stored are confirmed wrong and are deleted once this revision is verified live. Historical depth beyond the current 3-period comparison is still unchecked. Licence is separately confirmed (CC BY-NC-SA 4.0). First cut prioritizes demand trend, salary distributions, geography, and skill co-occurrence over contractor rates and live-job counts, per the analysis's own ranking. See `changes/2026-09-18-itjobswatch-llm-extraction.md`. |
+
+**Tracked roles (added 2026-09-18 — `changes/2026-09-18-itjobswatch-expanded-role-coverage.md`).**
+Same "hand-curated, not exhaustive" discipline as §4's tracked companies, applied here for the
+first time to a scraped source: `scraping/itjobswatch.py`'s `ROLE_SLUGS` is a deliberately
+curated seed list, not an attempt to cover every role IT Jobs Watch tracks. Every slug is
+verified against the real live site (URL resolves, real rank/vacancy figures returned) before
+being trusted — same "confirm empirically, never guess" discipline as §4's board-token
+verification, just via a single approved `WebFetch` check rather than `curl`, since this is a
+read-only confirmation outside the compliant `PoliteScraper` path (same caveat already
+documented for the original 3-role check, `research/2026-09-16-itjobswatch-real-page-verification.md`).
+
+Chosen to give real coverage across all three of this platform's own job-posting taxonomy
+categories (`classification.py`'s `ROLE_CATEGORIES`) — the original 3 slugs skewed toward
+Product Manager (2 of 3) and Designer (1 of 3), with **zero** Engineer coverage despite it
+being a core tracked category for job postings.
+
+| Slug | Maps to `role_category` | Verified (rank / vacancy count, 2026-09-18) |
+|---|---|---|
+| `product-owner` | Product Manager | 468 / 358 |
+| `product-manager` | Product Manager | 366 / 536 |
+| `ux-designer` | Designer | 562 / 235 |
+| `product-designer` | Designer | 718 / 86 |
+| `software-developer` | Engineer | 147 / 1,486 |
+| `devops-engineer` | Engineer | 169 / 1,339 |
+| `data-engineer` | Engineer | 102 / 2,064 |
+| `full-stack-developer` | Engineer | 213 / 1,027 |
+
+**How to add a tracked role** (mirrors §5's "add a company" recipe):
+1. Confirm the role's real slug and that its page resolves — one approved `WebFetch` (or,
+   preferably, a real `PoliteScraper` fetch once this is folded into a verification script) —
+   quote the real rank/vacancy figures shown, never guess or invent them.
+2. Add the slug to `ROLE_SLUGS` in `scraping/itjobswatch.py`.
+3. Add a row to the table above (slug, `role_category` it maps to, the verified figures).
+4. Push. The next due ingestion run (`scrape_ingestion_runs.last_run_at` + 7 days) picks it up —
+   run cadence is enforced (Business Logic rule 8), so a new slug does **not** trigger an
+   immediate re-fetch of the whole source; it's simply included the next time `itjobswatch` is
+   actually due.
+
+**Retire a tracked role:** remove it from `ROLE_SLUGS` and the table above. Existing
+`market_observations`/`skill_associations` rows stay as historical data, same as retiring a
+tracked company (§5).
 
 **Add a new scraped source**: same shape as any other adapter — write a class implementing
 `ScrapedSourceAdapter`, register it in `ALL_SCRAPED_SOURCE_ADAPTERS`, get the target's own
@@ -388,7 +429,9 @@ Everything tunable, and where it lives. Grouped by area.
 ### Scraped sources (spec'd 2026-09-16)
 | Lever | Value | File |
 |---|---|---|
-| Registered scraped-source adapters | IT Jobs Watch (code shipped, unverified against the real site) | `backend/src/scraping/__init__.py` — `ALL_SCRAPED_SOURCE_ADAPTERS` |
+| Registered scraped-source adapters | IT Jobs Watch (real production data since 2026-09-18) | `backend/src/scraping/__init__.py` — `ALL_SCRAPED_SOURCE_ADAPTERS` |
+| **Tracked roles (added 2026-09-18)** | 8 hand-curated role slugs, spanning all 3 job-posting taxonomy categories — see §3b's table for the full list and how to add/retire one | `backend/src/scraping/itjobswatch.py` — `ROLE_SLUGS` |
+| **Extraction model (added 2026-09-18)** | `gemini-2.5-flash`, via the `llm/` provider abstraction — reuses the classification pipeline's key, gated by a `content_hash` cache (`scrape_extractions`) so an unchanged page is never re-extracted | `backend/src/scraping/itjobswatch.py` — `EXTRACTION_MODEL` |
 | Scraper contact (required — refuses to run if unset) | env var, no fallback placeholder | `SCRAPER_CONTACT` — `backend/.env.example` |
 | Pacing floor | 3.0s min interval (vs. API sources' 1.0s) | `backend/src/scraping/base.py` — `PoliteScraper` default |
 | Page cache freshness | 24h — no re-fetch within this window | `backend/src/scraping/base.py` — `min_refetch_interval` default |
