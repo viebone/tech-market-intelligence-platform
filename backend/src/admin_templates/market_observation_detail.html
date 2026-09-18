@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ observation.entity_name }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/market-observations">← Back to Market Observations</a>
+<h1>{{ observation.entity_name }}</h1>
+
+<div class="card">
+  <h2>Observation</h2>
+  <div class="field-row"><div class="field-label">ID</div><div class="field-value">{{ observation.id }}</div></div>
+  <div class="field-row"><div class="field-label">Source</div><div class="field-value">{{ observation.source }}</div></div>
+  <div class="field-row"><div class="field-label">Entity type</div><div class="field-value">{{ observation.entity_type }}</div></div>
+  <div class="field-row"><div class="field-label">Entity name</div><div class="field-value">{{ observation.entity_name }}</div></div>
+  <div class="field-row"><div class="field-label">Taxonomy match</div><div class="field-value">{{ observation.taxonomy_match or '— (not confidently matched)' }}</div></div>
+  <div class="field-row"><div class="field-label">Employment type</div><div class="field-value">{{ observation.employment_type }}</div></div>
+  <div class="field-row"><div class="field-label">Location</div><div class="field-value">{{ observation.location }}</div></div>
+  <div class="field-row"><div class="field-label">Period</div><div class="field-value">{{ observation.period_start }} – {{ observation.period_end }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Demand</h2>
+  <div class="field-row"><div class="field-label">Rank</div><div class="field-value">{{ observation.rank if observation.rank is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Rank YoY change</div><div class="field-value">{{ observation.rank_yoy_change if observation.rank_yoy_change is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Vacancy count</div><div class="field-value">{{ observation.vacancy_count if observation.vacancy_count is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Vacancy share</div><div class="field-value">{{ '%.2f%%' % observation.vacancy_share if observation.vacancy_share is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Live jobs</div><div class="field-value">{{ observation.live_jobs if observation.live_jobs is not none else '—' }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Salary ({{ observation.salary_unit or 'unit unknown' }})</h2>
+  <div class="field-row"><div class="field-label">Sample size</div><div class="field-value">{{ observation.salary_sample_size if observation.salary_sample_size is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">10th percentile</div><div class="field-value">{{ '£%s' % '{:,.0f}'.format(observation.salary_p10) if observation.salary_p10 is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">25th percentile</div><div class="field-value">{{ '£%s' % '{:,.0f}'.format(observation.salary_p25) if observation.salary_p25 is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Median (50th percentile)</div><div class="field-value">{{ '£%s' % '{:,.0f}'.format(observation.salary_median) if observation.salary_median is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">75th percentile</div><div class="field-value">{{ '£%s' % '{:,.0f}'.format(observation.salary_p75) if observation.salary_p75 is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">90th percentile</div><div class="field-value">{{ '£%s' % '{:,.0f}'.format(observation.salary_p90) if observation.salary_p90 is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Median YoY change</div><div class="field-value">{{ '%.2f%%' % observation.salary_yoy_change if observation.salary_yoy_change is not none else '—' }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Provenance</h2>
+  <div class="field-row"><div class="field-label">Source URL</div><div class="field-value"><a href="{{ observation.source_url }}" target="_blank" rel="noopener">{{ observation.source_url }}</a></div></div>
+  <div class="field-row"><div class="field-label">Licence</div><div class="field-value">{{ observation.licence }}
+    {% if observation.licence_confirmed %}<span class="badge success">Confirmed</span>{% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Fetched at</div><div class="field-value">{{ observation.fetched_at }}</div></div>
+  <div class="field-row"><div class="field-label">Extraction model</div><div class="field-value">{{ observation.extraction_model or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Extraction cache</div><div class="field-value">
+    {% if extraction %}
+      {% if extraction.is_fresh %}<span class="badge neutral">Fresh extraction</span>{% else %}<span class="badge neutral">Reused from cache</span>{% endif %}
+      — {{ extraction.model }}, extracted {{ extraction.extracted_at }}
+    {% else %}
+      Extraction provenance unavailable
+    {% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Created at</div><div class="field-value">{{ observation.created_at }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Raw Scraped Fragment</h2>
+  <pre class="raw-json">{{ observation.raw_response_json }}</pre>
+</div>
+{% endblock %}

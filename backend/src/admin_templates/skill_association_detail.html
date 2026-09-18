@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ association.skill_name }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/skill-associations">← Back to Skill Associations</a>
+<h1>{{ association.role_name }} — {{ association.skill_name }}</h1>
+
+<div class="card">
+  <h2>Association</h2>
+  <div class="field-row"><div class="field-label">ID</div><div class="field-value">{{ association.id }}</div></div>
+  <div class="field-row"><div class="field-label">Source</div><div class="field-value">{{ association.source }}</div></div>
+  <div class="field-row"><div class="field-label">Role</div><div class="field-value">{{ association.role_name }}</div></div>
+  <div class="field-row"><div class="field-label">Role taxonomy match</div><div class="field-value">{{ association.role_taxonomy_match or '— (not confidently matched)' }}</div></div>
+  <div class="field-row"><div class="field-label">Skill</div><div class="field-value">{{ association.skill_name }}</div></div>
+  <div class="field-row"><div class="field-label">Skill taxonomy match</div><div class="field-value">{{ association.skill_taxonomy_match or '— (not confidently matched)' }}</div></div>
+  <div class="field-row"><div class="field-label">Period</div><div class="field-value">{{ association.period_start }} – {{ association.period_end }}</div></div>
+  <div class="field-row"><div class="field-label">Rank</div><div class="field-value">{{ association.rank if association.rank is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Job count</div><div class="field-value">{{ association.job_count if association.job_count is not none else '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Percentage</div><div class="field-value">{{ '%.2f%%' % association.percentage if association.percentage is not none else '—' }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Provenance</h2>
+  <div class="field-row"><div class="field-label">Source URL</div><div class="field-value"><a href="{{ association.source_url }}" target="_blank" rel="noopener">{{ association.source_url }}</a></div></div>
+  <div class="field-row"><div class="field-label">Licence</div><div class="field-value">{{ association.licence }}
+    {% if association.licence_confirmed %}<span class="badge success">Confirmed</span>{% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Fetched at</div><div class="field-value">{{ association.fetched_at }}</div></div>
+  <div class="field-row"><div class="field-label">Extraction model</div><div class="field-value">{{ association.extraction_model or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Created at</div><div class="field-value">{{ association.created_at }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Raw Scraped Fragment</h2>
+  <pre class="raw-json">{{ association.raw_response_json }}</pre>
+</div>
+{% endblock %}

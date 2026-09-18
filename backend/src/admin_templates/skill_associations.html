@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Skill Associations — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Skill Associations</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  The weighted role↔skill graph from scraped market-benchmark sources — how often a skill is
+  associated with a role, and its rank among all skills for that role. See
+  <code>backend/specs/scraped-data-sources/api.md</code> for the full data model.
+</div>
+
+<form class="filter-form" method="get" action="/admin/skill-associations">
+  <div>
+    <label for="source">Source</label>
+    <select id="source" name="source">
+      <option value="">All</option>
+      {% for v in filter_options.sources %}
+      <option value="{{ v }}" {{ 'selected' if filters.source == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="role_name">Role</label>
+    <select id="role_name" name="role_name">
+      <option value="">All</option>
+      {% for v in filter_options.roles %}
+      <option value="{{ v }}" {{ 'selected' if filters.role_name == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/skill-associations">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching association{{ '' if total == 1 else 's' }}</div>
+
+{% if associations %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Role</th>
+      <th>Skill</th>
+      <th><a href="{{ sort_links.rank }}">Rank{% if sort == 'rank' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.job_count }}">Job Count{% if sort == 'job_count' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.percentage }}">Percentage{% if sort == 'percentage' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Licence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in associations %}
+    <tr>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ a.source }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ a.role_name }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ a.skill_name }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ a.rank if a.rank is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ a.job_count if a.job_count is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">{{ '%.2f%%' % a.percentage if a.percentage is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/skill-associations/{{ a.id }}">
+        {% if a.licence_confirmed %}<span class="badge success">Confirmed</span>
+        {% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+      </a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/skill-associations?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/skill-associations?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No skill associations match these filters.</div></div>
+{% endif %}
+{% endblock %}

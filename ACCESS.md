@@ -32,6 +32,7 @@ been decided on yet is exactly the gap this file exists to make visible.
 | Pipeline processing visibility (postings, classifications, ingestion runs) | ✅ admin dashboard | ✅ `admin_main.py` routes (JWT-protected) | ❌ Not exposed | Operator-only, no end-user data — `outcomes/pipeline-processing-visibility.md` scopes this to the person running the platform, never end users or an AI acting for them |
 | Employment-events admin visibility | ✅ admin dashboard | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above |
 | Data source licensing status (added 2026-09-16) | ✅ admin dashboard (`/admin/licensing`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above — also, licence/attribution data isn't market data an external AI's user would ask for |
+| Market-benchmark data admin visibility (added 2026-09-18 — `market_observations`, `skill_associations`, scraped-source run cadence) | ✅ admin dashboard (`/admin/market-observations`, `/admin/skill-associations`, `/admin/scrape-runs`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above. Distinct from the "Market benchmark datasets" row above, which is about whether *end users or an external AI* can query this data (still deferred) — this row is purely the operator's own visibility into what's been captured |
 
 ## The access-control layer itself (not a data capability — not in scope for this table's MCP column)
 

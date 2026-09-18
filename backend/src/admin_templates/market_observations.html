@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Market Observations — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Market Observations</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Demand/salary snapshots from scraped market-benchmark sources (e.g. IT Jobs Watch) — a
+  separate category from job postings and employment events, never joined to either. See
+  <code>backend/specs/scraped-data-sources/api.md</code> for the full data model.
+</div>
+
+<form class="filter-form" method="get" action="/admin/market-observations">
+  <div>
+    <label for="source">Source</label>
+    <select id="source" name="source">
+      <option value="">All</option>
+      {% for v in filter_options.sources %}
+      <option value="{{ v }}" {{ 'selected' if filters.source == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="entity_type">Entity Type</label>
+    <select id="entity_type" name="entity_type">
+      <option value="">All</option>
+      {% for v in filter_options.entity_types %}
+      <option value="{{ v }}" {{ 'selected' if filters.entity_type == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="entity_name">Entity</label>
+    <select id="entity_name" name="entity_name">
+      <option value="">All</option>
+      {% for v in filter_options.entity_names %}
+      <option value="{{ v }}" {{ 'selected' if filters.entity_name == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="employment_type">Employment Type</label>
+    <select id="employment_type" name="employment_type">
+      <option value="">All</option>
+      {% for v in filter_options.employment_types %}
+      <option value="{{ v }}" {{ 'selected' if filters.employment_type == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/market-observations">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching observation{{ '' if total == 1 else 's' }}</div>
+
+{% if observations %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th><a href="{{ sort_links.entity_name }}">Entity{% if sort == 'entity_name' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Employment Type</th>
+      <th>Location</th>
+      <th><a href="{{ sort_links.period_end }}">Period End{% if sort == 'period_end' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.rank }}">Rank{% if sort == 'rank' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.vacancy_count }}">Vacancies{% if sort == 'vacancy_count' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Share</th>
+      <th>Median Salary</th>
+      <th>Licence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in observations %}
+    <tr>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.source }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.entity_name }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.employment_type }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.location }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.period_end }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.rank if o.rank is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ o.vacancy_count if o.vacancy_count is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ '%.2f%%' % o.vacancy_share if o.vacancy_share is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">{{ '£%s' % '{:,.0f}'.format(o.salary_median) if o.salary_median is not none else '—' }}</a></td>
+      <td><a class="row-link" href="/admin/market-observations/{{ o.id }}">
+        {% if o.licence_confirmed %}<span class="badge success">Confirmed</span>
+        {% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+      </a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/market-observations?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/market-observations?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No market observations match these filters.</div></div>
+{% endif %}
+{% endblock %}

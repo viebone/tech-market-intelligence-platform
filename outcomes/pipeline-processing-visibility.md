@@ -47,6 +47,12 @@ platform use its data. The same operator need applies again: seeing that status 
 code or a markdown file directly, the same "don't make me query/grep for it" pattern this
 outcome already serves for postings, runs, and employment events.
 
+**Extended 2026-09-18** (`changes/2026-09-18-admin-market-benchmark-visibility.md`): now that
+real `market_observations`/`skill_associations` data exists (via the LLM-extraction rebuild,
+`changes/2026-09-18-itjobswatch-llm-extraction.md`), the same operator need applies to the data
+itself, not just its licence: seeing what's actually been captured (per role, per skill, per
+period) and when each scraped source last ran, without querying the database directly.
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)
@@ -63,6 +69,12 @@ outcome already serves for postings, runs, and employment events.
 - The operator can see, at a glance, every registered scraped source's licence status —
   confirmed or not, commercial-use permitted or not, the exact attribution text, and a link to
   the licence itself — without opening `LICENSING.md` or reading code (added 2026-09-16)
+- The operator can see the market-benchmark data a scraped source has actually captured — every
+  observation (role/skill, period, rank, vacancy count/share, salary distribution) and every
+  weighted skill association — filterable by source and entity, and drill into any single row's
+  full provenance (source URL, licence, fetch time, which model extracted it). The operator can
+  also see, per registered scraped source, when it last ran and whether it's currently due for
+  its next run (added 2026-09-18)
 - Only the operator — not end users or the public — can access this view
 - Using this view answers "what has the pipeline actually done" faster than writing a
   one-off SQL query would

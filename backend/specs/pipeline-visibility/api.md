@@ -81,6 +81,13 @@ job-postings pipeline (`changes/2026-09-11-employment-events-no-company-matching
 is an in-memory Python registry, not a database table (see Tech Decisions for why, and its own
 noted limitation: no history of *when* a licence was confirmed, only its current state).
 
+**Added 2026-09-18** (`changes/2026-09-18-admin-market-benchmark-visibility.md`): also READ-only
+over `market_observations`, `skill_associations`, `scrape_ingestion_runs`, and
+`scrape_extractions` — all owned and fully documented by
+`backend/specs/scraped-data-sources/api.md`, not repeated here. `scrape_extractions` is read
+only incidentally (a single lookup by `url` on the Market Observations detail view, to show
+extraction provenance) — it gets no list/filter view of its own.
+
 **One additive column, needed to honestly answer the experience spec's "which ingestion run
 touched it" requirement (`design/pipeline-visibility/experience.md`, User Flow step 5):**
 
@@ -402,6 +409,109 @@ actually on, not just what each source's licence says in isolation.
 
 ---
 
+### GET /admin/market-observations
+**Added 2026-09-18** (`changes/2026-09-18-admin-market-benchmark-visibility.md`).
+**Purpose**: Filterable, sortable, paginated `market_observations` table, per
+`design/pipeline-visibility/experience.md` User Flow step 10. Same List pattern as
+`GET /admin/employment-events`.
+**Auth required**: yes
+**Query params**:
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `source` | `str` | none | Exact match — closed set, one `source` value per registered `scraping.ALL_SCRAPED_SOURCE_ADAPTERS` entry |
+| `entity_type` | `str` | none | Exact match — `"role" \| "skill" \| "technology" \| "capability"` |
+| `entity_name` | `str` | none | Exact match |
+| `employment_type` | `str` | none | Exact match — `"permanent" \| "contract"` |
+| `sort` | `str` | `"period_end"` | Whitelisted closed set: `period_end`, `entity_name`, `rank`, `vacancy_count` — same closed-set discipline as every other sortable table on this page |
+| `dir` | `"asc" \| "desc"` | `"desc"` | |
+| `page` | `int` | `1` | |
+| `page_size` | `int` | `50` | |
+**Response**: `market_observations.html`, rendered with the filtered/sorted/paginated row list
+(`id`, `source`, `entity_type`, `entity_name`, `employment_type`, `location`, `period_end`,
+`rank`, `vacancy_count`, `vacancy_share`, `salary_median`, `licence_confirmed`,
+`extraction_model`), active filter chips, total match count, and pagination controls. Each row
+links to `/admin/market-observations/{id}`.
+
+### GET /admin/market-observations/{observation_id}
+**Added 2026-09-18**. **Purpose**: Full detail for a single observation, per
+`design/pipeline-visibility/experience.md` User Flow step 10.
+**Auth required**: yes
+**Response**: `market_observation_detail.html`, rendered with every column of the
+`market_observations` row (`backend/specs/scraped-data-sources/api.md` has the full field
+list) plus `raw_response` pretty-printed, same treatment `posting_detail.html` already gives
+`raw_response`. **Extraction provenance**: a lookup of `scrape_extractions` by this row's
+`source_url` — when found, shows `model`, `extracted_at`, and whether this observation's
+`fetched_at` matches the extraction's own timestamp closely enough to call it "fresh this run"
+vs. "reused from an earlier extraction" (Business Logic, below); when not found, shows
+"Extraction provenance unavailable" rather than a blank or fabricated value (Edge Cases,
+`design/pipeline-visibility/experience.md`).
+**Errors**:
+| Code | Reason |
+|---|---|
+| 404 | No observation with that id |
+
+### GET /admin/skill-associations
+**Added 2026-09-18**. **Purpose**: Filterable, sortable, paginated `skill_associations` table,
+per `design/pipeline-visibility/experience.md` User Flow step 10. Same List pattern as
+`GET /admin/market-observations`.
+**Auth required**: yes
+**Query params**:
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `source` | `str` | none | Exact match |
+| `role_name` | `str` | none | Exact match |
+| `sort` | `str` | `"rank"` | Whitelisted closed set: `rank`, `percentage`, `job_count` |
+| `dir` | `"asc" \| "desc"` | `"asc"` | Ascending default — rank 1 (most-associated skill) first |
+| `page` | `int` | `1` | |
+| `page_size` | `int` | `50` | |
+**Response**: `skill_associations.html`, rendered with the filtered/sorted/paginated row list
+(`id`, `source`, `role_name`, `skill_name`, `job_count`, `percentage`, `rank`,
+`licence_confirmed`, `extraction_model`), active filter chips, total match count, and
+pagination controls. Each row links to `/admin/skill-associations/{id}`.
+
+### GET /admin/skill-associations/{association_id}
+**Added 2026-09-18**. **Purpose**: Full detail for a single skill association.
+**Auth required**: yes
+**Response**: `skill_association_detail.html`, rendered with every column of the
+`skill_associations` row plus `raw_response` pretty-printed.
+**Errors**:
+| Code | Reason |
+|---|---|
+| 404 | No skill association with that id |
+
+### GET /admin/scrape-runs
+**Added 2026-09-18**. **Purpose**: Every registered scraped-source adapter's run cadence
+status, per `design/pipeline-visibility/experience.md` User Flow step 10. A flat list, not a
+List → Detail pattern — same reasoning as `GET /admin/licensing`, and deliberately shows every
+*registered* adapter (`scraping.ALL_SCRAPED_SOURCE_ADAPTERS`), not only ones with a
+`scrape_ingestion_runs` row yet — a never-run source is exactly the state this view exists to
+surface, not hide (a deliberate difference from the Employment Events summary's "present in
+data only" convention — see the change request's Decision Log).
+**Auth required**: yes
+**Data source**: `scraping_storage.list_scrape_runs()` — joins `scrape_ingestion_runs` against
+`scraping.ALL_SCRAPED_SOURCE_ADAPTERS`/`scraping.MIN_RUN_INTERVAL_DAYS`. No filtering, sorting,
+or pagination — same "small registry, every entry matters equally" reasoning as Licensing.
+**Response**: `scrape_runs.html`, rendered with one row per registered adapter:
+```json
+{
+  "runs": [
+    {
+      "source": "itjobswatch",
+      "last_run_at": "2026-09-18T09:02:21Z",
+      "min_run_interval_days": 7,
+      "next_due_at": "2026-09-25T09:02:21Z",
+      "is_due": false
+    }
+  ]
+}
+```
+`last_run_at` is `null` and `is_due` is `true` for a registered adapter with no
+`scrape_ingestion_runs` row at all — rendered as "Never run" (Business Logic, below).
+**Errors**: none beyond the shared auth redirect — an empty adapter registry renders the page's
+own "No scraped sources registered yet" empty state.
+
+---
+
 ## Business Logic
 
 **Auth** — see Auth decision above. `verify_password(plain, hash)` via `passlib[bcrypt]`;
@@ -497,6 +607,31 @@ virtualization; revisit only if that changes materially.
 `WHERE`/`ORDER BY` discipline as Postings, above, applied to `source`, `event_type`,
 `direction`, `confidence`, `country`, and the `sort` whitelist.
 
+**Market Observations / Skill Associations query construction (added 2026-09-18)** — same
+closed-set-validated `WHERE`/`ORDER BY` discipline as every other filterable table on this
+page, applied to `source`/`entity_type`/`entity_name`/`employment_type` and
+`source`/`role_name` respectively.
+
+**Extraction provenance "fresh vs. reused" (added 2026-09-18)** — for the Market Observations
+detail view: look up `scrape_extractions` by the observation's `source_url`. If found, compare
+its `extracted_at` against the observation's own `fetched_at` — within a small tolerance (a
+few minutes, to account for the LLM call's own latency during the same ingestion run) counts as
+"fresh this run"; anything older means the current ingestion run hit an `ExtractionCache` hit
+and reused a prior extraction (`backend/specs/scraped-data-sources/api.md` — Business Logic
+rule 11). This is purely informational for the operator — it changes nothing about how the row
+was stored, only how its provenance reads on this page.
+
+**Scrape run cadence status (added 2026-09-18)** — `scraping_storage.list_scrape_runs()`:
+for every adapter in `scraping.ALL_SCRAPED_SOURCE_ADAPTERS`, look up its
+`scrape_ingestion_runs` row (if any) and its `MIN_RUN_INTERVAL_DAYS` entry (falling back to
+`DEFAULT_MIN_RUN_INTERVAL_DAYS`, same lookup `ingest_scraped_sources.py` itself already does).
+`next_due_at = last_run_at + min_run_interval_days` when a run exists; `is_due = now >=
+next_due_at`, or `true` unconditionally when no run has ever happened (mirrors
+`scraping_storage.is_due()`'s own `last_run_at is None → True` rule exactly — this view must
+never disagree with what the ingestion script itself would decide). This function reuses that
+existing pure comparison logic rather than reimplementing it, so the dashboard and the pipeline
+can never drift apart on what "due" means.
+
 ---
 
 ## External Dependencies
@@ -569,3 +704,17 @@ already produced by the existing pipeline.
   that would need this registry to become a real table — not a change to make speculatively now
   (this spec's `directive: low` doesn't call for it, and no outcome asks for licence-change
   history yet).
+- **New read functions, added to `scraping_storage.py` — added 2026-09-18**
+  (`changes/2026-09-18-admin-market-benchmark-visibility.md`). Same "one module per table(s)"
+  rule as every other addition on this page: `scraping_storage.py` already owns
+  `market_observations`/`skill_associations`/`scrape_ingestion_runs`/`scrape_extractions`'
+  write paths, so it gains the read paths too, rather than a new module.
+  `list_market_observations(source, entity_type, entity_name, employment_type, sort, dir, page,
+  page_size)`, `get_market_observation(observation_id)`, `list_skill_associations(source,
+  role_name, sort, dir, page, page_size)`, `get_skill_association(association_id)`,
+  `get_extraction_for_url(url)` (the single-row lookup the observation detail view uses for
+  extraction provenance), `list_scrape_runs()` (reads `scrape_ingestion_runs` joined against
+  `scraping.ALL_SCRAPED_SOURCE_ADAPTERS`/`MIN_RUN_INTERVAL_DAYS`, reusing
+  `_due_from_last_run()`'s existing pure comparison logic).
+- **No new tables, no new columns.** This addition is entirely new `/admin/*` read routes over
+  data `backend/specs/scraped-data-sources/api.md` already owns and writes — no migration.

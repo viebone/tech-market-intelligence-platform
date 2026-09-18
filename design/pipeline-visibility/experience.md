@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, **Sources & Licensing** (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), **Market Observations, Skill Associations, Scraped Source Runs** (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`). Always visible. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
@@ -132,6 +132,20 @@ data read directly from the pipeline's own stored results.
    full detail *is* the list (there's no larger underlying record to drill into, unlike a
    posting or an event). This view answers "can we actually use this data, and how do we credit
    it" without opening `LICENSING.md` or reading `scraping/licences.py` directly.
+10. **(Added 2026-09-18.)** Independently of every pipeline above, the operator can navigate to
+    **Market Observations** to see every captured demand/salary snapshot from a scraped
+    market-benchmark source (role/skill, employment type, location, period, rank, vacancy
+    count/share, salary percentile spread) as a filterable, sortable table — filtered by source,
+    entity type, entity name, or employment type. Clicking a row opens its **Detail** view: the
+    full row including its raw scraped fragment, plus — when available — which LLM extraction
+    produced these values and whether that extraction was fresh or reused from cache (the same
+    "show your provenance" discipline every other detail view here already follows). The
+    operator can separately navigate to **Skill Associations** to see the weighted role↔skill
+    graph the same source produced — same List → Detail shape, filtered by source or role, and
+    can navigate to **Scraped Source Runs** to see, for every *registered* scraped-source adapter
+    (not only ones that have produced data yet), when it last ran and whether it's currently due
+    for its next run — a flat list, same shape as Sources & Licensing, since a source that's
+    never run is exactly the state this view exists to make visible, not hide.
 
 ---
 
@@ -181,6 +195,16 @@ over unchanged. This is the same visual language, applied to a different layout 
   - The attribution text and licence link render as plain text/link beneath the two badges, not
     hidden behind a further click — per `data-legibility`'s Provenance rule, this is exactly
     the kind of caveat that must be visible, not buried.
+- **Market Observations / Skill Associations tables** (added 2026-09-18): same table tokens as
+  every other List view here — no new tokens needed. One addition: the Detail view's extraction
+  provenance line pairs a `gray-300` "Fresh extraction" or "Reused from cache" label with the
+  model name and timestamp — informational, not a warning state, so neither uses a semantic
+  colour (unlike the licence badges above, where colour carries real meaning).
+- **Scraped Source Runs table** (added 2026-09-18): same table tokens as Sources & Licensing.
+  One status badge per row, colour + label together, never colour alone: `emerald-600` "Up to
+  date" when not yet due, `amber-600` "Due for next run" when the interval has elapsed, and
+  `gray-300` "Never run" (a neutral state, not a failure — a source can be registered and simply
+  not have run yet).
 
 ---
 
@@ -244,6 +268,11 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator clicks a chart bar for a specific value (e.g. `unknown` Level) | Navigates to Postings, pre-filtered to that exact value |
 | Operator applies a filter on the Employment Events table (source, event type, direction, confidence, country) | Table re-queries and re-renders with the filtered set, same filter-chip/pagination pattern as Postings |
 | Operator clicks an Employment Events row | Navigates to that event's Detail view, showing every stored field and the source's raw response verbatim |
+| Operator applies a filter on the Market Observations table (source, entity type, entity name, employment type) | Table re-queries and re-renders with the filtered set, same filter-chip/pagination pattern as Postings |
+| Operator clicks a Market Observations row | Navigates to that observation's Detail view, including its raw scraped fragment and — when available — its extraction provenance (model, fresh vs. cached) |
+| Operator applies a filter on the Skill Associations table (source, role) | Table re-queries and re-renders with the filtered set, same pattern |
+| Operator clicks a Skill Associations row | Navigates to that association's Detail view |
+| Operator opens Scraped Source Runs | Shows one row per registered scraped-source adapter — last run time (or "Never run"), and a due/not-due status badge — no filtering or pagination needed at this scale |
 
 ---
 
@@ -318,6 +347,16 @@ over unchanged. This is the same visual language, applied to a different layout 
   in code (Business Logic, `backend/specs/scraped-data-sources/api.md`).
 - **(Added 2026-09-16.) No scraped sources are registered yet.** Same "No data yet" empty-state
   pattern as every other view here — not an error, just nothing to show yet.
+- **(Added 2026-09-18.) No market observations or skill associations have been captured yet.**
+  Same "No data yet" empty-state pattern.
+- **(Added 2026-09-18.) A registered scraped-source adapter has never run.** Scraped Source Runs
+  shows it with "Never run" (neutral, `gray-300`), not an error and not omitted from the list —
+  this view's whole purpose is making a never-run source visible, unlike the Employment Events
+  summary's "only sources present in data" convention (a deliberate difference, not an
+  inconsistency — see `changes/2026-09-18-admin-market-benchmark-visibility.md`'s Decision Log).
+- **(Added 2026-09-18.) An observation has no matching `scrape_extractions` row** (predates the
+  LLM-extraction rebuild, or the extraction-cache row was since superseded). The Detail view
+  shows "Extraction provenance unavailable" rather than a blank or fabricated value.
 
 ---
 

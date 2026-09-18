@@ -38,6 +38,7 @@ import employment_events_storage
 import ingestion_runs
 import raw_postings
 import requirements
+import scraping_storage
 from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
 from source_licences import SOURCE_LICENCES, is_commercial_mode, overall_status
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
@@ -411,6 +412,168 @@ def licensing(request: Request):
             "sources": sources,
             "commercial_mode": is_commercial_mode(),
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Market Observations / Skill Associations / Scraped Source Runs — added
+# 2026-09-18, changes/2026-09-18-admin-market-benchmark-visibility.md.
+# Read-only over market_observations/skill_associations/scrape_ingestion_runs
+# (backend/specs/scraped-data-sources/api.md owns and writes all of it).
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/market-observations", dependencies=[Depends(require_admin_session)])
+def market_observations_list(
+    request: Request,
+    source: str | None = None,
+    entity_type: str | None = None,
+    entity_name: str | None = None,
+    employment_type: str | None = None,
+    sort: str = "period_end",
+    dir: str = "desc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = {
+        "source": source, "entity_type": entity_type,
+        "entity_name": entity_name, "employment_type": employment_type,
+    }
+    result = scraping_storage.list_market_observations(**filters, sort=sort, dir=dir, page=page, page_size=page_size)
+
+    active_filters = _clean_query(filters)
+    page_base_query = urlencode({**active_filters, "sort": sort, "dir": dir})
+
+    active_filter_chips = [
+        {
+            "label": f"{key.replace('_', ' ')}: {value}",
+            "remove_href": "/admin/market-observations?" + urlencode({k: v for k, v in active_filters.items() if k != key}),
+        }
+        for key, value in active_filters.items()
+    ]
+
+    sort_links = {}
+    for column in ("period_end", "entity_name", "rank", "vacancy_count"):
+        next_dir = ("asc" if dir == "desc" else "desc") if sort == column else "desc"
+        sort_links[column] = "/admin/market-observations?" + urlencode({**active_filters, "sort": column, "dir": next_dir})
+
+    total_pages = max(1, math.ceil(result["total"] / page_size))
+
+    return templates.TemplateResponse(
+        request, "market_observations.html",
+        {
+            "active_page": "market_observations",
+            "observations": result["observations"],
+            "total": result["total"],
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "sort": sort,
+            "dir": dir,
+            "filters": filters,
+            "active_filter_chips": active_filter_chips,
+            "page_base_query": page_base_query,
+            "sort_links": sort_links,
+            "filter_options": {
+                "sources": scraping_storage.get_distinct_observation_sources(),
+                "entity_types": ["role", "skill", "technology", "capability"],
+                "entity_names": scraping_storage.get_distinct_observation_entity_names(),
+                "employment_types": ["permanent", "contract"],
+            },
+        },
+    )
+
+
+@app.get("/admin/market-observations/{observation_id:path}", dependencies=[Depends(require_admin_session)])
+def market_observation_detail(request: Request, observation_id: str):
+    observation = scraping_storage.get_market_observation(observation_id)
+    if observation is None:
+        raise HTTPException(status_code=404, detail="No observation with that id")
+    observation["raw_response_json"] = json.dumps(observation["raw_response"], indent=2, default=str)
+
+    extraction = scraping_storage.get_extraction_for_url(observation["source_url"])
+    if extraction is not None:
+        # "Fresh this run" vs "reused from cache" — backend/specs/pipeline-visibility/
+        # api.md — Business Logic — Extraction provenance "fresh vs. reused".
+        delta = abs((extraction["extracted_at"] - observation["fetched_at"]).total_seconds())
+        extraction["is_fresh"] = delta < 300  # a few minutes' tolerance for the LLM call's own latency
+
+    return templates.TemplateResponse(
+        request, "market_observation_detail.html",
+        {"active_page": "market_observations", "observation": observation, "extraction": extraction},
+    )
+
+
+@app.get("/admin/skill-associations", dependencies=[Depends(require_admin_session)])
+def skill_associations_list(
+    request: Request,
+    source: str | None = None,
+    role_name: str | None = None,
+    sort: str = "rank",
+    dir: str = "asc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = {"source": source, "role_name": role_name}
+    result = scraping_storage.list_skill_associations(**filters, sort=sort, dir=dir, page=page, page_size=page_size)
+
+    active_filters = _clean_query(filters)
+    page_base_query = urlencode({**active_filters, "sort": sort, "dir": dir})
+
+    active_filter_chips = [
+        {
+            "label": f"{key.replace('_', ' ')}: {value}",
+            "remove_href": "/admin/skill-associations?" + urlencode({k: v for k, v in active_filters.items() if k != key}),
+        }
+        for key, value in active_filters.items()
+    ]
+
+    sort_links = {}
+    for column in ("rank", "percentage", "job_count"):
+        next_dir = ("asc" if dir == "desc" else "desc") if sort == column else "desc"
+        sort_links[column] = "/admin/skill-associations?" + urlencode({**active_filters, "sort": column, "dir": next_dir})
+
+    total_pages = max(1, math.ceil(result["total"] / page_size))
+
+    return templates.TemplateResponse(
+        request, "skill_associations.html",
+        {
+            "active_page": "skill_associations",
+            "associations": result["associations"],
+            "total": result["total"],
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "sort": sort,
+            "dir": dir,
+            "filters": filters,
+            "active_filter_chips": active_filter_chips,
+            "page_base_query": page_base_query,
+            "sort_links": sort_links,
+            "filter_options": {
+                "sources": scraping_storage.get_distinct_association_sources(),
+                "roles": scraping_storage.get_distinct_association_roles(),
+            },
+        },
+    )
+
+
+@app.get("/admin/skill-associations/{association_id:path}", dependencies=[Depends(require_admin_session)])
+def skill_association_detail(request: Request, association_id: str):
+    association = scraping_storage.get_skill_association(association_id)
+    if association is None:
+        raise HTTPException(status_code=404, detail="No skill association with that id")
+    association["raw_response_json"] = json.dumps(association["raw_response"], indent=2, default=str)
+    return templates.TemplateResponse(
+        request, "skill_association_detail.html",
+        {"active_page": "skill_associations", "association": association},
+    )
+
+
+@app.get("/admin/scrape-runs", dependencies=[Depends(require_admin_session)])
+def scrape_runs(request: Request):
+    return templates.TemplateResponse(
+        request, "scrape_runs.html",
+        {"active_page": "scrape_runs", "runs": scraping_storage.list_scrape_runs()},
     )
 
 

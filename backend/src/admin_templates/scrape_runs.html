@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Scraped Source Runs — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Scraped Source Runs</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Every registered scraped-source adapter — including one that has never run, since that's
+  exactly the state this view exists to surface, not hide. Run cadence is enforced in code
+  (<code>scraping_storage.is_due()</code>) before an adapter's <code>fetch()</code> is even
+  called — this view reads the same comparison, so it never disagrees with what the ingestion
+  script itself would decide.
+</div>
+
+{% if runs %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Last Run</th>
+      <th>Run Interval</th>
+      <th>Next Due</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in runs %}
+    <tr>
+      <td>{{ r.source }}</td>
+      <td>{{ r.last_run_at or 'Never run' }}</td>
+      <td>Every {{ r.min_run_interval_days }} day{{ '' if r.min_run_interval_days == 1 else 's' }}</td>
+      <td>{{ r.next_due_at or '—' }}</td>
+      <td>
+        {% if r.last_run_at is none %}<span class="stat-label">Never run</span>
+        {% elif r.is_due %}<span class="badge neutral">Due for next run</span>
+        {% else %}<span class="badge success">Up to date</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card"><div class="empty-state">No scraped sources registered yet.</div></div>
+{% endif %}
+{% endblock %}

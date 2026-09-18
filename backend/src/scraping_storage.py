@@ -6,8 +6,13 @@ Both tables are immutable, same discipline as raw_postings/employment_events:
 a scraped fact is inserted once and never mutated after insert. See
 backend/specs/scraped-data-sources/api.md — Data Models — Part 2.
 
-No query/read functions here beyond existing-id dedupe checks — this feature
-is ingestion-only, deliberately (the spec's "What this doesn't decide").
+**Added 2026-09-18** (`changes/2026-09-18-admin-market-benchmark-visibility.md`):
+read functions for the pipeline-visibility admin dashboard —
+list_market_observations()/get_market_observation(),
+list_skill_associations()/get_skill_association(), get_extraction_for_url(),
+list_scrape_runs(). Still ingestion-only for any *consumer-facing* surface
+(the spec's "What this doesn't decide" stands) — these reads are for the
+operator-only admin dashboard, not a new public query surface.
 """
 
 from __future__ import annotations
@@ -416,3 +421,232 @@ def insert_skill_associations(source: str, associations: list[FetchedSkillAssoci
             )
 
     return [aid for aid, _ in new]
+
+
+# ---------------------------------------------------------------------------
+# Admin read functions — added 2026-09-18
+# (changes/2026-09-18-admin-market-benchmark-visibility.md), for the
+# pipeline-visibility admin dashboard. Same closed-set-validated WHERE/ORDER
+# BY discipline as employment_events_storage.list_events() — see
+# backend/specs/pipeline-visibility/api.md for the routes these serve.
+# ---------------------------------------------------------------------------
+
+_OBSERVATION_SORT_COLUMNS = {"period_end", "entity_name", "rank", "vacancy_count"}
+
+_OBSERVATION_LIST_COLUMNS = (
+    "id, source, entity_type, entity_name, employment_type, location, period_end, "
+    "rank, vacancy_count, vacancy_share, salary_median, licence_confirmed, extraction_model"
+)
+
+_OBSERVATION_DETAIL_COLUMNS = (
+    "id, source, entity_type, entity_name, taxonomy_match, employment_type, location, "
+    "period_start, period_end, rank, rank_yoy_change, vacancy_count, vacancy_share, "
+    "live_jobs, salary_sample_size, salary_p10, salary_p25, salary_median, salary_p75, "
+    "salary_p90, salary_unit, salary_yoy_change, source_url, licence, licence_confirmed, "
+    "fetched_at, extraction_model, raw_response, created_at"
+)
+
+
+def list_market_observations(
+    source: str | None = None,
+    entity_type: str | None = None,
+    entity_name: str | None = None,
+    employment_type: str | None = None,
+    sort: str = "period_end",
+    dir: str = "desc",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    """Filtered/sorted/paginated market_observations rows, for GET
+    /admin/market-observations. See backend/specs/pipeline-visibility/api.md."""
+    if sort not in _OBSERVATION_SORT_COLUMNS:
+        sort = "period_end"
+    order_dir = "ASC" if dir == "asc" else "DESC"
+
+    conditions: list[str] = []
+    params: list = []
+    for column, value in (
+        ("source", source), ("entity_type", entity_type),
+        ("entity_name", entity_name), ("employment_type", employment_type),
+    ):
+        if value:
+            conditions.append(f"{column} = %s")
+            params.append(value)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn:
+        total = conn.execute(
+            f"SELECT count(*) FROM market_observations {where_clause}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT {_OBSERVATION_LIST_COLUMNS} FROM market_observations
+            {where_clause}
+            ORDER BY {sort} {order_dir} NULLS LAST
+            LIMIT %s OFFSET %s
+            """,
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+        columns = [c.strip() for c in _OBSERVATION_LIST_COLUMNS.split(",")]
+        observations = [dict(zip(columns, row)) for row in rows]
+
+    return {"observations": observations, "total": total}
+
+
+def get_market_observation(observation_id: str) -> dict | None:
+    """Full stored record for one market observation, for GET
+    /admin/market-observations/{observation_id}. None if not found."""
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT {_OBSERVATION_DETAIL_COLUMNS} FROM market_observations WHERE id = %s",
+            (observation_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        columns = [c.strip() for c in _OBSERVATION_DETAIL_COLUMNS.split(",")]
+        return dict(zip(columns, row))
+
+
+def get_distinct_observation_sources() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT DISTINCT source FROM market_observations ORDER BY source").fetchall()
+    return [r[0] for r in rows]
+
+
+def get_distinct_observation_entity_names() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT entity_name FROM market_observations ORDER BY entity_name"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+_ASSOCIATION_SORT_COLUMNS = {"rank", "percentage", "job_count"}
+
+_ASSOCIATION_LIST_COLUMNS = (
+    "id, source, role_name, skill_name, job_count, percentage, rank, "
+    "licence_confirmed, extraction_model"
+)
+
+_ASSOCIATION_DETAIL_COLUMNS = (
+    "id, source, role_name, role_taxonomy_match, skill_name, skill_taxonomy_match, "
+    "period_start, period_end, job_count, percentage, rank, source_url, licence, "
+    "licence_confirmed, fetched_at, extraction_model, raw_response, created_at"
+)
+
+
+def list_skill_associations(
+    source: str | None = None,
+    role_name: str | None = None,
+    sort: str = "rank",
+    dir: str = "asc",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    """Filtered/sorted/paginated skill_associations rows, for GET
+    /admin/skill-associations. See backend/specs/pipeline-visibility/api.md."""
+    if sort not in _ASSOCIATION_SORT_COLUMNS:
+        sort = "rank"
+    order_dir = "ASC" if dir == "asc" else "DESC"
+
+    conditions: list[str] = []
+    params: list = []
+    for column, value in (("source", source), ("role_name", role_name)):
+        if value:
+            conditions.append(f"{column} = %s")
+            params.append(value)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    with get_connection() as conn:
+        total = conn.execute(
+            f"SELECT count(*) FROM skill_associations {where_clause}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT {_ASSOCIATION_LIST_COLUMNS} FROM skill_associations
+            {where_clause}
+            ORDER BY {sort} {order_dir} NULLS LAST
+            LIMIT %s OFFSET %s
+            """,
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+        columns = [c.strip() for c in _ASSOCIATION_LIST_COLUMNS.split(",")]
+        associations = [dict(zip(columns, row)) for row in rows]
+
+    return {"associations": associations, "total": total}
+
+
+def get_skill_association(association_id: str) -> dict | None:
+    """Full stored record for one skill association, for GET
+    /admin/skill-associations/{association_id}. None if not found."""
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT {_ASSOCIATION_DETAIL_COLUMNS} FROM skill_associations WHERE id = %s",
+            (association_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        columns = [c.strip() for c in _ASSOCIATION_DETAIL_COLUMNS.split(",")]
+        return dict(zip(columns, row))
+
+
+def get_distinct_association_sources() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT DISTINCT source FROM skill_associations ORDER BY source").fetchall()
+    return [r[0] for r in rows]
+
+
+def get_distinct_association_roles() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT DISTINCT role_name FROM skill_associations ORDER BY role_name").fetchall()
+    return [r[0] for r in rows]
+
+
+def get_extraction_for_url(url: str) -> dict | None:
+    """The scrape_extractions row for one page url, for the Market
+    Observations detail view's extraction-provenance line
+    (backend/specs/pipeline-visibility/api.md — Business Logic). None if
+    this observation predates the LLM-extraction rebuild, or its
+    ExtractionCache row was since superseded — rendered as "Extraction
+    provenance unavailable", never fabricated."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT content_hash, model, extracted_at FROM scrape_extractions WHERE url = %s",
+            (url,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"content_hash": row[0], "model": row[1], "extracted_at": row[2]}
+
+
+def list_scrape_runs() -> list[dict]:
+    """
+    One row per *registered* scraped-source adapter (backend/specs/
+    pipeline-visibility/api.md — GET /admin/scrape-runs) — deliberately every
+    adapter in scraping.ALL_SCRAPED_SOURCE_ADAPTERS, not only ones with a
+    scrape_ingestion_runs row yet, since a never-run source is exactly the
+    state this view exists to surface. Reuses _due_from_last_run()'s existing
+    pure comparison logic so this view can never disagree with what
+    ingest_scraped_sources.py itself would decide.
+    """
+    from scraping import ALL_SCRAPED_SOURCE_ADAPTERS, DEFAULT_MIN_RUN_INTERVAL_DAYS, MIN_RUN_INTERVAL_DAYS
+
+    now = datetime.now(timezone.utc)
+    with get_connection() as conn:
+        rows = conn.execute("SELECT source, last_run_at FROM scrape_ingestion_runs").fetchall()
+    last_run_by_source = {r[0]: r[1] for r in rows}
+
+    runs = []
+    for adapter_cls in ALL_SCRAPED_SOURCE_ADAPTERS:
+        source = getattr(adapter_cls, "name", adapter_cls.__name__)
+        min_interval = MIN_RUN_INTERVAL_DAYS.get(source, DEFAULT_MIN_RUN_INTERVAL_DAYS)
+        last_run_at = last_run_by_source.get(source)
+        next_due_at = last_run_at + timedelta(days=min_interval) if last_run_at is not None else None
+        runs.append({
+            "source": source,
+            "last_run_at": last_run_at,
+            "min_run_interval_days": min_interval,
+            "next_due_at": next_due_at,
+            "is_due": _due_from_last_run(last_run_at, min_interval, now),
+        })
+    return runs
