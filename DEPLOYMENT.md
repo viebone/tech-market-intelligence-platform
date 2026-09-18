@@ -297,6 +297,17 @@ SDK's session manager needing its async lifespan explicitly wired into `main.py`
 not just its routes mounted). No new Railway service — mounted on this same `api` service, per
 that spec's own Tech Decisions.
 
+**Gotcha found 2026-09-16, not yet fixed** (`research/2026-09-16-mcp-session-lost-on-deploy.md`,
+`backend/specs/mcp-access/api.md` — Business Logic — Known limitation): every deploy to `api`
+restarts the process and **silently drops every active MCP session** — the `mcp` SDK holds
+session state in memory, not in Postgres like everything else this feature owns. A connected
+client (Claude, etc.) holding a pre-restart session ID gets `400 Bad Request: No valid session
+ID provided` on its next call — reads as "it stopped working" when really the one session it had
+just stopped existing. **Fix for the user in the moment**: disconnect and reconnect the
+connector (fresh OAuth + `initialize` = a new session). **Real fix, not done**: persist session
+state instead of relying on the SDK's default in-memory manager. Will recur on every `api`
+deploy until then — worth remembering before redeploying `api` while demoing a live connection.
+
 ## Service: `web` (deployed 2026-08-16)
 
 The React/Vite consumer frontend. Live at

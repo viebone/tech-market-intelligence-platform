@@ -573,6 +573,20 @@ static lookup). This is deliberate and load-bearing for the outcome's core premi
 external AI does its own reasoning, on the caller's own subscription; this platform's part of
 the round-trip spends no model tokens and touches `backend/src/llm/` not at all.
 
+**Known limitation — MCP sessions don't survive an `api` restart.** Flagged 2026-09-16
+(`research/2026-09-16-mcp-session-lost-on-deploy.md`), not fixed. The `mcp` SDK's
+`StreamableHTTP` session manager holds session state **in memory**, inside the `api` process —
+unlike every other piece of state this feature owns (`mcp_connections`, `mcp_tokens`,
+`mcp_usage`, all Postgres). Every deploy to `api` restarts that process and silently drops every
+active session; a client holding a pre-restart session ID gets `400 Bad Request: No valid
+session ID provided` on its next call — confirmed directly against production. A fresh
+`initialize` (no session yet) always works regardless, so this reads as "Claude suddenly can't
+connect" when it's really "the one session it had stopped existing." **Workaround today**:
+disconnect and reconnect the connector — that re-runs OAuth + `initialize` and gets a new
+session. **Real fix, not attempted**: persist session state (Postgres, matching every other
+stateful piece of this feature) instead of relying on the SDK's default in-memory manager. Will
+recur on every `api` deploy until then.
+
 ---
 
 ## External Dependencies
