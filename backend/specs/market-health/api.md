@@ -80,7 +80,7 @@ its prior state, so nothing here is ever mutated after insert.
 | `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
 | `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/specialization/level/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
 | `industry` | `str \| None` | The tracked company's industry (e.g. `"Fintech"`, `"AI"`, `"Social Media"`) — a static, curated lookup keyed by `company`, **not** an LLM inference (see Business Logic — Industry tagging). `NULL` for any company not yet tagged in the lookup; never guessed. |
-| `employer_size_band` | `str \| None` | Added 2026-09-19 (`EMPLOYER_PANEL.md`). Same static-lookup discipline as `industry`, keyed by `company` — `NULL` until a company is actually tagged. Deliberately **not** populated for most of the original 35 companies (a real employee-count-based band needs real research, not a general impression); populated for the UK employer panel additions using the size bucket already assigned in `research/2026-09-18-uk-employer-panel-plan.md` — a user-supplied classification, not an inferred one. See Business Logic — Employer metadata tagging. |
+| `employer_size_band` | `str \| None` | Added 2026-09-19 (`EMPLOYER_PANEL.md`). Same static-lookup discipline as `industry`, keyed by `company` — `NULL` until a company is actually tagged. Populated for the UK employer panel additions using the size bucket already assigned in `research/2026-09-18-uk-employer-panel-plan.md` (a user-supplied classification), and for 33 of the original 35 companies via real headcount research the same day (`research/2026-09-19-original-35-size-bands.md`, cited per-company). `NULL` only for `lever` (the ATS company itself), where no real figure was found — never guessed. See Business Logic — Employer metadata tagging. |
 | `employer_region` | `str \| None` | Added 2026-09-19. Same discipline, but populated confidently for every currently-tracked company — HQ country/region is well-established public fact, unlike `employer_size_band`. `NULL` for any future company not yet tagged. |
 
 **Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
@@ -705,12 +705,12 @@ dicts and `size_band_for()`/`region_for()` lookup functions, called at insert ti
 panel-composition claim defensible ("Product Designer vacancies across N continuously tracked
 employers, covering N industries and N regions") rather than asserted. **Deliberately uneven
 coverage, on purpose**: `employer_region` is populated for every tracked company (HQ
-country/region is uncontroversial public fact); `employer_size_band` is populated only for the
-UK employer panel companies (`EMPLOYER_PANEL.md`), using the size bucket the panel's own
-proposal already assigned each one — a user-supplied classification, not a guess. The original
-35 companies are left `NULL` for size band rather than estimated from general impression — a
-wrong band would undermine the exact credibility goal this feature exists to serve. This is a
-recorded follow-up (`EMPLOYER_PANEL.md`), not a silent gap.
+country/region is uncontroversial public fact); `employer_size_band` was initially populated
+only for the UK employer panel companies (`EMPLOYER_PANEL.md`), then extended the same day
+(`research/2026-09-19-original-35-size-bands.md`) to 33 of the original 35 via real headcount
+research — never a general impression. `lever` (the ATS company itself) is the sole remaining
+`NULL`, since no real figure was found for it — not guessed, and not silently dropped either
+(`EMPLOYER_PANEL.md` records it explicitly).
 
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every

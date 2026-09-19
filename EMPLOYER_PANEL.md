@@ -207,11 +207,11 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
 - ~~**`employer_size_band` / `employer_sector` / `employer_region` schema addition**~~ **Done
   2026-09-19** — `changes/2026-09-19-employer-panel-schema.md`. `employer_sector` already
   existed as `raw_postings.industry`. `employer_region` is now populated for all 54 tracked
-  companies. `employer_size_band` is populated **only** for the 19 UK panel companies (using
-  the size bucket this plan's own table already assigned each one) — the original 35 companies
-  are deliberately left untagged. **Real follow-up still needed**: research actual
-  employee-count-based size bands for the original 35 companies before they can be tagged
-  honestly — this is not a guess to make casually, see the schema change's own Decision Log.
+  companies. `employer_size_band` is populated for the 19 UK panel companies (user-supplied
+  buckets) **and, as of the same day, 33 of the original 35** via real headcount research
+  (`research/2026-09-19-original-35-size-bands.md`, cited ranges per company) — only `lever`
+  (the ATS company itself, now a sub-brand of Employ Inc.) remains untagged, since no real
+  figure was found. 53 of 54 tracked companies now have a real, cited `employer_size_band`.
 
 ---
 

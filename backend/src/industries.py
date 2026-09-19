@@ -115,17 +115,44 @@ COMPANY_REGION: dict[str, str] = {
 # a general impression. The 19 UK panel companies use the size bucket the
 # user's own plan (research/2026-09-18-uk-employer-panel-plan.md) already
 # assigned each one — a user-supplied classification, not this codebase's
-# guess. The original 35 companies are deliberately left untagged: real
-# employee-count-based bands need actual research (same discipline as every
-# ATS-token verification in EMPLOYER_PANEL.md), not an assistant's general
-# impression of "how big Stripe feels" — see EMPLOYER_PANEL.md's own
-# follow-up note. A wrong band here would undermine the exact credibility
-# goal this feature exists to serve.
+# guess. Bands: Large (5,000+ employees), Medium (500-5,000), Small/Growth
+# (50-500), Startup (<50) — matching the plan's own segmentation.
+#
+# The original 35 companies — added 2026-09-19
+# (research/2026-09-19-original-35-size-bands.md) via real headcount
+# research (Revelio Labs / company-reported figures, not general
+# impression), same "confirm empirically" discipline as every ATS-token
+# verification in EMPLOYER_PANEL.md. Figures conflict across sources for
+# several companies (methodology differences — contractors counted or not,
+# LinkedIn-graph vs. payroll); the band chosen is the one the weight of
+# sources supports, not a single cherry-picked number — see that research
+# file for every company's cited range. `lever` (the company, now a
+# sub-brand of Employ Inc.) is left deliberately untagged — no real figure
+# was found, not guessed.
 COMPANY_SIZE_BAND: dict[str, str] = {
+    # Greenhouse — original 15 (real 2026 headcount research, see
+    # research/2026-09-19-original-35-size-bands.md for cited ranges)
+    "stripe": "Large", "airbnb": "Large", "pinterest": "Large",
+    "asana": "Medium", "reddit": "Medium", "robinhood": "Medium",
+    "coinbase": "Medium", "affirm": "Medium", "webflow": "Medium",
+    "figma": "Medium", "airtable": "Medium", "cloudflare": "Large",
+    "twilio": "Large", "discord": "Medium", "gitlab": "Medium",
+    # Greenhouse — UK employer panel (user-supplied classification)
     "monzo": "Medium", "deliveroo": "Medium", "wise": "Medium",
     "autotrader": "Medium", "cleo": "Small/Growth",
     "rightmovecareers": "Medium", "ocadogroup": "Medium",
+    # Lever — original 5 (lever itself left untagged, see comment above)
+    "palantir": "Medium", "plaid": "Medium", "clari": "Medium",
+    "restream": "Small/Growth",
+    # Lever — UK employer panel
     "zopa": "Medium",
+    # Ashby — original 15
+    "ramp": "Medium", "linear": "Small/Growth", "openai": "Large",
+    "notion": "Medium", "modal": "Small/Growth", "replit": "Small/Growth",
+    "mercury": "Medium", "deel": "Large", "loom": "Small/Growth",
+    "vercel": "Medium", "supabase": "Small/Growth", "perplexity": "Medium",
+    "elevenlabs": "Medium", "ashby": "Small/Growth", "watershed": "Medium",
+    # Ashby — UK employer panel
     "trainline": "Medium", "quantexa": "Medium", "faculty": "Medium/Small",
     "motorway": "Medium", "marshmallow": "Medium", "multiverse": "Medium",
     "attio": "Small/Growth", "griffin": "Small/Growth", "sylvera": "Small/Growth",
