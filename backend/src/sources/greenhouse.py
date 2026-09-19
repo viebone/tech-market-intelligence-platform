@@ -55,6 +55,10 @@ COMPANIES: list[str] = [
     # it also resolves on Ashby, but that board is operational/warehouse
     # roles ("Hop" sites), not the tech/product roles this panel targets.
     "monzo", "deliveroo", "wise", "autotrader", "cleo",
+    # Verification pass 2 (2026-09-19, EMPLOYER_PANEL.md) — real board tokens
+    # found via direct research, not a plain lowercase-name guess:
+    # rightmovecareers (not "rightmove"), ocadogroup (not "ocado").
+    "rightmovecareers", "ocadogroup",
 ]
 
 

@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 16 of 36 added and live** (2026-09-18 — verification pass 1, below), the rest still
+**Status: 19 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -102,6 +102,41 @@ Systems, Rolls-Royce, Civil Service.
 
 ---
 
+## Verification pass 2 — 2026-09-19
+
+Went back to the 8 "not found on a first-guess slug" candidates from pass 1, this time with
+real research (WebSearch for each company's actual careers page/board token) instead of another
+guess, then the same real-HTTP-200 + content-inspection discipline before adding anything.
+
+**3 more real, verified hits — added:**
+
+| Employer | ATS | Real board token | Note |
+|---|---|---|---|
+| Rightmove | Greenhouse | `rightmovecareers` (not `rightmove`) | 34 real jobs |
+| Ocado (Group) | Greenhouse | `ocadogroup` (not `ocado`) | 50 real jobs — board includes non-UK roles (Ocado licenses its robotics internationally), same "don't assume UK-only" caveat as any global board |
+| incident.io | Ashby | `incident` (not `incidentio`) | 29 real jobs; confirmed genuinely incident.io by "incident.io" appearing literally in job description text, not just a plausible-looking slug |
+
+**A real, important near-miss — caught, not shipped.** A Greenhouse board at slug `sage49`
+resolved with HTTP 200 and looked plausible at first ("Jobs at Sage"). **Content inspection
+showed this is a different, unrelated US company** — every job was US-only (Los Angeles, New
+York, remote-US), with titles like "Network Cabling Project Manager" and "Edge Platform" that
+don't match Sage Group plc (the UK enterprise accounting/software company this panel actually
+wants). **Not added.** This is exactly why this project's own discipline requires inspecting
+real content, not just a 200 status, before trusting a match — recorded here as the concrete
+example of that discipline catching a real false positive.
+
+**Still unverified, with real findings recorded (not another blind guess):**
+
+| Employer | Finding |
+|---|---|
+| Starling | Confirmed via search: uses **Workable** (`apply.workable.com/starling-bank`) — a real, accessible board, but not one of this codebase's three built adapters yet. Candidate for whichever of Teamtailor/Workable gets built first (see "Next ATS adapters," below). |
+| AJ Bell | Careers URL pattern (`ajbell.co.uk/group/careers/vacancies/{long-numeric-id}`) matches **Oracle Recruiting Cloud / Oracle HCM** — a 6th ATS not on this project's radar at all yet. Not a quick win; needs its own investigation before anyone commits to building it. |
+| Softcat | Careers hosted at a custom domain, `jobs.softcat.com` — ATS behind it not identified from search alone. Needs a direct look at the page/network requests, not just a search. |
+| Sage (Group plc) | The `sage49` Greenhouse board is a different company (see above) — Sage Group's real ATS is still unknown. Likely a large-enterprise mechanism (Workday/SuccessFactors/custom), consistent with it being grouped near the Large-employer tier despite this panel listing it as Medium. |
+| Cuvva | No real hit found this pass either (tried `cuvva` and `cuvvainsurance` against all three built adapters) — genuinely unresolved, not rejected. |
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
@@ -120,16 +155,16 @@ Systems, Rolls-Royce, Civil Service.
 | Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Unverified — likely needs a dedicated public-sector mechanism, deferred per the plan | Unverified |
 | Monzo Careers | Medium | Fintech | Excellent product/engineering/design signal | High | **Greenhouse** (`monzo`) — verified | Added |
 | Deliveroo UK Careers | Medium | Technology | Currently exposes a substantial UK job catalogue directly | High | **Greenhouse** (`deliveroo`) — verified; also resolves on Ashby but that board is operational/warehouse roles, recommend Greenhouse only, see note above | Added (Greenhouse board only) |
-| Ocado Retail Careers | Medium | Retail/Tech | Digital + retail + supply chain + commercial | High | Unverified — no hit on first-guess slug | Unverified |
+| Ocado Retail Careers | Medium | Retail/Tech | Digital + retail + supply chain + commercial | High | **Greenhouse** (`ocadogroup`) — verified | Added |
 | Wise Careers | Medium | Fintech | Product-led technology employer | High | **Greenhouse** (`wise`) — verified | Added |
 | Trainline Careers | Medium | Travel/Tech | Product, engineering, data and UX | High | **Ashby** (`trainline`) — verified | Added |
 | Auto Trader Careers | Medium | Marketplace/Tech | Strong UK product organisation outside London | High | **Greenhouse** (`autotrader`) — verified | Added |
-| Rightmove Careers | Medium | Marketplace/Tech | Product, engineering and data | High | Unverified — no hit on first-guess slug | Unverified |
-| Sage Careers | Medium | Software | Important non-London enterprise software employer | High | Unverified — no hit on first-guess slug | Unverified |
-| Softcat Careers | Medium | IT services | Helps capture IT/services demand rather than only product companies | Medium | Unverified — no hit on first-guess slug | Unverified |
-| AJ Bell Careers | Medium | Financial services | Manchester/North-West + fintech/financial services | Medium | Unverified — no hit on first-guess slug | Unverified |
+| Rightmove Careers | Medium | Marketplace/Tech | Product, engineering and data | High | **Greenhouse** (`rightmovecareers`) — verified | Added |
+| Sage Careers | Medium | Software | Important non-London enterprise software employer | High | Unverified — the `sage49` Greenhouse board found is a different, unrelated US company (confirmed by content), real ATS still unknown | Unverified |
+| Softcat Careers | Medium | IT services | Helps capture IT/services demand rather than only product companies | Medium | Unverified — custom domain `jobs.softcat.com`, ATS behind it not identified | Unverified |
+| AJ Bell Careers | Medium | Financial services | Manchester/North-West + fintech/financial services | Medium | Unverified — URL pattern suggests Oracle Recruiting Cloud/HCM, a 6th ATS not yet on this project's radar | Unverified |
 | Zopa Careers | Medium | Fintech | UK digital financial-services employer | High | **Lever** (`zopa`) — verified | Added |
-| Starling Careers | Medium | Fintech | Engineering/product/data outside traditional banking | High | Unverified — no hit on first-guess slug | Unverified |
+| Starling Careers | Medium | Fintech | Engineering/product/data outside traditional banking | High | Confirmed **Workable** (`apply.workable.com/starling-bank`) — real, but not a built adapter yet | Unverified (needs Workable adapter) |
 | Quantexa Careers | Medium | AI/Data | Useful AI/data hiring signal | High | **Ashby** (`quantexa`) — verified | Added |
 | Faculty Careers | Medium/Small | AI | AI engineers, data scientists, product and consulting | High | **Ashby** (`faculty`) — verified | Added |
 | Motorway Careers | Medium | Marketplace | UK product/engineering scale-up | Medium | **Ashby** (`motorway`) — verified | Added |
@@ -138,9 +173,9 @@ Systems, Rolls-Royce, Civil Service.
 | Attio Jobs | Small/Growth | SaaS | Excellent startup signal | High | **Ashby** (`attio`) — verified, real HTTP 200, 63 real jobs | Added |
 | Griffin Jobs | Small/Growth | Fintech | UK-regulated bank/startup; UK/remote roles visible in Ashby | High | **Ashby** (`griffin`) — verified, real HTTP 200 | Added |
 | Sylvera Jobs | Small/Growth | Climate/Data | ~130-person scale-up with data/science/engineering roles | High | **Ashby** (`sylvera`) — verified | Added |
-| incident.io Careers | Small/Growth | SaaS | Strong software/product startup indicator | High | Unverified — no hit on first-guess slugs (`incident-io`, `incidentio`) | Unverified |
+| incident.io Careers | Small/Growth | SaaS | Strong software/product startup indicator | High | **Ashby** (`incident`) — verified, "incident.io" confirmed in job text | Added |
 | Cleo Careers | Small/Growth | Fintech/AI | Consumer AI/product company | Medium | **Greenhouse** (`cleo`) — verified | Added |
-| Cuvva Careers | Small/Growth | Insurtech | Smaller technology employer | Medium | Unverified — no hit on first-guess slug | Unverified |
+| Cuvva Careers | Small/Growth | Insurtech | Smaller technology employer | Medium | Unverified — no hit on `cuvva`/`cuvvainsurance` against any built adapter | Unverified |
 | Beamery Careers | Small/Growth | HR Tech | B2B SaaS/product jobs | Medium | **Ashby** (`beamery`) — verified | Added |
 
 ---

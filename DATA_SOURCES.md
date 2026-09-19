@@ -281,7 +281,7 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ## 4. Tracked companies
 
-**51 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**54 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -350,6 +350,9 @@ Two files must stay in sync (until §6 lands):
 | griffin | ashby | Fintech (Banking-as-a-Service) | ✅ |
 | sylvera | ashby | Climate/Data | ✅ |
 | beamery | ashby | HR Tech | ✅ |
+| rightmovecareers | greenhouse | Property Marketplace/Tech | ✅ (real board token, not "rightmove") |
+| ocadogroup | greenhouse | Retail/Tech (Grocery/Robotics) | ✅ (real board token, not "ocado"; board includes non-UK roles — Ocado licenses its robotics internationally) |
+| incident | ashby | SaaS (Incident Management) | ✅ (real board token, not "incidentio" — confirmed by "incident.io" appearing in job descriptions) |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.

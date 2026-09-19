@@ -51,6 +51,10 @@ COMPANIES: list[str] = [
     # 2026-09-18 by a real HTTP 200 against this board.
     "trainline", "quantexa", "faculty", "motorway", "marshmallow",
     "multiverse", "attio", "griffin", "sylvera", "beamery",
+    # Verification pass 2 (2026-09-19, EMPLOYER_PANEL.md) — "incident" is
+    # incident.io's real board slug (confirmed: "incident.io" appears
+    # literally in the job descriptions), not "incidentio" as first guessed.
+    "incident",
 ]
 
 

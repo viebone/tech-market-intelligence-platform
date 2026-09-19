@@ -31,6 +31,8 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "wise": "Fintech",
     "autotrader": "Automotive Marketplace",
     "cleo": "Fintech/AI",
+    "rightmovecareers": "Property Marketplace/Tech",
+    "ocadogroup": "Retail/Tech (Grocery/Robotics)",
     # Lever
     "palantir": "Enterprise Software/Data",
     "plaid": "Fintech",
@@ -66,6 +68,7 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "griffin": "Fintech (Banking-as-a-Service)",
     "sylvera": "Climate/Data",
     "beamery": "HR Tech",
+    "incident": "SaaS (Incident Management)",
 }
 
 
