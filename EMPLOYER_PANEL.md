@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 19 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, 2026-09-19 — below), the rest still
+**Status: 20 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling via the new Workable adapter, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -164,7 +164,7 @@ example of that discipline catching a real false positive.
 | Softcat Careers | Medium | IT services | Helps capture IT/services demand rather than only product companies | Medium | Unverified — custom domain `jobs.softcat.com`, ATS behind it not identified | Unverified |
 | AJ Bell Careers | Medium | Financial services | Manchester/North-West + fintech/financial services | Medium | Unverified — URL pattern suggests Oracle Recruiting Cloud/HCM, a 6th ATS not yet on this project's radar | Unverified |
 | Zopa Careers | Medium | Fintech | UK digital financial-services employer | High | **Lever** (`zopa`) — verified | Added |
-| Starling Careers | Medium | Fintech | Engineering/product/data outside traditional banking | High | Confirmed **Workable** (`apply.workable.com/starling-bank`) — real, but not a built adapter yet | Unverified (needs Workable adapter) |
+| Starling Careers | Medium | Fintech | Engineering/product/data outside traditional banking | High | **Workable** (`starling-bank`) — verified, 55 real jobs, first company on the new adapter | Added |
 | Quantexa Careers | Medium | AI/Data | Useful AI/data hiring signal | High | **Ashby** (`quantexa`) — verified | Added |
 | Faculty Careers | Medium/Small | AI | AI engineers, data scientists, product and consulting | High | **Ashby** (`faculty`) — verified | Added |
 | Motorway Careers | Medium | Marketplace | UK product/engineering scale-up | Medium | **Ashby** (`motorway`) — verified | Added |
@@ -187,8 +187,8 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
 
 | Adapter | Status | Notes |
 |---|---|---|
-| Teamtailor | Not started | Candidate first pick — reportedly common among smaller UK employers (per the plan's cited 2026 technology-detection dataset — treat as a discovery signal, not a verified census) |
-| Workable | Not started | Same reasoning as Teamtailor |
+| Teamtailor | Not started | Candidate next pick — reportedly common among smaller UK employers (per the plan's cited 2026 technology-detection dataset — treat as a discovery signal, not a verified census) |
+| Workable | ✅ **Built 2026-09-19** (`changes/2026-09-19-workable-adapter.md`) | `backend/src/sources/workable.py` — public, unauthenticated widget API, same shape as Greenhouse. First company: `starling-bank` (55 real jobs). Multi-location jobs deduped to one row per distinct job (see the adapter's own module docstring) — a real data-shape quirk found and handled, not assumed away. |
 | SmartRecruiters | Not started | Unverified how open/public its job API is — check before assuming Greenhouse-like access |
 | Workday | Not started | Large-enterprise-favoured; likely more access-restricted than Greenhouse/Lever/Ashby — verify before assuming a Greenhouse-shaped public API exists |
 | SuccessFactors | Not started | Same caveat as Workday |

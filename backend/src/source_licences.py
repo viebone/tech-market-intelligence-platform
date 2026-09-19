@@ -164,6 +164,22 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         permits_commercial_use=True,
         data_summary="Per-posting: title, company, full raw job-object response kept verbatim (includeCompensation=true, so structured pay data is often present); parsed country/city/salary where present.",
     ),
+    # workable: added 2026-09-19, per direct research against Workable's own
+    # help docs (help.workable.com's "Using the Workable API to create a
+    # careers page" article) — same "no formal licence, no restriction
+    # found, not manufactured" honesty as greenhouse/ashby above. The public
+    # widget endpoint requires no API key or login and is described as
+    # existing specifically so any consumer (not just the hiring company)
+    # can build a careers page from it.
+    "workable": SourceLicence(
+        source="workable",
+        licence="No formal data-reuse licence published. Public, unauthenticated widget API — Workable's own docs describe the intended use as letting a company (or a third party building on its behalf) build a careers page from it; third-party read access is neither addressed nor prohibited.",
+        attribution_text="Job posting data originally published by the hiring company via its Workable-hosted job board",
+        licence_url="https://help.workable.com/hc/en-us/articles/115012771647-Using-the-Workable-API-to-create-a-careers-page",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary="Per-posting: title, company, full raw job-object response kept verbatim; parsed country/city where present. No structured salary field on this endpoint.",
+    ),
 }
 
 def get_licence(source: str) -> SourceLicence:

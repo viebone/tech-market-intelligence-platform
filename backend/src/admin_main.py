@@ -244,7 +244,7 @@ def postings_list(
                 "confidences": sorted(classification.CLASSIFICATION_CONFIDENCE_VALUES),
                 "taxonomy_versions": [r["version"] for r in classification.get_taxonomy_version_breakdown()],
                 "requirements_statuses": ["extracted", "pending", "failed", "not_eligible"],
-                "sources": ["greenhouse", "lever", "ashby", "adzuna"],
+                "sources": ["greenhouse", "lever", "ashby", "workable", "adzuna"],
             },
         },
     )

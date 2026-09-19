@@ -33,6 +33,8 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "cleo": "Fintech/AI",
     "rightmovecareers": "Property Marketplace/Tech",
     "ocadogroup": "Retail/Tech (Grocery/Robotics)",
+    # Workable — UK employer panel, added 2026-09-19
+    "starling-bank": "Fintech",
     # Lever
     "palantir": "Enterprise Software/Data",
     "plaid": "Fintech",
@@ -96,6 +98,8 @@ COMPANY_REGION: dict[str, str] = {
     # Greenhouse — UK employer panel, added 2026-09-18/19
     "monzo": "UK", "deliveroo": "UK", "wise": "UK", "autotrader": "UK",
     "cleo": "UK", "rightmovecareers": "UK", "ocadogroup": "UK",
+    # Workable — UK employer panel
+    "starling-bank": "UK",
     # Lever — original 5
     "palantir": "US", "plaid": "US", "clari": "US", "restream": "US", "lever": "US",
     # Lever — UK employer panel
@@ -141,6 +145,8 @@ COMPANY_SIZE_BAND: dict[str, str] = {
     "monzo": "Medium", "deliveroo": "Medium", "wise": "Medium",
     "autotrader": "Medium", "cleo": "Small/Growth",
     "rightmovecareers": "Medium", "ocadogroup": "Medium",
+    # Workable — UK employer panel (user-supplied classification)
+    "starling-bank": "Medium",
     # Lever — original 5 (lever itself left untagged, see comment above)
     "palantir": "Medium", "plaid": "Medium", "clari": "Medium",
     "restream": "Small/Growth",

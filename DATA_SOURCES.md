@@ -62,16 +62,17 @@ source routing by cost/quality; paid data licensing.
 
 ## 3. Job-posting adapters (active)
 
-All three are **public, unauthenticated GET** endpoints — no credentials, no API keys. Each
-adapter fetches a company's *entire* published board (none of the three supports server-side
-filtering to "tech roles only" consistently), and classification's `other` bucket does the
-relevance filtering downstream.
+All four are **public, unauthenticated GET** endpoints — no credentials, no API keys. Each
+adapter fetches a company's *entire* published board (none supports server-side filtering to
+"tech roles only" consistently), and classification's `other` bucket does the relevance
+filtering downstream.
 
 | Adapter | `name` | Endpoint (per company) | Fetches | File |
 |---|---|---|---|---|
 | Greenhouse | `greenhouse` | `boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true` | Every published job, one call, no pagination | `backend/src/sources/greenhouse.py` |
 | Lever | `lever` | `api.lever.co/v0/postings/{site}?mode=json` | Every published job, paginated (`skip`/`limit=100`) | `backend/src/sources/lever.py` |
 | Ashby | `ashby` | `api.ashbyhq.com/posting-api/job-board/{jobBoardName}?includeCompensation=true` | Every published job; `includeCompensation` on so pay lands in `raw_response` | `backend/src/sources/ashby.py` |
+| Workable | `workable` | `apply.workable.com/api/v1/widget/accounts/{account}` | Every published job, one call, no pagination. **Multi-location jobs are duplicated per location in the raw response** — deduped to one row per distinct `shortcode` (first location kept), same "one row per distinct job" semantics Ashby already applies to its own `secondaryLocations`. Added 2026-09-19 (`EMPLOYER_PANEL.md`) — the first ATS adapter built since the original three, unlocking Starling and any future Workable-hosted employer. No structured salary field on this endpoint. | `backend/src/sources/workable.py` |
 
 Shared machinery (`backend/src/sources/base.py`):
 - `SourceAdapter` protocol — `name`, `companies`, `fetch_company(company) -> list[FetchedPosting]`
@@ -281,7 +282,7 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ## 4. Tracked companies
 
-**54 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**55 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -353,6 +354,7 @@ Two files must stay in sync (until §6 lands):
 | rightmovecareers | greenhouse | Property Marketplace/Tech | ✅ (real board token, not "rightmove") |
 | ocadogroup | greenhouse | Retail/Tech (Grocery/Robotics) | ✅ (real board token, not "ocado"; board includes non-UK roles — Ocado licenses its robotics internationally) |
 | incident | ashby | SaaS (Incident Management) | ✅ (real board token, not "incidentio" — confirmed by "incident.io" appearing in job descriptions) |
+| starling-bank | workable | Fintech | ✅ (first company on the new Workable adapter — confirmed real, 55 real jobs) |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.
