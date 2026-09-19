@@ -67,7 +67,12 @@ def _extract_city(location: str | None) -> str | None:
 # same discipline as Greenhouse's and Ashby's lists. See
 # backend/specs/market-health/api.md — Tech Decisions — Company-list
 # curation.
-COMPANIES: list[str] = ["palantir", "plaid", "clari", "restream", "lever"]
+COMPANIES: list[str] = [
+    "palantir", "plaid", "clari", "restream", "lever",
+    # UK employer panel (added 2026-09-18, EMPLOYER_PANEL.md) — verified
+    # 2026-09-18 by a real HTTP 200 against this board.
+    "zopa",
+]
 
 
 class LeverAdapter:

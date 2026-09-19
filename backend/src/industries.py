@@ -25,12 +25,20 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "twilio": "Developer Platform",
     "discord": "Social/Communications",
     "gitlab": "Developer Platform",
+    # Greenhouse — UK employer panel, added 2026-09-18 (EMPLOYER_PANEL.md)
+    "monzo": "Fintech",
+    "deliveroo": "Food Delivery/Marketplace",
+    "wise": "Fintech",
+    "autotrader": "Automotive Marketplace",
+    "cleo": "Fintech/AI",
     # Lever
     "palantir": "Enterprise Software/Data",
     "plaid": "Fintech",
     "clari": "Enterprise Software",
     "restream": "Media/Streaming Tools",
     "lever": "HR Tech",
+    # Lever — UK employer panel, added 2026-09-18
+    "zopa": "Fintech",
     # Ashby
     "ramp": "Fintech",
     "linear": "Productivity Software",
@@ -47,6 +55,17 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "elevenlabs": "AI",
     "ashby": "HR Tech",
     "watershed": "Climate Tech",
+    # Ashby — UK employer panel, added 2026-09-18
+    "trainline": "Travel/Tech",
+    "quantexa": "AI/Data",
+    "faculty": "AI",
+    "motorway": "Marketplace",
+    "marshmallow": "Insurtech",
+    "multiverse": "EdTech",
+    "attio": "SaaS/CRM",
+    "griffin": "Fintech (Banking-as-a-Service)",
+    "sylvera": "Climate/Data",
+    "beamery": "HR Tech",
 }
 
 

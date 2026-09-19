@@ -281,10 +281,17 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ## 4. Tracked companies
 
-**35 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**51 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
+
+**16 UK employers added 2026-09-18** (`EMPLOYER_PANEL.md`, `changes/2026-09-18-uk-employer-panel-v1.md`)
+— the first slice of a deliberately-designed panel correcting this list's prior skew toward
+venture-backed US tech, adding variation in geography (UK) and industry (fintech, marketplace,
+insurtech, AI, EdTech, travel, food delivery) — see `EMPLOYER_PANEL.md` for the full 36-employer
+candidate list this was drawn from, and its own tracked verification status for the remaining
+entries. All 16 use an ATS this codebase already has an adapter for — zero new adapter work.
 
 Two files must stay in sync (until §6 lands):
 - `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` list (drives ingestion)
@@ -327,6 +334,22 @@ Two files must stay in sync (until §6 lands):
 | elevenlabs | ashby | AI | ✅ |
 | ashby | ashby | HR Tech | ✅ |
 | watershed | ashby | Climate Tech | ✅ |
+| monzo | greenhouse | Fintech | ✅ |
+| deliveroo | greenhouse | Food Delivery/Marketplace | ✅ (Greenhouse board only — also resolves on Ashby, but that's a separate operational/warehouse board, deliberately not tracked, see `EMPLOYER_PANEL.md`) |
+| wise | greenhouse | Fintech | ✅ |
+| autotrader | greenhouse | Automotive Marketplace | ✅ |
+| cleo | greenhouse | Fintech/AI | ✅ |
+| zopa | lever | Fintech | ✅ |
+| trainline | ashby | Travel/Tech | ✅ |
+| quantexa | ashby | AI/Data | ✅ |
+| faculty | ashby | AI | ✅ |
+| motorway | ashby | Marketplace | ✅ |
+| marshmallow | ashby | Insurtech | ✅ |
+| multiverse | ashby | EdTech | ✅ |
+| attio | ashby | SaaS/CRM | ✅ |
+| griffin | ashby | Fintech (Banking-as-a-Service) | ✅ |
+| sylvera | ashby | Climate/Data | ✅ |
+| beamery | ashby | HR Tech | ✅ |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.
@@ -352,6 +375,13 @@ historical data.
 
 **Add a new source *type*** (layoffs, articles): `/change-request` first — it needs a new
 data model and its own adapter contract, not just a `COMPANIES` edit.
+
+**Candidate employers not yet added** (added 2026-09-18 —
+`research/2026-09-18-uk-employer-panel-plan.md`): see `EMPLOYER_PANEL.md` at the product root —
+a deliberately-designed, stratified panel proposal (~36 UK employers, size/sector/geography
+variation, correcting this table's current skew toward venture-backed tech) to work through
+one entry at a time. Nothing there is verified or added yet; each candidate still needs the
+same real verification this section already requires before it becomes a real row above.
 
 ---
 

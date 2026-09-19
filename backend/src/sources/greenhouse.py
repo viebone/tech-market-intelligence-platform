@@ -49,6 +49,12 @@ COMPANIES: list[str] = [
     "stripe", "airbnb", "pinterest", "asana", "reddit", "robinhood",
     "coinbase", "affirm", "webflow", "figma", "airtable", "cloudflare",
     "twilio", "discord", "gitlab",
+    # UK employer panel (added 2026-09-18, EMPLOYER_PANEL.md) — each verified
+    # 2026-09-18 by a real HTTP 200 against this board, same discipline as
+    # every token above. Deliberately Greenhouse board only for Deliveroo —
+    # it also resolves on Ashby, but that board is operational/warehouse
+    # roles ("Hop" sites), not the tech/product roles this panel targets.
+    "monzo", "deliveroo", "wise", "autotrader", "cleo",
 ]
 
 

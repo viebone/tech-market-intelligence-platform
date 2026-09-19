@@ -47,6 +47,10 @@ COMPANIES: list[str] = [
     "ramp", "linear", "openai", "notion", "modal", "replit", "mercury",
     "deel", "loom", "vercel", "supabase", "perplexity", "elevenlabs",
     "ashby", "watershed",
+    # UK employer panel (added 2026-09-18, EMPLOYER_PANEL.md) — each verified
+    # 2026-09-18 by a real HTTP 200 against this board.
+    "trainline", "quantexa", "faculty", "motorway", "marshmallow",
+    "multiverse", "attio", "griffin", "sylvera", "beamery",
 ]
 
 
