@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timezone
 
 from db import get_connection
-from industries import industry_for
+from industries import industry_for, region_for, size_band_for
 from sources.base import FetchedPosting
 
 
@@ -49,9 +49,10 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
                 INSERT INTO raw_postings (
                     id, source, source_ref, company, title, raw_response, fetched_at,
                     country, city, salary_min, salary_max, salary_currency,
-                    salary_confidence, salary_extraction_method, industry
+                    salary_confidence, salary_extraction_method, industry,
+                    employer_size_band, employer_region
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 [
@@ -59,6 +60,7 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
                         pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at,
                         p.country, p.city, p.salary_min, p.salary_max, p.salary_currency,
                         p.salary_confidence, p.salary_extraction_method, industry_for(p.company),
+                        size_band_for(p.company), region_for(p.company),
                     )
                     for pid, p in new
                 ],

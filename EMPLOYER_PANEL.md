@@ -204,9 +204,14 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
   insert-only; nothing detects a posting going stale/closed. A real, separate feature.
 - **ONS cross-referencing** — for the "vs. the wider market" credibility framing the plan
   describes. A new external data source in its own right.
-- **`employer_size_band` / `employer_sector` / `employer_region` schema addition** — agreed as
-  the actual first concrete step (no new adapters needed, backfillable onto the existing 35
-  companies today). Tracked separately — run `/change-request` for it when ready to start.
+- ~~**`employer_size_band` / `employer_sector` / `employer_region` schema addition**~~ **Done
+  2026-09-19** — `changes/2026-09-19-employer-panel-schema.md`. `employer_sector` already
+  existed as `raw_postings.industry`. `employer_region` is now populated for all 54 tracked
+  companies. `employer_size_band` is populated **only** for the 19 UK panel companies (using
+  the size bucket this plan's own table already assigned each one) — the original 35 companies
+  are deliberately left untagged. **Real follow-up still needed**: research actual
+  employee-count-based size bands for the original 35 companies before they can be tagged
+  honestly — this is not a guess to make casually, see the schema change's own Decision Log.
 
 ---
 

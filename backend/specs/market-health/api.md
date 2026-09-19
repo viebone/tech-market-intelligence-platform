@@ -80,6 +80,8 @@ its prior state, so nothing here is ever mutated after insert.
 | `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
 | `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/specialization/level/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
 | `industry` | `str \| None` | The tracked company's industry (e.g. `"Fintech"`, `"AI"`, `"Social Media"`) — a static, curated lookup keyed by `company`, **not** an LLM inference (see Business Logic — Industry tagging). `NULL` for any company not yet tagged in the lookup; never guessed. |
+| `employer_size_band` | `str \| None` | Added 2026-09-19 (`EMPLOYER_PANEL.md`). Same static-lookup discipline as `industry`, keyed by `company` — `NULL` until a company is actually tagged. Deliberately **not** populated for most of the original 35 companies (a real employee-count-based band needs real research, not a general impression); populated for the UK employer panel additions using the size bucket already assigned in `research/2026-09-18-uk-employer-panel-plan.md` — a user-supplied classification, not an inferred one. See Business Logic — Employer metadata tagging. |
+| `employer_region` | `str \| None` | Added 2026-09-19. Same discipline, but populated confidently for every currently-tracked company — HQ country/region is well-established public fact, unlike `employer_size_band`. `NULL` for any future company not yet tagged. |
 
 **Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
 the already-live `raw_postings` table via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (not just
@@ -694,6 +696,21 @@ LLM-inferred: with only 35 tracked companies, a one-time manual tag is both chea
 reliable than asking a model to guess an industry from a company name. This directly
 supports Requirements Signal-adjacent questions like "which industries are hiring the most
 designers" without needing any new LLM cost.
+
+**Employer metadata tagging (at ingestion time, no LLM) — added 2026-09-19.**
+`employer_size_band`/`employer_region` (Data Models — RawPosting) follow the exact same
+mechanism as `industry` above — `industries.py` gains `COMPANY_SIZE_BAND`/`COMPANY_REGION`
+dicts and `size_band_for()`/`region_for()` lookup functions, called at insert time in
+`raw_postings.insert_new_postings()` alongside `industry_for()`. The purpose is making a future
+panel-composition claim defensible ("Product Designer vacancies across N continuously tracked
+employers, covering N industries and N regions") rather than asserted. **Deliberately uneven
+coverage, on purpose**: `employer_region` is populated for every tracked company (HQ
+country/region is uncontroversial public fact); `employer_size_band` is populated only for the
+UK employer panel companies (`EMPLOYER_PANEL.md`), using the size bucket the panel's own
+proposal already assigned each one — a user-supplied classification, not a guess. The original
+35 companies are left `NULL` for size band rather than estimated from general impression — a
+wrong band would undermine the exact credibility goal this feature exists to serve. This is a
+recorded follow-up (`EMPLOYER_PANEL.md`), not a silent gap.
 
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every

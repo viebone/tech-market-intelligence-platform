@@ -87,6 +87,12 @@ ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS salary_extraction_method TEXT;
 -- dedupe invariant, so there is no future moment that would fill it in).
 ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS industry TEXT;
 
+-- Employer panel metadata (added 2026-09-19 — EMPLOYER_PANEL.md, Business
+-- Logic — Employer metadata tagging). Same "static curated lookup, NULL
+-- until tagged, never guessed" discipline as `industry` above.
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS employer_size_band TEXT;
+ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS employer_region TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_raw_postings_fetched_at ON raw_postings (fetched_at);
 CREATE INDEX IF NOT EXISTS idx_raw_postings_source ON raw_postings (source);
 CREATE INDEX IF NOT EXISTS idx_raw_postings_country ON raw_postings (country);
