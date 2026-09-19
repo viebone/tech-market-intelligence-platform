@@ -36,6 +36,10 @@ BASE_URL = "https://apply.workable.com/api/v1/widget/accounts"
 # — Starling was confirmed on Workable during UK employer panel research.
 COMPANIES: list[str] = [
     "starling-bank",
+    # Verified 2026-09-19 (EMPLOYER_PANEL.md) — real board, currently 0 open
+    # roles ("returns 0" is a legitimate state, not an error, same
+    # convention already documented for e.g. Greenhouse's "clari"/"restream").
+    "cuvva",
 ]
 
 

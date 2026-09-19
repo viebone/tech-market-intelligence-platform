@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 20 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling via the new Workable adapter, 2026-09-19 — below), the rest still
+**Status: 21 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -137,6 +137,29 @@ example of that discipline catching a real false positive.
 
 ---
 
+## Verification pass 3 — 2026-09-19
+
+After the Workable adapter was built (`changes/2026-09-19-workable-adapter.md`), re-tried
+`cuvva` against all four built adapters (Greenhouse, Lever, Ashby, Workable) instead of just
+the three from pass 1/2.
+
+**1 more real hit — added**: Cuvva resolves on **Workable** (`cuvva`) — real board, currently
+**0 open roles** (a legitimate "returns 0" state, same convention already documented for
+Greenhouse's `clari`/`restream` — not an error or a wrong slug).
+
+**Deeper research on Softcat and Sage, still inconclusive — recorded honestly, not abandoned
+silently**:
+- **Softcat**: the real listings URL is `jobs.softcat.com/jobs/vacancy/find/results/` — a
+  distinctive shape, but it doesn't match any built adapter or common ATS brand searched for
+  (Workday, SmartRecruiters, iCIMS, Eightfold, PhenomPeople, SuccessFactors). Likely a
+  white-label or custom platform; identifying it for real would need direct network-request
+  inspection (opening the page in a real browser and reading its actual API calls), not
+  available through search or a static page fetch.
+- **Sage Group**: `sage.com/company/careers/career-search` returns HTTP 403 to automated
+  fetches. No conclusive ATS identification found via search either. Real ATS still unknown.
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
@@ -160,8 +183,8 @@ example of that discipline catching a real false positive.
 | Trainline Careers | Medium | Travel/Tech | Product, engineering, data and UX | High | **Ashby** (`trainline`) — verified | Added |
 | Auto Trader Careers | Medium | Marketplace/Tech | Strong UK product organisation outside London | High | **Greenhouse** (`autotrader`) — verified | Added |
 | Rightmove Careers | Medium | Marketplace/Tech | Product, engineering and data | High | **Greenhouse** (`rightmovecareers`) — verified | Added |
-| Sage Careers | Medium | Software | Important non-London enterprise software employer | High | Unverified — the `sage49` Greenhouse board found is a different, unrelated US company (confirmed by content), real ATS still unknown | Unverified |
-| Softcat Careers | Medium | IT services | Helps capture IT/services demand rather than only product companies | Medium | Unverified — custom domain `jobs.softcat.com`, ATS behind it not identified | Unverified |
+| Sage Careers | Medium | Software | Important non-London enterprise software employer | High | Unverified — the `sage49` Greenhouse board found is a different, unrelated US company (confirmed by content); a deeper pass (direct page fetch, targeted searches for Eightfold/PhenomPeople/SmartRecruiters/SuccessFactors/iCIMS branding) still found nothing conclusive — `sage.com/company/careers/career-search` blocks automated fetches (403) | Unverified |
+| Softcat Careers | Medium | IT services | Helps capture IT/services demand rather than only product companies | Medium | Unverified — custom domain `jobs.softcat.com`, real listings page is `jobs.softcat.com/jobs/vacancy/find/results/`; that URL shape doesn't match any of this project's built adapters or common ATS brand names found in research. Needs direct network-request inspection (not available via search/WebFetch) to identify the real platform | Unverified |
 | AJ Bell Careers | Medium | Financial services | Manchester/North-West + fintech/financial services | Medium | Unverified — URL pattern suggests Oracle Recruiting Cloud/HCM, a 6th ATS not yet on this project's radar | Unverified |
 | Zopa Careers | Medium | Fintech | UK digital financial-services employer | High | **Lever** (`zopa`) — verified | Added |
 | Starling Careers | Medium | Fintech | Engineering/product/data outside traditional banking | High | **Workable** (`starling-bank`) — verified, 55 real jobs, first company on the new adapter | Added |
@@ -175,7 +198,7 @@ example of that discipline catching a real false positive.
 | Sylvera Jobs | Small/Growth | Climate/Data | ~130-person scale-up with data/science/engineering roles | High | **Ashby** (`sylvera`) — verified | Added |
 | incident.io Careers | Small/Growth | SaaS | Strong software/product startup indicator | High | **Ashby** (`incident`) — verified, "incident.io" confirmed in job text | Added |
 | Cleo Careers | Small/Growth | Fintech/AI | Consumer AI/product company | Medium | **Greenhouse** (`cleo`) — verified | Added |
-| Cuvva Careers | Small/Growth | Insurtech | Smaller technology employer | Medium | Unverified — no hit on `cuvva`/`cuvvainsurance` against any built adapter | Unverified |
+| Cuvva Careers | Small/Growth | Insurtech | Smaller technology employer | Medium | **Workable** (`cuvva`) — verified real, currently 0 open roles ("returns 0," not an error) | Added |
 | Beamery Careers | Small/Growth | HR Tech | B2B SaaS/product jobs | Medium | **Ashby** (`beamery`) — verified | Added |
 
 ---

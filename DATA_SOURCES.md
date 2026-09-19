@@ -282,7 +282,7 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ## 4. Tracked companies
 
-**55 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**56 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -355,6 +355,7 @@ Two files must stay in sync (until §6 lands):
 | ocadogroup | greenhouse | Retail/Tech (Grocery/Robotics) | ✅ (real board token, not "ocado"; board includes non-UK roles — Ocado licenses its robotics internationally) |
 | incident | ashby | SaaS (Incident Management) | ✅ (real board token, not "incidentio" — confirmed by "incident.io" appearing in job descriptions) |
 | starling-bank | workable | Fintech | ✅ (first company on the new Workable adapter — confirmed real, 55 real jobs) |
+| cuvva | workable | Insurtech | ✅ (board resolves; currently 0 open roles — a legitimate "returns 0" state, not an error) |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.
