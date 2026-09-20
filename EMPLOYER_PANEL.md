@@ -192,22 +192,58 @@ Workday's CXS API was (no confirmed public API found for either in this pass).
 
 ---
 
+## Verification pass 5 — 2026-09-20
+
+Continued straight on to the remaining 7 Large-employer candidates not reached in pass 4:
+Sainsbury's, BT Group, VodafoneThree, Sky, BAE Systems, Rolls-Royce, Civil Service. Full detail:
+`research/2026-09-20-large-employer-pass5-findings.md`.
+
+**Real platform identification for all 7** (WebSearch + direct WebFetch content inspection —
+CDN domains and URL shapes read from the live page, same discipline as the `sage49` false-
+positive catch in pass 2, not assumed from search summaries alone):
+
+| Employer | Real platform found | Verified how |
+|---|---|---|
+| Sainsbury's | Oracle Recruiting Cloud / HCM | `sainsburys.jobs/jobs` links to `hdhe.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/...` |
+| BT Group | SAP SuccessFactors | `jobs.bt.com/BTGroup/` serves an asset from `rmkcdn.successfactors.com`; cookie notice names SAP |
+| VodafoneThree | Attrax (now part of Phenom) | `jobs.three.co.uk/jobs` serves assets from `attraxcdnprod1-....azurefd.net` |
+| Sky | Oracle Taleo (at least one instance) | Real reachable URL: `bskyb.taleo.net/careersection/bskyb_internal/jobsearch.ftl` — Sky's own privacy notice also names Workday/Avature/Cappfinity/LaunchPad, likely different sub-brands/stages, not confirmed the same way |
+| BAE Systems | Oracle Taleo | Direct HTTP 200 on `baesystems.taleo.net/careersection/2/jobsearch.ftl?lang=en` |
+| Rolls-Royce | Workday | `rollsroyce.wd3.myworkdayjobs.com/professional` (plus divisional tenants) — same CXS platform already confirmed for Barclays/AstraZeneca |
+| Civil Service | Still no official API | `civilservicejobs.service.gov.uk` remains HTML-only; only third-party commercial scrapers exist, no first-party feed |
+
+**Rolls-Royce needs no new decision** — it's the same Workday platform already blocked earlier
+this same day (Barclays/AstraZeneca research), so the existing "skip Workday for now" decision
+applies without re-litigating it.
+
+**A real, half-open Taleo lead — found, not built.** With Taleo now confirmed for 3 employers
+(Tesco, BAE Systems, Sky), checked whether it exposes any real API, since one adapter there would
+unlock 3 companies at once. Direct requests against BAE Systems' instance: `GET .../careersection/
+rest/jobboard/searchjobs` → HTTP 405 (path exists, wrong method); `POST` with a guessed JSON body
+→ HTTP 400 (endpoint is real and live, but its actual required request schema isn't something to
+guess further at without Oracle's own API docs). **Licence check attempted, inconclusive** —
+unlike Workday's explicit written prohibition, no Oracle Taleo terms-of-use document was found
+either confirming or prohibiting this. Treated the same as Tesco's original Taleo finding:
+reachable, not confirmed permitted — **not built** until this resolves one way or the other.
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
 |---|---|---|---|---|---|---|
 | Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | **Oracle Taleo** confirmed (`careers.tesco.com` — `RedirectApply` URL pattern) — a 7th ATS, no known public API, not investigated further | Unverified |
-| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | Unverified — not reached this pass | Unverified |
-| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | Unverified — not reached this pass | Unverified |
-| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | Unverified — not reached this pass | Unverified |
-| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | Unverified — not reached this pass | Unverified |
+| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | **Oracle Recruiting Cloud / HCM** confirmed (`sainsburys.jobs/jobs` links to `oraclecloud.com/hcmUI/CandidateExperience`) — no known public API, terms not investigated | Unverified |
+| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | **SAP SuccessFactors** confirmed (`jobs.bt.com` serves assets from `rmkcdn.successfactors.com`) — no known public API, terms not investigated | Unverified |
+| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | **Attrax (Phenom)** confirmed (`jobs.three.co.uk` serves assets from `attraxcdnprod1-....azurefd.net`) — a platform new to this panel, no known public API, terms not investigated | Unverified |
+| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | **Oracle Taleo** confirmed for at least one instance (`bskyb.taleo.net`) — Sky's own privacy notice also names Workday/Avature/Cappfinity/LaunchPad; no known public API, terms not investigated | Unverified |
 | Barclays Careers | Large | Banking | Large UK tech/product employer | High | **Workday** confirmed real and technically accessible (public, unauthenticated CXS API, 873 real jobs) — **deliberately not built**: Workday's own Terms of Service explicitly prohibit scraping/automated access/apps interacting with their sites without written consent (`research/2026-09-20-workday-licence-check.md`). Needs explicit permission before any adapter work, same bar as Indeed/Reed | Unverified — blocked on permission, not technically |
 | NatWest Group Careers | Large | Banking | Product, proposition, data and technology jobs visible directly | High | Real candidate site (`jobs.natwestgroup.com`) is Cloudflare-protected — returns a bot-challenge page (403) to a plain request regardless of underlying platform | Unverified |
 | HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | **Eightfold.ai** confirmed (`hsbc.eightfold.ai/careers`) — a 8th ATS, terms/API not investigated | Unverified |
 | AstraZeneca UK Jobs | Large | Pharma | Science + AI/data + digital + corporate | High | **Workday** confirmed real and technically accessible (same public CXS API as Barclays) — same deliberate non-build decision, see Barclays row | Unverified — blocked on permission, not technically |
-| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | Unverified — not reached this pass | Unverified |
-| Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | Unverified — not reached this pass | Unverified |
-| Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Unverified — likely needs a dedicated public-sector mechanism, deferred per the plan; not reached this pass | Unverified |
+| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | **Oracle Taleo** confirmed (`baesystems.taleo.net/careersection/2/jobsearch.ftl` — real HTTP 200). A real REST endpoint (`careersection/rest/jobboard/searchjobs`) exists (405 on GET, 400 on a guessed POST) but its schema isn't documented and Oracle's Taleo terms of use weren't found either way — reachable, not confirmed permitted | Unverified |
+| Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | **Workday** confirmed (`rollsroyce.wd3.myworkdayjobs.com/professional`) — same CXS platform already blocked for Barclays/AstraZeneca; inherits that decision, no separate one needed | Unverified — blocked on permission, not technically |
+| Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Confirmed no official API — `civilservicejobs.service.gov.uk` is HTML-only; only third-party commercial scrapers exist. Likely needs a dedicated public-sector mechanism, deferred per the plan | Unverified |
 | Monzo Careers | Medium | Fintech | Excellent product/engineering/design signal | High | **Greenhouse** (`monzo`) — verified | Added |
 | Deliveroo UK Careers | Medium | Technology | Currently exposes a substantial UK job catalogue directly | High | **Greenhouse** (`deliveroo`) — verified; also resolves on Ashby but that board is operational/warehouse roles, recommend Greenhouse only, see note above | Added (Greenhouse board only) |
 | Ocado Retail Careers | Medium | Retail/Tech | Digital + retail + supply chain + commercial | High | **Greenhouse** (`ocadogroup`) — verified | Added |
@@ -246,9 +282,11 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
 | Workable | ✅ **Built 2026-09-19** (`changes/2026-09-19-workable-adapter.md`) | `backend/src/sources/workable.py` — public, unauthenticated widget API, same shape as Greenhouse. First company: `starling-bank` (55 real jobs). Multi-location jobs deduped to one row per distinct job (see the adapter's own module docstring) — a real data-shape quirk found and handled, not assumed away. |
 | SmartRecruiters | Not started | Unverified how open/public its job API is — check before assuming Greenhouse-like access |
 | **Workday** | ❌ **Blocked on permission, 2026-09-20** — not a build candidate right now | Technically excellent (public, unauthenticated CXS API, confirmed real for Barclays + AstraZeneca) but Workday's own Terms of Service explicitly prohibit scraping/automated access without written consent — `research/2026-09-20-workday-licence-check.md`. Revisit only if explicit permission is obtained (from Workday or an individual tenant employer), same bar as Indeed/Reed. |
-| SuccessFactors | Not started | Same caveat as Workday — check terms before assuming access, not just technical reachability |
-| Oracle Taleo | Not started | Confirmed used by Tesco (`careers.tesco.com`) — no known public API found yet, terms not checked |
+| SuccessFactors | Not started | Confirmed used by BT Group (2026-09-20, `rmkcdn.successfactors.com` asset evidence) — same caveat as Workday, check terms before assuming access |
+| Oracle Taleo | Not started | Confirmed used by Tesco, BAE Systems, and (at least one instance of) Sky — 3 employers on one platform, the strongest "one adapter unlocks several" case in this backlog. A real REST endpoint (`careersection/rest/jobboard/searchjobs`) is live (405/400, not 404) but undocumented; Oracle's own terms weren't found either confirming or prohibiting scraping — reachable, not cleared |
 | Eightfold.ai | Not started | Confirmed used by HSBC (`hsbc.eightfold.ai`) — no known public API found yet, terms not checked |
+| Oracle Recruiting Cloud / HCM | Not started | Confirmed used by Sainsbury's (2026-09-20) and suspected for AJ Bell — a platform new to this panel, no known public API found yet, terms not checked |
+| Attrax (Phenom) | Not started | Confirmed used by VodafoneThree (2026-09-20, `attraxcdnprod1-....azurefd.net` asset evidence) — a platform new to this panel, no known public API found yet, terms not checked |
 
 ## Deferred (own future change requests, not bundled into this panel)
 
