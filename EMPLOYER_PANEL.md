@@ -288,6 +288,42 @@ redirect, with a generous robots.txt) worth checking for a structured feed.
 
 ---
 
+## Direct-to-employer-portal check — 2026-09-20
+
+User asked: "what about going directly to the companies' career portals?" Real research on
+whether that opens anything the vendor research above didn't already cover. Full detail:
+`research/2026-09-20-direct-employer-portal-check.md`.
+
+**For the 7 vendor-hosted employers (Workday/Taleo/Eightfold), there is no separate "company
+portal"** — confirmed directly for BAE Systems: its own marketing careers page
+(`baesystems.com/.../search-and-apply`) doesn't serve real content to an automated request at
+all, loading an Incapsula/Imperva bot-challenge instead — a second, independent wall, unrelated
+to the Taleo ToS question already found. For all 7, the company's own site redirects/embeds
+straight into the vendor's domain already checked — going "directly to the portal" doesn't
+create a new option.
+
+**For BT, VodafoneThree, and Sainsbury's — already looking at the employer's own domain.**
+Checked each employer's own general website terms (as opposed to any ATS vendor's): BT and
+VodafoneThree have **no general website Terms of Use at all** in their careers-site footer — no
+prohibition, no permission, genuinely neutral. Sainsbury's does have one
+(`sainsburys.co.uk/terms`) but it returned HTTP 403 even to a real browser User-Agent —
+unreachable to verify.
+
+**An important distinction from Greenhouse/Lever/Ashby/Workable**: those were built on "no
+restriction found" *alongside* a purpose-built public JSON API — a structural signal the vendor
+intended exactly this kind of consumption. BT/VodafoneThree/Sainsbury's have no known structured
+feed at all — building anything here would be real HTML scraping against an undocumented page,
+squarely the **Custom careers-page adapter** category already named in "Deferred," below: real,
+permission-seeking, IT-Jobs-Watch-weight effort, not a quick technical win.
+
+**A separate new finding**: Civil Service Jobs (`civilservicejobs.service.gov.uk`) is itself
+actively bot-challenged (a real "Quick Check Needed" page, confirmed via direct fetch) — which
+makes its Open Government Licence status (a genuinely more permissive regime than any commercial
+ATS vendor's terms) moot in practice, since the site is bot-walled before that licence would
+ever matter.
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
