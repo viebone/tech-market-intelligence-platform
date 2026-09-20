@@ -221,10 +221,37 @@ applies without re-litigating it.
 unlock 3 companies at once. Direct requests against BAE Systems' instance: `GET .../careersection/
 rest/jobboard/searchjobs` → HTTP 405 (path exists, wrong method); `POST` with a guessed JSON body
 → HTTP 400 (endpoint is real and live, but its actual required request schema isn't something to
-guess further at without Oracle's own API docs). **Licence check attempted, inconclusive** —
-unlike Workday's explicit written prohibition, no Oracle Taleo terms-of-use document was found
-either confirming or prohibiting this. Treated the same as Tesco's original Taleo finding:
-reachable, not confirmed permitted — **not built** until this resolves one way or the other.
+guess further at without Oracle's own API docs). Licence check deferred to a same-day follow-up —
+see "Oracle Taleo licence check," below.
+
+---
+
+## Oracle Taleo licence check — 2026-09-20
+
+Followed up on the Taleo lead from pass 5 with the same document-fetching discipline used for
+Workday. Full detail: `research/2026-09-20-oracle-taleo-licence-check.md`.
+
+Taleo career sections carry no Oracle-specific legal link of their own (checked BAE Systems' live
+page directly — only a BAE Systems cookie-statement link was found). Went to the source instead:
+**Oracle Web Sites Terms of Use** (`oracle.com/legal/terms/`, fetched directly, "Last Revised:
+August 10, 2024"). Verbatim:
+
+> "Welcome to the Oracle Web sites (the 'Site')... The following are terms of a legal agreement
+> between you... and Oracle Corporation and its affiliated companies."
+
+> "You agree not to use any robot, spider, scraper or other automated means to access the Site or
+> any Oracle accounts, computer systems or networks without Oracle's express written permission."
+
+**Scope reasoning**: `taleo.net` is Oracle-owned, Oracle-operated infrastructure (Oracle acquired
+Taleo in 2012) — every career section, however it's branded for the employer, runs on Oracle's
+own domain from the start. If anything this is a **stronger** case for coverage than Workday's
+tenant-subdomain ambiguity was (Workday's terms named `workday.com` specifically and left
+`myworkdayjobs.com` tenant pages an open question; Taleo has no equivalent ambiguity — there's no
+separate "tenant domain" at all, it's all `taleo.net`).
+
+**Decision: do not build a Taleo adapter without Oracle's express written permission** — same
+treatment as Indeed, Reed, and Workday, and it affects all 3 currently-identified Taleo employers
+(Tesco, BAE Systems, Sky) at once, not just one.
 
 ---
 
@@ -232,16 +259,16 @@ reachable, not confirmed permitted — **not built** until this resolves one way
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
 |---|---|---|---|---|---|---|
-| Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | **Oracle Taleo** confirmed (`careers.tesco.com` — `RedirectApply` URL pattern) — a 7th ATS, no known public API, not investigated further | Unverified |
+| Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | **Oracle Taleo** confirmed (`careers.tesco.com` — `RedirectApply` URL pattern) — **deliberately not built**: Oracle's Terms of Use explicitly prohibit scraping/automated access without express written permission (`research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
 | Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | **Oracle Recruiting Cloud / HCM** confirmed (`sainsburys.jobs/jobs` links to `oraclecloud.com/hcmUI/CandidateExperience`) — no known public API, terms not investigated | Unverified |
 | BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | **SAP SuccessFactors** confirmed (`jobs.bt.com` serves assets from `rmkcdn.successfactors.com`) — no known public API, terms not investigated | Unverified |
 | VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | **Attrax (Phenom)** confirmed (`jobs.three.co.uk` serves assets from `attraxcdnprod1-....azurefd.net`) — a platform new to this panel, no known public API, terms not investigated | Unverified |
-| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | **Oracle Taleo** confirmed for at least one instance (`bskyb.taleo.net`) — Sky's own privacy notice also names Workday/Avature/Cappfinity/LaunchPad; no known public API, terms not investigated | Unverified |
+| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | **Oracle Taleo** confirmed for at least one instance (`bskyb.taleo.net`) — Sky's own privacy notice also names Workday/Avature/Cappfinity/LaunchPad. **Taleo instance deliberately not built** (Oracle's Terms of Use prohibition, `research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
 | Barclays Careers | Large | Banking | Large UK tech/product employer | High | **Workday** confirmed real and technically accessible (public, unauthenticated CXS API, 873 real jobs) — **deliberately not built**: Workday's own Terms of Service explicitly prohibit scraping/automated access/apps interacting with their sites without written consent (`research/2026-09-20-workday-licence-check.md`). Needs explicit permission before any adapter work, same bar as Indeed/Reed | Unverified — blocked on permission, not technically |
 | NatWest Group Careers | Large | Banking | Product, proposition, data and technology jobs visible directly | High | Real candidate site (`jobs.natwestgroup.com`) is Cloudflare-protected — returns a bot-challenge page (403) to a plain request regardless of underlying platform | Unverified |
 | HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | **Eightfold.ai** confirmed (`hsbc.eightfold.ai/careers`) — a 8th ATS, terms/API not investigated | Unverified |
 | AstraZeneca UK Jobs | Large | Pharma | Science + AI/data + digital + corporate | High | **Workday** confirmed real and technically accessible (same public CXS API as Barclays) — same deliberate non-build decision, see Barclays row | Unverified — blocked on permission, not technically |
-| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | **Oracle Taleo** confirmed (`baesystems.taleo.net/careersection/2/jobsearch.ftl` — real HTTP 200). A real REST endpoint (`careersection/rest/jobboard/searchjobs`) exists (405 on GET, 400 on a guessed POST) but its schema isn't documented and Oracle's Taleo terms of use weren't found either way — reachable, not confirmed permitted | Unverified |
+| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | **Oracle Taleo** confirmed (`baesystems.taleo.net/careersection/2/jobsearch.ftl` — real HTTP 200; a real REST endpoint also exists, 405 on GET / 400 on a guessed POST). **Deliberately not built**: Oracle's Terms of Use explicitly prohibit scraping/automated access without express written permission (`research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
 | Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | **Workday** confirmed (`rollsroyce.wd3.myworkdayjobs.com/professional`) — same CXS platform already blocked for Barclays/AstraZeneca; inherits that decision, no separate one needed | Unverified — blocked on permission, not technically |
 | Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Confirmed no official API — `civilservicejobs.service.gov.uk` is HTML-only; only third-party commercial scrapers exist. Likely needs a dedicated public-sector mechanism, deferred per the plan | Unverified |
 | Monzo Careers | Medium | Fintech | Excellent product/engineering/design signal | High | **Greenhouse** (`monzo`) — verified | Added |
@@ -283,7 +310,7 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
 | SmartRecruiters | Not started | Unverified how open/public its job API is — check before assuming Greenhouse-like access |
 | **Workday** | ❌ **Blocked on permission, 2026-09-20** — not a build candidate right now | Technically excellent (public, unauthenticated CXS API, confirmed real for Barclays + AstraZeneca) but Workday's own Terms of Service explicitly prohibit scraping/automated access without written consent — `research/2026-09-20-workday-licence-check.md`. Revisit only if explicit permission is obtained (from Workday or an individual tenant employer), same bar as Indeed/Reed. |
 | SuccessFactors | Not started | Confirmed used by BT Group (2026-09-20, `rmkcdn.successfactors.com` asset evidence) — same caveat as Workday, check terms before assuming access |
-| Oracle Taleo | Not started | Confirmed used by Tesco, BAE Systems, and (at least one instance of) Sky — 3 employers on one platform, the strongest "one adapter unlocks several" case in this backlog. A real REST endpoint (`careersection/rest/jobboard/searchjobs`) is live (405/400, not 404) but undocumented; Oracle's own terms weren't found either confirming or prohibiting scraping — reachable, not cleared |
+| **Oracle Taleo** | ❌ **Blocked on permission, 2026-09-20** — not a build candidate right now | Confirmed used by Tesco, BAE Systems, and (at least one instance of) Sky — would have been the strongest "one adapter unlocks several" case in this backlog (a real REST endpoint, `careersection/rest/jobboard/searchjobs`, is live: 405/400, not 404). But Oracle's own Terms of Use explicitly prohibit "any robot, spider, scraper or other automated means" without Oracle's express written permission — `research/2026-09-20-oracle-taleo-licence-check.md`. Revisit only if explicit permission is obtained, same bar as Workday/Indeed/Reed. |
 | Eightfold.ai | Not started | Confirmed used by HSBC (`hsbc.eightfold.ai`) — no known public API found yet, terms not checked |
 | Oracle Recruiting Cloud / HCM | Not started | Confirmed used by Sainsbury's (2026-09-20) and suspected for AJ Bell — a platform new to this panel, no known public API found yet, terms not checked |
 | Attrax (Phenom) | Not started | Confirmed used by VodafoneThree (2026-09-20, `attraxcdnprod1-....azurefd.net` asset evidence) — a platform new to this panel, no known public API found yet, terms not checked |
