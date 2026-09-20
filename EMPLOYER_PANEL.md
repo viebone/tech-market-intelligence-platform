@@ -255,18 +255,51 @@ treatment as Indeed, Reed, and Workday, and it affects all 3 currently-identifie
 
 ---
 
+## Remaining 4 platforms' licence check — 2026-09-20
+
+Followed up on the 4 platforms from pass 5 that hadn't been checked yet: Sainsbury's (Oracle
+Recruiting Cloud/HCM), BT Group (SAP SuccessFactors), VodafoneThree (Attrax/Phenom), HSBC
+(Eightfold.ai). Full detail: `research/2026-09-20-remaining-large-employer-licence-check.md`.
+
+**A materially different shape than Taleo/Workday.** Those two live entirely on the vendor's own
+domain — unambiguous whose terms apply. These 4 are white-labeled: the visible domain and every
+visible legal link belong to the **employer**, not the platform vendor (confirmed directly for
+HSBC — its live careers page shows only HSBC's own privacy/cookie/accessibility links; Eightfold
+branding is explicitly hidden via `hide_eightfold_branding: true`). No cleanly-applicable vendor
+Terms of Use document was found directly for any of the 4 the way Oracle's and Workday's were.
+
+**`robots.txt` checked directly for all 4** (real, unambiguous, regardless of the ToS gap):
+
+| Employer | robots.txt |
+|---|---|
+| Sainsbury's | Fully open + explicit `Crawl-delay: 10` |
+| HSBC | Default-deny, but `/careers`, `/careerhub/explore/jobs`, `/api/career_hub` explicitly allowed |
+| BT Group | Job search/listing paths not disallowed |
+| VodafoneThree | `Disallow: /jobs?*` — the one clear negative signal, on exactly the paths that matter |
+
+**Honest conclusion: genuinely unresolved, not a clean call either way.** No confirmed vendor
+prohibition (unlike Oracle/Workday) and no confirmed permission either. Per this project's own
+Rule 13, a permissive `robots.txt` is a necessary check, never a substitute for a real licence
+record — so **none of these 4 are cleared to build against, but none are cleanly blocked the way
+Oracle/Workday are either.** Next concrete step, not yet taken: either a real permission
+conversation, or a deeper technical trace — Sainsbury's is the most promising lead (job listings
+live on their own WordPress/Yoast-footprint domain, separate from the Oracle-hosted application
+redirect, with a generous robots.txt) worth checking for a structured feed.
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
 |---|---|---|---|---|---|---|
 | Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | **Oracle Taleo** confirmed (`careers.tesco.com` — `RedirectApply` URL pattern) — **deliberately not built**: Oracle's Terms of Use explicitly prohibit scraping/automated access without express written permission (`research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
-| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | **Oracle Recruiting Cloud / HCM** confirmed (`sainsburys.jobs/jobs` links to `oraclecloud.com/hcmUI/CandidateExperience`) — no known public API, terms not investigated | Unverified |
-| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | **SAP SuccessFactors** confirmed (`jobs.bt.com` serves assets from `rmkcdn.successfactors.com`) — no known public API, terms not investigated | Unverified |
-| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | **Attrax (Phenom)** confirmed (`jobs.three.co.uk` serves assets from `attraxcdnprod1-....azurefd.net`) — a platform new to this panel, no known public API, terms not investigated | Unverified |
+| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | **Oracle Recruiting Cloud / HCM** confirmed for the application-form redirect only; job **listings** live on Sainsbury's own domain (`sainsburys.jobs`, WordPress/Yoast footprint), robots.txt fully open + `Crawl-delay: 10`. No vendor ToS confirmed either way — genuinely unresolved, not cleared (`research/2026-09-20-remaining-large-employer-licence-check.md`) | Unverified |
+| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | **SAP SuccessFactors** confirmed as backend infrastructure (`jobs.bt.com` serves an asset from `rmkcdn.successfactors.com`); robots.txt doesn't disallow job listing paths. No vendor ToS confirmed either way — genuinely unresolved, not cleared | Unverified |
+| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | **Attrax (Phenom)** confirmed as backend infrastructure (`jobs.three.co.uk` serves assets from `attraxcdnprod1-....azurefd.net`); robots.txt explicitly disallows `/jobs?*` — the one clear negative signal among the 4 unresolved platforms | Unverified |
 | Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | **Oracle Taleo** confirmed for at least one instance (`bskyb.taleo.net`) — Sky's own privacy notice also names Workday/Avature/Cappfinity/LaunchPad. **Taleo instance deliberately not built** (Oracle's Terms of Use prohibition, `research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
 | Barclays Careers | Large | Banking | Large UK tech/product employer | High | **Workday** confirmed real and technically accessible (public, unauthenticated CXS API, 873 real jobs) — **deliberately not built**: Workday's own Terms of Service explicitly prohibit scraping/automated access/apps interacting with their sites without written consent (`research/2026-09-20-workday-licence-check.md`). Needs explicit permission before any adapter work, same bar as Indeed/Reed | Unverified — blocked on permission, not technically |
 | NatWest Group Careers | Large | Banking | Product, proposition, data and technology jobs visible directly | High | Real candidate site (`jobs.natwestgroup.com`) is Cloudflare-protected — returns a bot-challenge page (403) to a plain request regardless of underlying platform | Unverified |
-| HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | **Eightfold.ai** confirmed (`hsbc.eightfold.ai/careers`) — a 8th ATS, terms/API not investigated | Unverified |
+| HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | **Eightfold.ai** confirmed (`hsbc.eightfold.ai/careers`, Eightfold branding deliberately hidden via `hide_eightfold_branding: true`); robots.txt explicitly allows `/careers`, `/careerhub/explore/jobs`, `/api/career_hub` despite a default-deny — the most positive of the 4 unresolved-platform signals, but Eightfold's own Terms of Use couldn't be directly verified (guessed URLs 404'd) — genuinely unresolved, not cleared | Unverified |
 | AstraZeneca UK Jobs | Large | Pharma | Science + AI/data + digital + corporate | High | **Workday** confirmed real and technically accessible (same public CXS API as Barclays) — same deliberate non-build decision, see Barclays row | Unverified — blocked on permission, not technically |
 | BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | **Oracle Taleo** confirmed (`baesystems.taleo.net/careersection/2/jobsearch.ftl` — real HTTP 200; a real REST endpoint also exists, 405 on GET / 400 on a guessed POST). **Deliberately not built**: Oracle's Terms of Use explicitly prohibit scraping/automated access without express written permission (`research/2026-09-20-oracle-taleo-licence-check.md`) | Unverified — blocked on permission, not technically |
 | Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | **Workday** confirmed (`rollsroyce.wd3.myworkdayjobs.com/professional`) — same CXS platform already blocked for Barclays/AstraZeneca; inherits that decision, no separate one needed | Unverified — blocked on permission, not technically |
