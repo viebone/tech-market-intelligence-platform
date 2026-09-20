@@ -160,22 +160,54 @@ silently**:
 
 ---
 
+## Verification pass 4 — 2026-09-20
+
+Started on the 12 Large-employer candidates, deliberately deferred until now (Option 1 from
+the "what's next" menu). Real ATS identification for 5 of 12; the other 7 not reached this
+pass.
+
+| Employer | Real platform found | Verified how |
+|---|---|---|
+| Tesco | Oracle Taleo | URL pattern (`RedirectApply`) on `careers.tesco.com` |
+| Barclays | Workday | Real POST to the CXS API — 873 real jobs, `userAuthenticated: false` |
+| AstraZeneca | Workday | Same CXS API pattern, confirmed with a second real request |
+| NatWest | Unknown — Cloudflare-blocked | `jobs.natwestgroup.com` returns a bot-challenge page (403) to a plain request |
+| HSBC | Eightfold.ai | `hsbc.eightfold.ai/careers` |
+
+**Workday found real and technically excellent — deliberately not built.** Checked Workday's
+own Terms of Service directly (same discipline as the Indeed/Reed research, 2026-09-19) and
+found an explicit, verbatim prohibition on exactly what an adapter would do: *"Use any data
+mining, robots or similar data gathering or extraction methods designed to scrape or extract
+data from our Sites"*; *"Develop or use any applications that interact with our Sites without
+our prior written consent"*; *"Bypass or ignore instructions contained in our robots.txt
+file."* Full detail: `research/2026-09-20-workday-licence-check.md`. This is the same shape of
+finding as Indeed and Reed — a technically-open, unauthenticated endpoint with an explicit
+written prohibition — and gets the same treatment: **no adapter without explicit permission.**
+User confirmed 2026-09-20: "lets skip workday for now." Real footprint: 2 verification requests
+total (Barclays, AstraZeneca), not an ongoing scrape.
+
+Tesco (Taleo) and HSBC (Eightfold.ai) are two more new platforms this panel hadn't encountered
+before — neither's terms have been checked yet, and neither is a quick technical win the way
+Workday's CXS API was (no confirmed public API found for either in this pass).
+
+---
+
 ## Candidate panel (v1, ~36 employers)
 
 | Employer | Size bucket | Sector | Why include | Priority | ATS / mechanism | Status |
 |---|---|---|---|---|---|---|
-| Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | Unverified | Unverified |
-| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | Unverified | Unverified |
-| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | Unverified | Unverified |
-| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | Unverified | Unverified |
-| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | Unverified | Unverified |
-| Barclays Careers | Large | Banking | Large UK tech/product employer | High | Unverified | Unverified |
-| NatWest Group Careers | Large | Banking | Product, proposition, data and technology jobs visible directly | High | Unverified | Unverified |
-| HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | Unverified | Unverified |
-| AstraZeneca UK Jobs | Large | Pharma | Science + AI/data + digital + corporate | High | Unverified | Unverified |
-| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | Unverified | Unverified |
-| Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | Unverified | Unverified |
-| Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Unverified — likely needs a dedicated public-sector mechanism, deferred per the plan | Unverified |
+| Tesco Careers | Large | Retail | Huge non-tech employer with digital/product/tech + operational jobs | High | **Oracle Taleo** confirmed (`careers.tesco.com` — `RedirectApply` URL pattern) — a 7th ATS, no known public API, not investigated further | Unverified |
+| Sainsbury's Jobs | Large | Retail | Retail + digital + data + product | High | Unverified — not reached this pass | Unverified |
+| BT Group Jobs | Large | Telecom | Strong engineering, product, data and cyber population | High | Unverified — not reached this pass | Unverified |
+| VodafoneThree Careers | Large | Telecom | Technology + network + product + commercial | High | Unverified — not reached this pass | Unverified |
+| Sky Careers | Large | Media/Telecom | Product, UX, engineering, data + operations | High | Unverified — not reached this pass | Unverified |
+| Barclays Careers | Large | Banking | Large UK tech/product employer | High | **Workday** confirmed real and technically accessible (public, unauthenticated CXS API, 873 real jobs) — **deliberately not built**: Workday's own Terms of Service explicitly prohibit scraping/automated access/apps interacting with their sites without written consent (`research/2026-09-20-workday-licence-check.md`). Needs explicit permission before any adapter work, same bar as Indeed/Reed | Unverified — blocked on permission, not technically |
+| NatWest Group Careers | Large | Banking | Product, proposition, data and technology jobs visible directly | High | Real candidate site (`jobs.natwestgroup.com`) is Cloudflare-protected — returns a bot-challenge page (403) to a plain request regardless of underlying platform | Unverified |
+| HSBC UK Jobs | Large | Banking | Broad UK geography and technology population | High | **Eightfold.ai** confirmed (`hsbc.eightfold.ai/careers`) — a 8th ATS, terms/API not investigated | Unverified |
+| AstraZeneca UK Jobs | Large | Pharma | Science + AI/data + digital + corporate | High | **Workday** confirmed real and technically accessible (same public CXS API as Barclays) — same deliberate non-build decision, see Barclays row | Unverified — blocked on permission, not technically |
+| BAE Systems UK Jobs | Large | Defence/Engineering | Engineering, software, cyber, UX and manufacturing | High | Unverified — not reached this pass | Unverified |
+| Rolls-Royce Careers | Large | Engineering | Strong engineering/manufacturing counterweight to tech | High | Unverified — not reached this pass | Unverified |
+| Civil Service Careers | Large | Public sector | Digital, product, policy, data + huge geographic spread | High | Unverified — likely needs a dedicated public-sector mechanism, deferred per the plan; not reached this pass | Unverified |
 | Monzo Careers | Medium | Fintech | Excellent product/engineering/design signal | High | **Greenhouse** (`monzo`) — verified | Added |
 | Deliveroo UK Careers | Medium | Technology | Currently exposes a substantial UK job catalogue directly | High | **Greenhouse** (`deliveroo`) — verified; also resolves on Ashby but that board is operational/warehouse roles, recommend Greenhouse only, see note above | Added (Greenhouse board only) |
 | Ocado Retail Careers | Medium | Retail/Tech | Digital + retail + supply chain + commercial | High | **Greenhouse** (`ocadogroup`) — verified | Added |
@@ -213,8 +245,10 @@ Same "adapter, not per-company scraper" architecture already used for Greenhouse
 | Teamtailor | Not started | Candidate next pick — reportedly common among smaller UK employers (per the plan's cited 2026 technology-detection dataset — treat as a discovery signal, not a verified census) |
 | Workable | ✅ **Built 2026-09-19** (`changes/2026-09-19-workable-adapter.md`) | `backend/src/sources/workable.py` — public, unauthenticated widget API, same shape as Greenhouse. First company: `starling-bank` (55 real jobs). Multi-location jobs deduped to one row per distinct job (see the adapter's own module docstring) — a real data-shape quirk found and handled, not assumed away. |
 | SmartRecruiters | Not started | Unverified how open/public its job API is — check before assuming Greenhouse-like access |
-| Workday | Not started | Large-enterprise-favoured; likely more access-restricted than Greenhouse/Lever/Ashby — verify before assuming a Greenhouse-shaped public API exists |
-| SuccessFactors | Not started | Same caveat as Workday |
+| **Workday** | ❌ **Blocked on permission, 2026-09-20** — not a build candidate right now | Technically excellent (public, unauthenticated CXS API, confirmed real for Barclays + AstraZeneca) but Workday's own Terms of Service explicitly prohibit scraping/automated access without written consent — `research/2026-09-20-workday-licence-check.md`. Revisit only if explicit permission is obtained (from Workday or an individual tenant employer), same bar as Indeed/Reed. |
+| SuccessFactors | Not started | Same caveat as Workday — check terms before assuming access, not just technical reachability |
+| Oracle Taleo | Not started | Confirmed used by Tesco (`careers.tesco.com`) — no known public API found yet, terms not checked |
+| Eightfold.ai | Not started | Confirmed used by HSBC (`hsbc.eightfold.ai`) — no known public API found yet, terms not checked |
 
 ## Deferred (own future change requests, not bundled into this panel)
 
