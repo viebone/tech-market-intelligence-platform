@@ -77,7 +77,8 @@
 
 {% for dimension, label in [
   ('role_category', 'Role Category'), ('level', 'Level'), ('track', 'Track'),
-  ('specialization', 'Specialization'), ('classification_confidence', 'Classification Confidence')
+  ('specialization', 'Specialization'), ('classification_confidence', 'Classification Confidence'),
+  ('job_function', 'Job Function (of "other" postings)')
 ] %}
 {% set rows = classification_distribution.get(dimension, []) %}
 <div class="card">

@@ -46,7 +46,7 @@ either — named explicitly as the next step.
 | Backend Implementation | `backend/src/classification.py` | update — `SYSTEM_INSTRUCTION` widened + `job_function` field + guidance fixing the 3 inconsistencies; `TAXONOMY_VERSION` bumped |
 | Backend Implementation | `backend/src/db.py` | update — `ALTER TABLE classifications ADD COLUMN IF NOT EXISTS job_function TEXT` |
 | Backend Implementation | `backend/src/classification.py` (insert/update) | update — INSERT/UPDATE statements gain `job_function` column |
-| Admin visibility | `classification.py::get_classification_distribution` | update — `job_function` added as a distribution dimension (Rule 14, partial — full admin/story/MCP decision deferred) |
+| Admin visibility | `classification.py::get_classification_distribution`, `admin_templates/overview.html` | update — `job_function` added as a distribution dimension **and** rendered on the main `/admin/` overview page (initially computed but not wired into the template's own hardcoded dimension list — caught by the same-day audit below, not the original commit) |
 | MCP Access Review | `ACCESS.md`, `backend/specs/mcp-access/api.md` | update — Job Function recorded as **deferred, not decided against** in both, same pattern as Market Benchmark before its own resolution. **Caught by a same-day audit, not the original commit** — see Decision Log. |
 | Data Surface Review | — | **deferred, named explicitly** — run `/data-surface-review` once Job Function has real reclassified data, before deciding story/admin/MCP exposure |
 | Everything else (IA, visual design, frontend) | — | no-change — no new tracked Role Category, no new accent colour, no new chart |
@@ -84,3 +84,15 @@ either — named explicitly as the next step.
   mcp-access/api.md` — the two places Rule 12 and this project's own precedent (Market
   Benchmark's identical "deferred, not decided against" entry) require it. Fixed same-day,
   not carried forward as a known gap.
+- 2026-09-21 (caught by a follow-up question, "are data stories, queries and mcp updated to
+  access new data, categories and etc?"): checked concretely rather than asserted. Widened
+  `specialization` values need zero code change anywhere — `market_query.py` has always
+  treated it as a plain string filter (`c.specialization = ANY(%s)`), never a hardcoded list,
+  and Story 1 already renders a live, ungated `GROUP BY c.specialization` ranked list — so
+  today's new values surface automatically the moment real postings carry them, in the query
+  layer, chat, `get_job_demand`, and Story 1 alike. `job_function` genuinely reaches none of
+  the query/story/MCP surface yet (confirmed by grep — the string appears only in
+  `classification.py`/`db.py`) — consistent with the deliberate deferral, not a gap. One real
+  gap found and fixed: `job_function` had been added to `get_classification_distribution()`'s
+  dimensions, but the main `/admin/` overview page's template hardcodes which dimensions to
+  render and was never updated — computed but silently unused there until now.
