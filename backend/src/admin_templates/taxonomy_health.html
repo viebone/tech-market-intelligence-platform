@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Taxonomy Health — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Taxonomy Health</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  What the pipeline keeps seeing that <code>job-classification.md</code> doesn't have a real
+  category for yet — a live query, not a stored report. Detection only: nothing here is ever
+  coerced or renamed automatically; formalizing a candidate is always a human decision, the
+  next taxonomy revision. Recommended cadence: check this page monthly.
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+  <div class="stat-label">Current taxonomy version</div>
+  <span class="badge neutral">{{ candidates.taxonomy_version }}</span>
+  <div class="stat-label" style="margin-top: 4px;">Showing values occurring at least {{ candidates.min_occurrences }} times — a single unusual title isn't "emerging," it's noise.</div>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+  <div class="stat-label">Unknown rate</div>
+  <span class="badge {% if candidates.unknown_rate.share > 0.05 %}error{% elif candidates.unknown_rate.share > 0.01 %}neutral{% else %}success{% endif %}">
+    {{ candidates.unknown_rate.count }} / {{ candidates.unknown_rate.total_classified }} ({{ "%.2f"|format(candidates.unknown_rate.share * 100) }}%)
+  </span>
+  <div class="stat-label" style="margin-top: 4px;">A rising rate means titles aren't giving the classifier enough to work with — a classification-quality problem, distinct from either table below (see job-classification.md — Unknown vs. Other).</div>
+</div>
+
+<h2>Off-canon specializations</h2>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Real <code>specialization</code> values already appearing under a tracked Role Category but
+  not yet in the canonical list <code>SYSTEM_INSTRUCTION</code> is built from. Either worth
+  promoting to a real specialization, or a naming variant worth converging via prompt guidance
+  — a human call, same as every prior taxonomy revision.
+</div>
+{% if candidates.off_canon_specializations %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Role Category</th>
+      <th>Specialization (not yet canonical)</th>
+      <th>Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in candidates.off_canon_specializations %}
+    <tr>
+      <td>{{ row.role_category }}</td>
+      <td>{{ row.specialization }}</td>
+      <td>{{ row.count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card"><div class="empty-state">Nothing off-canon at this threshold — the documented taxonomy fully covers what's being produced.</div></div>
+{% endif %}
+
+<h2 style="margin-top: 24px;">"Other Non-Tech" titles piling up</h2>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Real titles landing in Job Function's catch-all rather than a named function — a recurring
+  cluster here is the same signal that justified promoting the pre-sales engineering cluster
+  into real specializations on 2026-09-21.
+</div>
+{% if candidates.other_non_tech_titles %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in candidates.other_non_tech_titles %}
+    <tr>
+      <td>{{ row.title }}</td>
+      <td>{{ row.count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card"><div class="empty-state">Nothing recurring in "Other Non-Tech" at this threshold.</div></div>
+{% endif %}
+{% endblock %}

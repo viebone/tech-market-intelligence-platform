@@ -578,6 +578,27 @@ def scrape_runs(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Taxonomy Health — added 2026-09-21, changes/2026-09-21-emerging-role-
+# detection.md. Deliberately a live, on-demand query (get_emerging_taxonomy_
+# candidates() reruns fresh every page load) rather than a stored monthly
+# snapshot — there's no separate "monthly job" to trigger since nothing here
+# is generated or mutated by running it; "monthly cadence" describes the
+# operator's own habit of checking this page, not a backend automation. See
+# that change's Decision Log for why a cron was deliberately not built.
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/taxonomy-health", dependencies=[Depends(require_admin_session)])
+def taxonomy_health(request: Request):
+    return templates.TemplateResponse(
+        request, "taxonomy_health.html",
+        {
+            "active_page": "taxonomy_health",
+            "candidates": classification.get_emerging_taxonomy_candidates(),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Health check — same pattern as main.py
 # ---------------------------------------------------------------------------
 

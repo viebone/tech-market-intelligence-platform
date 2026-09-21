@@ -510,6 +510,40 @@ or pagination — same "small registry, every entry matters equally" reasoning a
 **Errors**: none beyond the shared auth redirect — an empty adapter registry renders the page's
 own "No scraped sources registered yet" empty state.
 
+### GET /admin/taxonomy-health
+**Added 2026-09-21** (`changes/2026-09-21-emerging-role-detection.md`). **Purpose**: surfaces
+what the classification pipeline keeps seeing that `design/market-health/job-classification.md`
+doesn't have a real category for yet — a distinct operator need from every other route on this
+page: not "what has been processed" but "what does the taxonomy need to grow to cover next."
+**Auth required**: yes
+**Data source**: `classification.get_emerging_taxonomy_candidates()` — a **live query, recomputed
+on every page load**, not a stored snapshot. This is a deliberate choice, not a placeholder:
+nothing about this data is generated or mutated by "running" it, so there's no batch job for a
+cron to trigger — the recommended monthly cadence describes the operator's own habit of
+checking this page, not a backend automation (see the change's Decision Log for the two options
+weighed before landing here).
+**Response**: `taxonomy_health.html`, rendered with:
+```json
+{
+  "off_canon_specializations": [
+    {"role_category": "Engineer", "specialization": "Engineering Manager", "count": 118}
+  ],
+  "other_non_tech_titles": [
+    {"title": "Service Delivery Manager", "count": 3}
+  ],
+  "unknown_rate": {"count": 4, "total_classified": 8189, "share": 0.0005},
+  "min_occurrences": 5,
+  "taxonomy_version": "2026-09-21"
+}
+```
+`off_canon_specializations` and `other_non_tech_titles` are both filtered to real occurrences
+`>= min_occurrences` (`classification.MIN_EMERGING_OCCURRENCES`, default 5) — a single unusual
+title is noise, not a signal. Detection only: this endpoint never writes to `classifications` or
+any other table — formalizing a candidate into the taxonomy is always a separate, human-decided
+change (the same shape as every taxonomy revision so far, 2026-08-11 and 2026-09-21).
+**Errors**: none beyond the shared auth redirect — an empty result at the current threshold
+renders each section's own empty state ("Nothing off-canon at this threshold," etc.).
+
 ---
 
 ## Business Logic
