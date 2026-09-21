@@ -30,7 +30,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import batch_jobs
 import requirements as reqs
-from classification import DAILY_REQUEST_BUDGET, classify_postings
+from classification import DAILY_REQUEST_BUDGET, TAXONOMY_VERSION, classify_postings, reclassify_all
 from db import init_schema
 from ingestion_runs import (
     get_requests_used_today,
@@ -41,9 +41,11 @@ from llm import providers
 from raw_postings import (
     attach_ingestion_run,
     count_needing_requirements,
+    get_all_for_reclassification,
     get_all_needing_requirements,
     get_all_unclassified,
     get_postings_by_ids,
+    get_requirements_reprocess_targets,
     insert_new_postings,
 )
 from requirements import REQUIREMENTS_DAILY_REQUEST_BUDGET, extract_requirements
@@ -86,6 +88,57 @@ def _severest_phase(*phases: str) -> str:
     run — see backend/specs/market-health/api.md — Data Models — IngestionRun."""
     order = ["interactive_failed", "batch_submit_failed", "batch_collect_failed", "nothing_to_do", "ok"]
     return min((p for p in phases if p), key=order.index, default="ok")
+
+
+async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
+    """
+    Folded into the daily run (2026-09-21 — changes/2026-09-21-fold-reprocessing-into-
+    ingest.md) so a future taxonomy revision never again needs a human to remember to
+    manually re-trigger reprocess_taxonomy.py for several days in a row — this runs every
+    day, forever, on the same permanent cron ingest.py already has, and does nothing at
+    all on the overwhelming majority of days when nothing is stale (get_all_for_
+    reclassification() returning empty is the fast, common case, checked first).
+
+    `already_used_today` must already include THIS run's own classify_postings() spend
+    (caller passes get_requests_used_today() + stats["llm_requests_used"], not just the
+    pre-run count) — the daily ceiling is shared across both steps within one run, not
+    only across separate runs (see outcomes/llm-spend-is-bounded-and-isolated.md; this is
+    the same shape of gap as the cross-run budget bug that outcome's own signal names,
+    research/2026-08-05-cross-run-daily-budget-gap.md, just within one run instead of
+    across runs).
+
+    Deletes now-stale posting_requirements rows for anything actually reclassified this
+    call, so the SAME run's requirements phase (which runs right after this) picks them
+    back up immediately — an improvement over reprocess_taxonomy.py's original two-script
+    version, which had to wait for a later run to notice.
+
+    Returns the same stats shape as classify_postings()/reclassify_all(), all-zero/False
+    when there was nothing stale to do.
+    """
+    empty_stats = {
+        "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
+        "other_count": 0, "total_classified": 0,
+        "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+    }
+    stale_backlog = get_all_for_reclassification()
+    if not stale_backlog:
+        return empty_stats
+
+    logger.info(
+        "reclassify: %d postings on a stale taxonomy_version (current: %s)",
+        len(stale_backlog), TAXONOMY_VERSION,
+    )
+    stats = await reclassify_all(stale_backlog, already_used_today=already_used_today)
+    logger.info("reclassify: done: %s", stats)
+
+    if stats["total_classified"] > 0:
+        reprocess_targets = get_requirements_reprocess_targets(TAXONOMY_VERSION)
+        reqs.delete_requirements_for_reprocess(reprocess_targets)
+        logger.info(
+            "reclassify: %d postings' requirements cleared for re-extraction this same "
+            "run's requirements phase", len(reprocess_targets),
+        )
+    return stats
 
 
 async def run_requirements_phase() -> dict:
@@ -244,6 +297,25 @@ async def run() -> None:
                     already_used_today, DAILY_REQUEST_BUDGET)
         stats = await classify_postings(unclassified, already_used_today=already_used_today)
 
+        # Taxonomy backlog reprocessing — see run_taxonomy_reprocessing_phase's own
+        # docstring. Skipped entirely if classify_postings() itself hit a real error this
+        # run (stopped_early) rather than piling more retries onto an already-bad day; a
+        # clean budget_reached stop is not a reason to skip, since reprocessing has its
+        # own independent (correctly reduced) share of whatever's left today.
+        reclassify_stats = {
+            "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
+            "other_count": 0, "total_classified": 0,
+            "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+        }
+        if not stats["stopped_early"]:
+            try:
+                reclassify_stats = await run_taxonomy_reprocessing_phase(
+                    already_used_today=already_used_today + stats["llm_requests_used"],
+                )
+            except Exception as exc:  # noqa: BLE001 — mirrors requirements phase's own per-step isolation
+                logger.exception("reclassify: taxonomy backlog reprocessing failed: %s", exc)
+                reclassify_stats["stopped_early"] = True
+
         # Requirements extraction runs as its own phase after classification,
         # only over postings classification already confirmed are real roles.
         # Two lanes: the interactive lane (own dedicated daily budget) plus a
@@ -277,9 +349,15 @@ async def run() -> None:
     # same way a failed classification batch does. A batch-lane failure does
     # NOT (the batch is retried; the run's own work succeeded) — see
     # backend/specs/market-health/api.md — Data Models — IngestionRun.
+    # Taxonomy reprocessing's own stopped_early/budget_reached are OR'd in —
+    # same "either step having a real problem makes the run partial" logic,
+    # extended to the new step rather than tracked separately (no new
+    # IngestionRun columns; see changes/2026-09-21-fold-reprocessing-into-
+    # ingest.md — reprocessing stats are summed into the existing fields).
     status = "partial" if (
         any_company_failed
         or stats["stopped_early"]
+        or reclassify_stats["stopped_early"]
         or requirements_stats["requirements_phase"] == "interactive_failed"
     ) else "success"
     run_id = record_run(
@@ -289,13 +367,13 @@ async def run() -> None:
         terms_processed=terms_processed,
         total_fetched=total_fetched,
         total_inserted=total_inserted,
-        total_classified=stats["total_classified"],
-        cache_hits=stats["cache_hits"],
-        heuristic_filtered=stats["heuristic_filtered"],
-        llm_classified=stats["llm_classified"],
-        other_count=stats["other_count"],
-        budget_reached=stats["budget_reached"],
-        llm_requests_used=stats["llm_requests_used"],
+        total_classified=stats["total_classified"] + reclassify_stats["total_classified"],
+        cache_hits=stats["cache_hits"] + reclassify_stats["cache_hits"],
+        heuristic_filtered=stats["heuristic_filtered"] + reclassify_stats["heuristic_filtered"],
+        llm_classified=stats["llm_classified"] + reclassify_stats["llm_classified"],
+        other_count=stats["other_count"] + reclassify_stats["other_count"],
+        budget_reached=stats["budget_reached"] or reclassify_stats["budget_reached"],
+        llm_requests_used=stats["llm_requests_used"] + reclassify_stats["llm_requests_used"],
         requirements_extracted=requirements_stats["requirements_extracted"],
         requirements_requests_used=requirements_stats["requirements_requests_used"],
         requirements_budget_reached=requirements_stats["requirements_budget_reached"],

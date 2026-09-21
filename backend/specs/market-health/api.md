@@ -1045,6 +1045,27 @@ anticipates (Data Models — Classification, above), not a violation of it.
   revision fixes. The requirements-reprocessing delete step should only target postings whose
   classification row already carries `taxonomy_version: "2026-08-11"`.
 
+**Reprocessing runs inside the daily ingestion run itself (added 2026-09-21 —
+`changes/2026-09-21-fold-reprocessing-into-ingest.md`), not only via a standalone script.**
+The mechanism above (`reprocess_taxonomy.py`) was originally a deliberate one-time script, kept
+out of `ingest.py`'s daily flow so a rarely-needed migration wouldn't permanently complicate the
+ongoing pipeline. In practice this created real friction: the 2026-09-21 specialization/Job
+Function revision hit the same "someone has to remember to manually re-trigger this for several
+days" problem the 2026-08-11 revision did. `ingest.py::run()` now checks
+`get_all_for_reclassification()` after every daily `classify_postings()` call and, if non-empty,
+runs the same `reclassify_all()` reprocessing right there — at the cost of one fast, empty query
+on the vast majority of days when nothing is stale. Two things enforced carefully, not
+hand-waved: (1) the daily request ceiling is shared across *both* steps **within the same run**,
+not just across separate runs — `already_used_today` passed into reprocessing already includes
+that run's own `classify_postings()` spend, the same shape of correctness the cross-run budget
+fix (2026-08-05) already established, just applied within one run instead of across runs; (2)
+reprocessing is skipped entirely if `classify_postings()` itself hit a real error this run
+(`stopped_early`), so a bad day doesn't get compounded with more retries. Reprocessing's stats
+are summed into the run's existing `total_classified`/`cache_hits`/`heuristic_filtered`/
+`llm_classified`/`other_count`/`llm_requests_used` fields — no new `IngestionRun` columns.
+`reprocess_taxonomy.py` itself is kept, unchanged, as a manual escape hatch for checking
+progress mid-day without waiting for the next cron tick.
+
 **Description-assisted recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
 A one-time reprocessing pass, separate from taxonomy reprocessing, that re-classifies every
 posting with **any** `'unknown'` classification field — `role_category`, `specialization`,
