@@ -74,6 +74,8 @@ taxonomy revision in this project's history (2026-08-11, 2026-09-21).
 | Backend Spec | `backend/specs/pipeline-visibility/api.md` | update — new `GET /admin/taxonomy-health` endpoint section |
 | Admin Implementation | `admin_main.py` | update — new `taxonomy_health()` route |
 | Admin Implementation | `admin_templates/taxonomy_health.html`, `base.html` | new / update — new template, new nav link |
+| Plain-Language Overview | `OVERVIEW.md` | update — "(Operator only)" paragraph gained a sentence. **Caught by a same-day audit, not the original commit** — see Decision Log. |
+| MCP Access Review | `ACCESS.md` | update — new row, "Operator-only capabilities" table, same pattern as every other admin view. **Caught by the same audit.** |
 
 ## Execution Plan
 
@@ -93,3 +95,8 @@ taxonomy revision in this project's history (2026-08-11, 2026-09-21).
   job to generate here (the function only reads), so a cron would have added infrastructure
   with no real behavior behind it. Named this reasoning explicitly in the endpoint's spec
   section so it reads as a deliberate choice, not a shortcut, if revisited later.
+- 2026-09-21 (caught by a same-day audit, "is all of the changes today well documented?"):
+  the new `/admin/taxonomy-health` view had been built and spec'd in `pipeline-visibility/
+  api.md`, but `OVERVIEW.md`'s "(Operator only)" paragraph and `ACCESS.md`'s Operator-only
+  table — both of which every prior admin view (licensing 2026-09-16, market-observations
+  2026-09-18) got a real entry in — were missed. Fixed same-day, not carried forward.

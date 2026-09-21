@@ -47,6 +47,7 @@ either — named explicitly as the next step.
 | Backend Implementation | `backend/src/db.py` | update — `ALTER TABLE classifications ADD COLUMN IF NOT EXISTS job_function TEXT` |
 | Backend Implementation | `backend/src/classification.py` (insert/update) | update — INSERT/UPDATE statements gain `job_function` column |
 | Admin visibility | `classification.py::get_classification_distribution` | update — `job_function` added as a distribution dimension (Rule 14, partial — full admin/story/MCP decision deferred) |
+| MCP Access Review | `ACCESS.md`, `backend/specs/mcp-access/api.md` | update — Job Function recorded as **deferred, not decided against** in both, same pattern as Market Benchmark before its own resolution. **Caught by a same-day audit, not the original commit** — see Decision Log. |
 | Data Surface Review | — | **deferred, named explicitly** — run `/data-surface-review` once Job Function has real reclassified data, before deciding story/admin/MCP exposure |
 | Everything else (IA, visual design, frontend) | — | no-change — no new tracked Role Category, no new accent colour, no new chart |
 
@@ -59,8 +60,8 @@ either — named explicitly as the next step.
 - [x] Step 5: Updated `db.py` schema (`ALTER TABLE classifications ADD COLUMN IF NOT EXISTS job_function TEXT`, applied live against production and confirmed via `information_schema.columns`), `insert_classifications`/`update_classifications` SQL
 - [x] Step 6: Updated `backend/specs/market-health/api.md` — `Classification` data model gains `job_function`
 - [x] Step 7: Updated `get_classification_distribution`'s `DISTRIBUTION_DIMENSIONS` to include `job_function`
-- [ ] Step 8: **Pending user confirmation** — real backlog size measured: 8,189 rows / 6,928 distinct titles on a stale `taxonomy_version`, ≈70 LLM batches, ≈6 days at the 12-batch/day budget cap. Real, scarce-quota spend — not triggered without an explicit go-ahead, same discipline as every prior LLM-cost decision this project has made.
-- [ ] Step 9: Name `/data-surface-review` as the explicit next step for Job Function's story/admin/MCP exposure — not run in this change
+- [x] Step 8: User confirmed ("6 days to clean the backlog is good to me"). First real batch run same day (12/58 batches, 2,956/8,189 rows). The remaining backlog no longer needs a manual re-trigger at all — `changes/2026-09-21-fold-reprocessing-into-ingest.md` folded reprocessing into `ingest.py`'s permanent daily cron, so it drains on its own going forward.
+- [x] Step 9 (partial): MCP-exposure decision recorded — Job Function is **deferred, not decided against** (`ACCESS.md`, `backend/specs/mcp-access/api.md`), same treatment as Market Benchmark before its own resolution. The full `/data-surface-review` (story/admin/ad-hoc-query decisions) remains genuinely not run — that part stays open.
 
 ## Decision Log
 - 2026-09-21: Bundled Job Function + specialization widening into one taxonomy revision to
@@ -77,3 +78,9 @@ either — named explicitly as the next step.
   gaps and a 4th inconsistency (Technical Program Manager under both Engineer and Product
   Manager) that the original manual top-25 pull had missed. All folded in before the
   reclassification backlog spent any quota.
+- 2026-09-21 (caught by a same-day audit, "is all of the changes today well documented?"):
+  Job Function's MCP-exposure decision had been stated in `job-classification.md` and this
+  file's own body text, but never actually recorded in `ACCESS.md` or `backend/specs/
+  mcp-access/api.md` — the two places Rule 12 and this project's own precedent (Market
+  Benchmark's identical "deferred, not decided against" entry) require it. Fixed same-day,
+  not carried forward as a known gap.

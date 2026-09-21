@@ -43,8 +43,10 @@ dashboard shows every job posting and employment event ingested, classified, and
 every external data source's licence status — confirmed or not, commercial use permitted or
 not, and under what attribution terms this platform may use its data — and _(new, 2026-09-18)_
 the raw market-benchmark data itself (demand/salary snapshots and weighted skill associations)
-plus when each scraped source last ran and whether it's due again. Not something an end user
-ever sees or needs.
+plus when each scraped source last ran and whether it's due again. _(New, 2026-09-21.)_ Also
+shows real recurring job titles/specializations the classification taxonomy doesn't have a
+category for yet, so a future revision can be based on real signal rather than a manual check.
+Not something an end user ever sees or needs.
 
 ## How it's built, in one paragraph
 

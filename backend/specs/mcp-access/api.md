@@ -472,6 +472,12 @@ MCP-exposure status.
   docstring instructs the calling AI not to attempt it; there is no server-side enforcement
   possible once an AI holds both tools' outputs, which is itself a real, named limitation of
   exposing two independently-sourced primitives rather than one pre-composed comparison.
+- **Job Function** (added 2026-09-21 — `design/market-health/job-classification.md`, the real
+  breakdown of the `other`-bucket population) — **deferred, not decided against**, same shape as
+  "Market benchmark datasets" was before 2026-09-18: no real consumer surface exists yet
+  (story, admin view, or ad-hoc query path) to decide MCP exposure against. Revisit once
+  `/data-surface-review` runs against real reclassified data (`changes/2026-09-21-emerging-
+  role-detection.md`) — named there as the explicit next step, not silently skipped.
 
 ---
 
