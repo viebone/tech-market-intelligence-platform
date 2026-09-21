@@ -37,6 +37,42 @@ TAXONOMY_VERSION = "2026-09-21"
 CLASSIFICATION_MODEL = "gemini-2.5-flash"
 
 ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer"}
+
+# Canonical specialization values per Role Category (job-classification.md — Role Category,
+# widened 2026-09-21 from real production data). This is the single source of truth: the
+# SYSTEM_INSTRUCTION prompt below is built from this dict, and get_emerging_taxonomy_candidates()
+# (pipeline-visibility) reads the exact same dict — a value can never drift between "what the
+# LLM was told" and "what the detector considers already-canonical." NOT enforced as a closed
+# set in _validate() (deliberately — see _validate's docstring and the module-level "starts
+# narrow, widens with real data" precedent); this is guidance for the LLM and a reference for
+# detection, never a rejection list.
+SPECIALIZATIONS: dict[str, tuple[str, ...]] = {
+    "Designer": (
+        "UX Designer", "UX Researcher", "Product Designer", "UI Designer",
+        "Content Designer", "UX Writer", "Design Systems", "Brand Designer",
+        "Motion Designer", "Other Design",
+    ),
+    "Product Manager": (
+        "Product Manager", "Product Owner", "Technical Product Manager",
+        "Data Product Manager", "Growth Product Manager", "Platform Product Manager",
+        "AI Product Manager", "Forward Deployed Product Manager", "Other Product",
+    ),
+    "Engineer": (
+        "Frontend Engineer", "Backend Engineer", "Full-Stack Engineer", "Mobile Engineer",
+        "Machine Learning Engineer", "AI Engineer", "Data Engineer", "Data Scientist",
+        "DevOps/SRE Engineer", "Security Engineer", "Infrastructure Engineer",
+        "Platform Engineer", "Network Engineer", "Research Engineer", "Solutions Engineer",
+        "Solutions Architect", "Support Engineer", "Customer Engineer",
+        "Forward Deployed Engineer", "Software Engineer",
+        # Added 2026-09-21, same day, before the *_taxonomy_candidates detector's first real
+        # run against production surfaced these with real volume >= 10 that the earlier
+        # top-25-only manual pull had missed entirely — see changes/2026-09-21-emerging-role-
+        # detection.md's "First real run" section.
+        "Hardware Engineer", "Systems Engineer", "AI Deployment Engineer",
+        "Analytics Engineer", "Database Engineer", "Integration Engineer", "QA Engineer",
+        "Other Engineering",
+    ),
+}
 # "unknown" (2026-08-11) is valid at every one of these four fields — distinct
 # from role_category="other" (see module docstring). Not included in the sets
 # below since it's handled as its own branch in _validate, same treatment at
@@ -161,7 +197,11 @@ def _denylisted_job_function(title: str) -> str:
             return job_function
     return "Other Non-Tech"
 
-SYSTEM_INSTRUCTION = """You classify UK tech job postings into a closed taxonomy. \
+_SPECIALIZATION_PROMPT_BLOCK = "\n".join(
+    f"  {category}: {', '.join(values)}" for category, values in SPECIALIZATIONS.items()
+)
+
+SYSTEM_INSTRUCTION = f"""You classify UK tech job postings into a closed taxonomy. \
 For each posting, return exactly these fields:
 - role_category: one of "Designer", "Product Manager", "Engineer", "other", or "unknown". \
 Use "other" when you're confident the posting genuinely is not one of the three tracked \
@@ -173,17 +213,15 @@ category but the title doesn't disambiguate which specialization within it, or n
 role_category is "other" or "unknown". Prefer one of these canonical values when the title \
 matches, so the same real occupation converges on one consistent name across postings — but \
 you are not restricted to only these if a title clearly names something else real and specific:
-  Designer: UX Designer, UX Researcher, Product Designer, UI Designer, Content Designer / UX \
-Writer, Design Systems, Brand Designer, Motion Designer, Other Design
-  Product Manager: Product Manager, Product Owner, Technical Product Manager, Data Product \
-Manager, Growth Product Manager, Platform Product Manager, AI Product Manager, Forward \
-Deployed Product Manager, Other Product
-  Engineer: Frontend Engineer, Backend Engineer, Full-Stack Engineer, Mobile Engineer, \
-Machine Learning Engineer, AI Engineer, Data Engineer, Data Scientist, DevOps/SRE Engineer, \
-Security Engineer, Infrastructure Engineer, Platform Engineer, Network Engineer, Research \
-Engineer, Solutions Engineer, Solutions Architect, Support Engineer, Customer Engineer, \
-Forward Deployed Engineer, Software Engineer (the generic/unspecified default when no more \
-specific match applies), Other Engineering
+{_SPECIALIZATION_PROMPT_BLOCK}
+  ("Software Engineer" is the generic/unspecified Engineer default when no more specific match \
+applies. "Content Designer" and "UX Writer" are two distinct, separate values — do not combine \
+them even though they're closely related crafts. Converge spelling/phrasing variants onto the \
+one canonical form above rather than inventing a near-duplicate: "Fullstack Engineer"/"Full \
+Stack Software Engineer" → "Full-Stack Engineer"; "Backend Software Engineer" → "Backend \
+Engineer"; "Frontend Software Engineer" → "Frontend Engineer"; "Solution Architect" \
+(singular) → "Solutions Architect"; "QA/Test Engineer"/"Quality Engineer" → "QA Engineer"; \
+"Product Management" → "Product Manager".)
 - level: one of "entry", "junior", "mid", "senior", "lead", "principal", "director", "vp", \
 "executive", "unknown" (title gives no real seniority signal), or null if role_category is \
 "other" or "unknown". UK "midweight" means "mid". Never use an organizational-function word \
@@ -200,7 +238,10 @@ never put the organizational word itself into specialization.
 Compliance", "Finance & Accounting", "Operations & Business Ops", "IT & Technical Support", \
 "Learning & Development", "Executive & Administrative", "Other Non-Tech" (genuinely doesn't \
 fit any of the above), or "unknown" (confidently non-tech, but the title doesn't disclose \
-which function). Always null when role_category is "Designer", "Product Manager", \
+which function). "Delivery Manager" / "Service Delivery Manager" / "Scrum Master" / "Agile \
+Coach" are role_category "other", job_function "Operations & Business Ops" — real production \
+data confirms these are not Product Manager, despite sounding tech-adjacent. Always null when \
+role_category is "Designer", "Product Manager", \
 "Engineer", or "unknown" — this field only ever describes what a real "other" posting actually \
 is, never a fourth tracked category.
 - classification_confidence: your own self-reported confidence in this classification — \
@@ -921,6 +962,101 @@ def get_taxonomy_version_breakdown() -> list[dict]:
         {"version": r[0], "count": r[1], "is_current": r[0] == TAXONOMY_VERSION}
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Emerging taxonomy candidates (2026-09-21) — see outcomes/pipeline-processing-
+# visibility.md ("Extended 2026-09-21") and changes/2026-09-21-emerging-role-
+# detection.md. Detection/reporting only — this never coerces, discards, or
+# renames anything; it surfaces real recurring off-canon values for a human
+# (PM) to decide whether the next taxonomy revision should formalize them,
+# same "reviewing raw title frequency is how this taxonomy gets revised over
+# time" principle job-classification.md's own Raw Title section already
+# names, just made a real, repeatable, on-demand query instead of an ad hoc
+# one-off.
+# ---------------------------------------------------------------------------
+
+MIN_EMERGING_OCCURRENCES = 5  # curated, not derived — small enough to catch a real early
+                              # signal, large enough that a single outlier posting doesn't
+                              # trigger a false "emerging role." Tune as real monthly runs
+                              # show whether this threshold is too noisy or too quiet.
+
+
+def get_emerging_taxonomy_candidates(min_occurrences: int = MIN_EMERGING_OCCURRENCES) -> dict:
+    """
+    Real, on-demand signal for "what would the next taxonomy revision need to look at" —
+    three independent signals, each grounded in production data, none of them mutated by
+    running this:
+
+    1. `off_canon_specializations` — specialization values already appearing under a tracked
+       Role Category that aren't in SPECIALIZATIONS (the same canonical dict the LLM prompt
+       is built from), grouped by category, ordered by real frequency. A value showing up
+       here either recurs enough to be worth formalizing, or is genuine LLM phrasing noise —
+       this function doesn't distinguish the two; a human does, same as every prior
+       taxonomy revision in this project's history.
+    2. `other_non_tech_titles` — real titles landing job_function = "Other Non-Tech" (the
+       Job Function catch-all), grouped by raw title, ordered by frequency. A recurring
+       cluster here is the same signal that justified promoting the pre-sales engineering
+       cluster into real specializations on 2026-09-21 — just watched going forward instead
+       of found once by hand.
+    3. `unknown_rate` — role_category = "unknown" volume and share of total, a classification-
+       quality signal distinct from both of the above (see job-classification.md — Unknown vs.
+       Other): a rising rate means titles aren't giving the classifier enough to work with,
+       not that new categories are needed.
+
+    Both `off_canon_specializations` and `other_non_tech_titles` are capped to results with at
+    least `min_occurrences` real postings — a single unusual title is not "emerging," it's
+    noise; see MIN_EMERGING_OCCURRENCES.
+    """
+    with get_connection() as conn:
+        off_canon_rows = conn.execute(
+            """
+            SELECT role_category, specialization, COUNT(*) AS n
+            FROM classifications
+            WHERE role_category = ANY(%s) AND specialization IS NOT NULL
+                AND specialization != 'unknown'
+            GROUP BY role_category, specialization
+            HAVING COUNT(*) >= %s
+            ORDER BY role_category, n DESC
+            """,
+            (list(ROLE_CATEGORIES), min_occurrences),
+        ).fetchall()
+        off_canon_specializations = [
+            {"role_category": r[0], "specialization": r[1], "count": r[2]}
+            for r in off_canon_rows
+            if r[1] not in SPECIALIZATIONS.get(r[0], ())
+        ]
+
+        other_non_tech_rows = conn.execute(
+            """
+            SELECT rp.title, COUNT(*) AS n
+            FROM classifications c
+            JOIN raw_postings rp ON rp.id = c.posting_id
+            WHERE c.job_function = 'Other Non-Tech'
+            GROUP BY rp.title
+            HAVING COUNT(*) >= %s
+            ORDER BY n DESC
+            """,
+            (min_occurrences,),
+        ).fetchall()
+        other_non_tech_titles = [{"title": r[0], "count": r[1]} for r in other_non_tech_rows]
+
+        unknown_row = conn.execute(
+            "SELECT COUNT(*) FILTER (WHERE role_category = 'unknown'), COUNT(*) FROM classifications"
+        ).fetchone()
+        unknown_count, total_classified = unknown_row
+
+    return {
+        "off_canon_specializations": off_canon_specializations,
+        "other_non_tech_titles": other_non_tech_titles,
+        "unknown_rate": {
+            "count": unknown_count,
+            "total_classified": total_classified,
+            "share": round(unknown_count / total_classified, 4) if total_classified else 0.0,
+        },
+        "min_occurrences": min_occurrences,
+        "taxonomy_version": TAXONOMY_VERSION,
+    }
 
 
 def get_distinct_specializations() -> list[str]:

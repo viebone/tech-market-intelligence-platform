@@ -53,6 +53,17 @@ real `market_observations`/`skill_associations` data exists (via the LLM-extract
 itself, not just its licence: seeing what's actually been captured (per role, per skill, per
 period) and when each scraped source last ran, without querying the database directly.
 
+**Extended 2026-09-21** (`changes/2026-09-21-emerging-role-detection.md`): the classification
+taxonomy revision that added Job Function and widened specialization sets
+(`changes/2026-09-21-taxonomy-revision-specialization-and-job-function.md`) surfaced a new,
+recurring operator need distinct from the ones above: not "what has the pipeline processed" but
+"what does the pipeline keep seeing that the taxonomy doesn't have a real category for yet."
+Left as an ad hoc manual query, this drifts the same way `OVERVIEW.md` or `ACCESS.md` would
+without their own mandatory-update rules — real recurring roles pile up under `other` or a
+mismatched specialization, unnoticed, until someone happens to look. The same operator need
+this outcome already serves for pipeline health applies here too: seeing this without writing a
+one-off SQL query, on a real repeatable cadence rather than remembering to check.
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)
@@ -75,6 +86,11 @@ period) and when each scraped source last ran, without querying the database dir
   full provenance (source URL, licence, fetch time, which model extracted it). The operator can
   also see, per registered scraped source, when it last ran and whether it's currently due for
   its next run (added 2026-09-18)
+- The operator can see, on a real repeatable cadence (not a one-off manual query), which
+  specialization values are recurring under a tracked Role Category but aren't yet in the
+  documented taxonomy, which real titles are piling up under Job Function's "Other Non-Tech"
+  catch-all, and the current `unknown` rate — real signal for the next taxonomy revision,
+  never auto-applied (added 2026-09-21)
 - Only the operator — not end users or the public — can access this view
 - Using this view answers "what has the pipeline actually done" faster than writing a
   one-off SQL query would

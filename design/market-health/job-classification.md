@@ -53,7 +53,7 @@ below), "Product Manager" becomes an awkward parent category for "VP Product," w
 |---|---|---|
 | Designer | Design | UX Designer, UX Researcher, Product Designer, UI Designer, Content Designer / UX Writer, Design Systems, Brand Designer, Motion Designer, Other Design |
 | Product Manager | Product | Product Manager, Product Owner, Technical Product Manager, Data Product Manager, Growth Product Manager, Platform Product Manager, AI Product Manager, Forward Deployed Product Manager, Other Product |
-| Engineer | Engineering | Frontend Engineer, Backend Engineer, Full-Stack Engineer, Mobile Engineer, Machine Learning Engineer, AI Engineer, Data Engineer, Data Scientist, DevOps/SRE Engineer, Security Engineer, Infrastructure Engineer, Platform Engineer, Network Engineer, Research Engineer, Solutions Engineer, Solutions Architect, Support Engineer, Customer Engineer, Forward Deployed Engineer, Software Engineer, Other Engineering |
+| Engineer | Engineering | Frontend Engineer, Backend Engineer, Full-Stack Engineer, Mobile Engineer, Machine Learning Engineer, AI Engineer, Data Engineer, Data Scientist, DevOps/SRE Engineer, Security Engineer, Infrastructure Engineer, Platform Engineer, Network Engineer, Research Engineer, Solutions Engineer, Solutions Architect, Support Engineer, Customer Engineer, Forward Deployed Engineer, Software Engineer, Hardware Engineer, Systems Engineer, AI Deployment Engineer, Analytics Engineer, Database Engineer, Integration Engineer, QA Engineer, Other Engineering |
 
 **Specialization revision (2026-09-21).** Widened from real production data, not guessed —
 `classifications.specialization` has never had closed-set enforcement in code (unlike `level`/
@@ -90,6 +90,25 @@ around — see Classification Method's updated LLM guidance, below):
    `manager` wrongly appeared as a level rung). Resolved: an "Engineering Manager"-shaped title
    gets `specialization` = the underlying technical domain (best inferable, e.g. `Software
    Engineer`) and `track = management` — never `specialization = "Engineering Manager"`.
+
+**Second real pass, same day — a repeatable detector found more than the first manual pull
+did.** This revision was first checked by hand against the top ~25 specializations per
+category. Once `classification.py::get_emerging_taxonomy_candidates()` existed and was run for
+real (see the Job Function section's "monthly detection" note, below, and `changes/2026-09-21-
+emerging-role-detection.md`), it immediately surfaced more real, ≥10-occurrence gaps the manual
+pull had missed entirely: `Hardware Engineer` (21), `Systems Engineer` (18), `AI Deployment
+Engineer` (15), `Analytics Engineer` (14), `Database Engineer` (11), `Integration Engineer`
+(10), and a QA/Test/Quality-Engineer spelling cluster (19 combined across 3 variants, converged
+to one canonical `QA Engineer`) — all added to the table above. It also confirmed **a fourth
+real inconsistency**: `Technical Program Manager` was landing under both `Engineer` (15
+postings) and `Product Manager` (57 postings) for the same real title — the guidance above
+already resolves this going forward (Product Manager, always); the existing 15 Engineer-tagged
+rows converge once the reclassification backlog runs.
+
+**Two genuinely ambiguous titles, left unresolved on purpose rather than forced**: `Design
+Engineer` (10 postings) and `Product Engineer` (9 postings) both plausibly straddle two Role
+Categories depending on the real posting — recorded as open watch items for next month's
+review rather than guessed at with no real basis.
 
 A specialization is a detail level within a fixed Role Category — it narrows, it never
 crosses a category boundary. This list starts narrow and widens only once real posting data
@@ -256,6 +275,20 @@ postings need an actual model read for this field.
 gets admin visibility, or is reachable via MCP/ad-hoc query — per Rule 14, that's a real
 `/data-surface-review` to run once this field has real reclassified data to design against, not
 assumed here.
+
+**Monthly emerging-role detection (2026-09-21)** — see `changes/2026-09-21-emerging-role-
+detection.md` and `outcomes/pipeline-processing-visibility.md` ("Extended 2026-09-21").
+`classification.py::get_emerging_taxonomy_candidates()` is a real, repeatable, on-demand query
+(not a one-off manual pull) that surfaces: real `specialization` values already occurring under
+a tracked Role Category but not yet in the canonical `SPECIALIZATIONS` list; real titles piling
+up under Job Function's `Other Non-Tech` catch-all; and the `unknown` rate. It never coerces or
+renames anything — detection only, same "reviewing raw title frequency is how this taxonomy
+gets revised over time" principle the Raw Title section above already names, just made
+repeatable instead of ad hoc. Intended to run monthly (cadence and where it's surfaced are the
+one thing this change deliberately left open — see the change record's Decision Log) so new
+recurring roles get caught and proposed for the next taxonomy revision instead of silently
+accumulating in `other` or under mismatched specializations, the way this exact revision's own
+second real pass just demonstrated happening within the same day.
 
 ---
 

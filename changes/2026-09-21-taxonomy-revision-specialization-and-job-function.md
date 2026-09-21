@@ -68,3 +68,12 @@ either — named explicitly as the next step.
 - 2026-09-21: Deliberately did not resolve Job Function's story/admin/MCP exposure in this
   change — named it as a real, explicit follow-up rather than skipping or forcing it prematurely
   before real data exists to design against.
+- 2026-09-21 (second real pass, same day, before the backlog ran): user pushback
+  (`research/2026-09-21-emerging-role-detection-request.md`) checked against real data rather
+  than re-argued — found Content Designer/UX Writer already diverging organically (un-bundled
+  in the spec to match), Delivery Manager confirmed as `other`/Job Function not Product Manager,
+  and — via the first real run of `get_emerging_taxonomy_candidates()`
+  (`changes/2026-09-21-emerging-role-detection.md`) — 7 more real ≥10-occurrence specialization
+  gaps and a 4th inconsistency (Technical Program Manager under both Engineer and Product
+  Manager) that the original manual top-25 pull had missed. All folded in before the
+  reclassification backlog spent any quota.
