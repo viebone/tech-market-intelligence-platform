@@ -29,9 +29,11 @@ logger = logging.getLogger(__name__)
 # Taxonomy version pinned to job-classification.md's `updated` date — that
 # spec has no separate version field, so its last-revision date is the version
 # marker. Bumped 2026-08-11 for the Level/Track/Unknown/Confidence redesign
-# (changes/2026-08-11-classification-taxonomy-redesign.md) — bump again if the
-# taxonomy's closed sets are ever revised further.
-TAXONOMY_VERSION = "2026-08-11"
+# (changes/2026-08-11-classification-taxonomy-redesign.md); bumped again
+# 2026-09-21 for the specialization widening + Job Function addition
+# (changes/2026-09-21-taxonomy-revision-specialization-and-job-function.md) —
+# bump again if the taxonomy's closed sets are ever revised further.
+TAXONOMY_VERSION = "2026-09-21"
 CLASSIFICATION_MODEL = "gemini-2.5-flash"
 
 ROLE_CATEGORIES = {"Designer", "Product Manager", "Engineer"}
@@ -93,20 +95,71 @@ RETRY_HEADROOM = 8          # reserved across ALL of today's runs combined, not 
 # only ever skips titles that are unambiguous regardless of phrasing.
 # Curated, not exhaustive — tunable as real `other`-rate data comes in, same
 # discipline as the source adapters' curated company lists.
-DENYLIST_KEYWORDS = frozenset({
-    "account executive", "account manager", "business development",
-    "sales development", "sales manager", "sales director", "regional sales",
-    "recruiter", "recruiting", "talent acquisition", "human resources",
-    "payroll", "accountant", "accounting", "controller", "bookkeeper",
-    "legal counsel", "attorney", "paralegal", "compliance officer",
-    "marketing manager", "marketing coordinator", "content marketing",
-    "communications manager", "public relations", "social media manager",
-    "customer support", "customer success", "customer service",
-    "warehouse", "logistics coordinator", "supply chain", "procurement",
-    "office manager", "executive assistant", "administrative assistant",
-    "facilities", "receptionist",
-})
+#
+# Organized by Job Function (job-classification.md — Job Function,
+# 2026-09-21) rather than a flat set — a denylisted title gets its
+# job_function assigned directly from which cluster matched, at zero LLM
+# cost, since the pre-filter already knows exactly why it flagged the title.
+DENYLIST_JOB_FUNCTIONS: dict[str, tuple[str, ...]] = {
+    "Sales & Business Development": (
+        "account executive", "account manager", "business development",
+        "sales development", "sales manager", "sales director", "regional sales",
+    ),
+    "People & Talent": (
+        "recruiter", "recruiting", "talent acquisition", "human resources",
+    ),
+    "Finance & Accounting": (
+        "payroll", "accountant", "accounting", "controller", "bookkeeper",
+    ),
+    "Legal & Compliance": (
+        "legal counsel", "attorney", "paralegal", "compliance officer",
+    ),
+    "Marketing & Communications": (
+        "marketing manager", "marketing coordinator", "content marketing",
+        "communications manager", "public relations", "social media manager",
+    ),
+    "Customer Success & Support": (
+        "customer support", "customer success", "customer service",
+    ),
+    "Operations & Business Ops": (
+        "warehouse", "logistics coordinator", "supply chain", "procurement",
+    ),
+    "Executive & Administrative": (
+        "office manager", "executive assistant", "administrative assistant",
+        "facilities", "receptionist",
+    ),
+}
+DENYLIST_KEYWORDS = frozenset(
+    keyword for keywords in DENYLIST_JOB_FUNCTIONS.values() for keyword in keywords
+)
 HEURISTIC_FILTER_MODEL = "heuristic-keyword-filter"
+
+# Closed set for the new Job Function field (job-classification.md — Job
+# Function, 2026-09-21). Populated only when role_category == "other" — see
+# _validate. "unknown" is handled the same way as every other field in this
+# taxonomy: a real, distinct, honest outcome, not folded into "Other Non-Tech".
+JOB_FUNCTIONS = {
+    "Sales & Business Development", "Marketing & Communications",
+    "Customer Success & Support", "People & Talent", "Legal & Compliance",
+    "Finance & Accounting", "Operations & Business Ops", "IT & Technical Support",
+    "Learning & Development", "Executive & Administrative", "Other Non-Tech",
+}
+
+
+def _denylisted_job_function(title: str) -> str:
+    """
+    Which Job Function cluster matched a denylisted title — computed from the
+    same keyword check that already decided the title was denylisted, so this
+    never costs an extra LLM call. Falls back to "Other Non-Tech" only if
+    DENYLIST_KEYWORDS and DENYLIST_JOB_FUNCTIONS ever drift apart (they're
+    derived from the same source above, so this should not happen in
+    practice — kept as an honest fallback rather than an assumption).
+    """
+    text = title.lower()
+    for job_function, keywords in DENYLIST_JOB_FUNCTIONS.items():
+        if any(keyword in text for keyword in keywords):
+            return job_function
+    return "Other Non-Tech"
 
 SYSTEM_INSTRUCTION = """You classify UK tech job postings into a closed taxonomy. \
 For each posting, return exactly these fields:
@@ -115,9 +168,22 @@ Use "other" when you're confident the posting genuinely is not one of the three 
 occupations (e.g. a non-tech role that happens to share a title word). Use "unknown" when \
 the title alone doesn't give you enough evidence to tell, even though it might plausibly be \
 one of the three — these are different claims, do not use them interchangeably.
-- specialization: a short specific title (e.g. "UX Designer", "Backend Engineer"), \
-"unknown" if role_category is a real tracked category but the title doesn't disambiguate \
-which specialization within it, or null if role_category is "other" or "unknown".
+- specialization: a short specific title, "unknown" if role_category is a real tracked \
+category but the title doesn't disambiguate which specialization within it, or null if \
+role_category is "other" or "unknown". Prefer one of these canonical values when the title \
+matches, so the same real occupation converges on one consistent name across postings — but \
+you are not restricted to only these if a title clearly names something else real and specific:
+  Designer: UX Designer, UX Researcher, Product Designer, UI Designer, Content Designer / UX \
+Writer, Design Systems, Brand Designer, Motion Designer, Other Design
+  Product Manager: Product Manager, Product Owner, Technical Product Manager, Data Product \
+Manager, Growth Product Manager, Platform Product Manager, AI Product Manager, Forward \
+Deployed Product Manager, Other Product
+  Engineer: Frontend Engineer, Backend Engineer, Full-Stack Engineer, Mobile Engineer, \
+Machine Learning Engineer, AI Engineer, Data Engineer, Data Scientist, DevOps/SRE Engineer, \
+Security Engineer, Infrastructure Engineer, Platform Engineer, Network Engineer, Research \
+Engineer, Solutions Engineer, Solutions Architect, Support Engineer, Customer Engineer, \
+Forward Deployed Engineer, Software Engineer (the generic/unspecified default when no more \
+specific match applies), Other Engineering
 - level: one of "entry", "junior", "mid", "senior", "lead", "principal", "director", "vp", \
 "executive", "unknown" (title gives no real seniority signal), or null if role_category is \
 "other" or "unknown". UK "midweight" means "mid". Never use an organizational-function word \
@@ -125,34 +191,58 @@ like "manager" here — that belongs in track, not level.
 - track: "ic" (individual contributor), "management", "unknown" (title genuinely doesn't \
 disclose which), or null if role_category is "other" or "unknown". "Lead" is ambiguous — \
 infer from context whether it is a senior IC or a first-line management role; if you truly \
-can't tell, use "unknown" rather than guessing.
+can't tell, use "unknown" rather than guessing. An "Engineering Manager"/"Design Manager"/ \
+"Product Manager, X Team"-shaped title is track "management" with specialization set to the \
+underlying technical/craft domain (your best real inference, e.g. "Software Engineer") — \
+never put the organizational word itself into specialization.
+- job_function: only when role_category is "other" — one of "Sales & Business Development", \
+"Marketing & Communications", "Customer Success & Support", "People & Talent", "Legal & \
+Compliance", "Finance & Accounting", "Operations & Business Ops", "IT & Technical Support", \
+"Learning & Development", "Executive & Administrative", "Other Non-Tech" (genuinely doesn't \
+fit any of the above), or "unknown" (confidently non-tech, but the title doesn't disclose \
+which function). Always null when role_category is "Designer", "Product Manager", \
+"Engineer", or "unknown" — this field only ever describes what a real "other" posting actually \
+is, never a fourth tracked category.
 - classification_confidence: your own self-reported confidence in this classification — \
 "low", "medium", or "high". This is your honest assessment, not a claim of measured accuracy.
 
-Example: "Product Manager - Health Policy" is role_category "other" — nominally a Product \
-Manager title, but a health-policy role, not a tech-market role this taxonomy tracks. Titles \
-with a tech-unrelated qualifier like this should be "other" even if the base title matches. \
-Example: "Digital Lead" is role_category "unknown" — it might be Design, Product, or \
-Engineering, but the title alone doesn't say which, so guessing would be worse than admitting \
-the uncertainty.
+Example: "Product Manager - Health Policy" is role_category "other", job_function "Other \
+Non-Tech" — nominally a Product Manager title, but a health-policy role, not a tech-market \
+role this taxonomy tracks. Titles with a tech-unrelated qualifier like this should be "other" \
+even if the base title matches. Example: "Digital Lead" is role_category "unknown" — it might \
+be Design, Product, or Engineering, but the title alone doesn't say which, so guessing would \
+be worse than admitting the uncertainty.
+
+Two consistency rules from real classified data, apply them exactly:
+- "Technical Program Manager" is role_category "Product Manager", specialization "Technical \
+Program Manager" — every time, regardless of any team/division qualifier after it. A generic \
+"Program Manager" or "Project Manager" with no technical-product qualifier stays "other" \
+(job_function "Operations & Business Ops" unless something more specific applies) — it is not \
+tech-specific enough on its own.
+- "Data Scientist" is role_category "Engineer", specialization "Data Scientist" — every time, \
+regardless of any team/division qualifier after it (e.g. "Data Scientist, Core \
+Infrastructure" is still Engineer/Data Scientist — the qualifier names the team, not a \
+different occupation).
 
 Return strictly a JSON array, one object per input posting, each with an "id" field copied \
-from the input plus the five fields above. No prose, no markdown fences."""
+from the input plus the six fields above. No prose, no markdown fences."""
 
 # Description-assisted recovery pass (2026-09-06 —
 # changes/2026-09-06-unknown-reclassification.md). Same closed sets and output shape as
 # SYSTEM_INSTRUCTION; the only change is that the model now also has the job description and
 # must use it to fill the gaps the title alone left (any of role_category / specialization /
-# level / track that came back "unknown").
+# level / track / job_function that came back "unknown").
 RECOVERY_SYSTEM_INSTRUCTION = SYSTEM_INSTRUCTION + """
 
 You are re-examining a posting that a title-only pass could not fully classify — one or more \
-of role_category, specialization, level, and track came back "unknown". You now also have the \
-job description. Use it to fill those gaps: give the real role_category (Designer / Product \
-Manager / Engineer), specialization, level, and track wherever the description makes them \
-clear; use "other" for role_category if the description shows this is not one of the three \
-tracked tech occupations; and keep a field "unknown" ONLY if the description still genuinely \
-does not disclose it. Re-answer all five fields, not just the ones that were unknown before."""
+of role_category, specialization, level, track, and job_function came back "unknown". You now \
+also have the job description. Use it to fill those gaps: give the real role_category \
+(Designer / Product Manager / Engineer), specialization, level, and track wherever the \
+description makes them clear; use "other" for role_category (plus a real job_function, never \
+left "unknown" if the description discloses it) if the description shows this is not one of \
+the three tracked tech occupations; and keep a field "unknown" ONLY if the description still \
+genuinely does not disclose it. Re-answer all six fields, not just the ones that were unknown \
+before."""
 
 # Provenance marker written to classifications.model for a row this pass produced — also the
 # idempotency key (a re-run skips rows already carrying this value). Bump the suffix if the
@@ -231,7 +321,11 @@ def _validate(entry: dict) -> dict:
     invalid/unparseable value falls back to "other". `classification_confidence`
     defaults to "low" when missing or invalid, consistent with this codebase's
     bias toward under-claiming rather than assuming the most generous reading
-    of an uncertain result.
+    of an uncertain result. `job_function` (2026-09-21) is only ever non-null
+    when role_category is "other" — see job-classification.md — Job Function;
+    it is never populated for "unknown" (not even confident the posting is
+    non-tech yet) or for a tracked category (would make it a de facto fourth
+    Role Category, which it must never be).
     """
     role_category = entry.get("role_category")
     confidence = entry.get("classification_confidence")
@@ -244,16 +338,20 @@ def _validate(entry: dict) -> dict:
             "specialization": None,
             "level": None,
             "track": None,
+            "job_function": None,
             "classification_confidence": confidence,
         }
 
     if role_category not in ROLE_CATEGORIES:
+        job_function = entry.get("job_function")
+        job_function = job_function if (job_function in JOB_FUNCTIONS or job_function == "unknown") else "unknown"
         return {
             "id": entry.get("id"),
             "role_category": "other",
             "specialization": None,
             "level": None,
             "track": None,
+            "job_function": job_function,
             "classification_confidence": confidence,
         }
 
@@ -266,6 +364,7 @@ def _validate(entry: dict) -> dict:
         "specialization": specialization if specialization == "unknown" else (specialization or None),
         "level": level if (level in LEVEL_LADDER or level == "unknown") else None,
         "track": track if (track in TRACKS or track == "unknown") else None,
+        "job_function": None,
         "classification_confidence": confidence,
     }
 
@@ -375,8 +474,9 @@ def insert_classifications(classifications: list[dict]) -> None:
                 """
                 INSERT INTO classifications
                     (posting_id, role_category, specialization, level, track,
-                     classification_confidence, taxonomy_version, model, classified_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     classification_confidence, taxonomy_version, model, classified_at,
+                     job_function)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (posting_id) DO NOTHING
                 """,
                 [
@@ -390,6 +490,7 @@ def insert_classifications(classifications: list[dict]) -> None:
                         TAXONOMY_VERSION,
                         c.get("model", CLASSIFICATION_MODEL),
                         classified_at,
+                        c.get("job_function"),
                     )
                     for c in classifications
                 ],
@@ -487,12 +588,17 @@ async def classify_postings(postings: list[dict], already_used_today: int = 0) -
     cache_hits = len(cached_rows)
     other_count = _count_other(cached_rows)
 
-    denylisted_result = {
-        "role_category": "other", "specialization": None,
-        "level": None, "track": None, "classification_confidence": "high",
-        "model": HEURISTIC_FILTER_MODEL,
+    # job_function computed per-title (not a shared dict) — the denylist already knows exactly
+    # which functional cluster matched, at zero LLM cost (see _denylisted_job_function).
+    denylisted_results = {
+        t: {
+            "role_category": "other", "specialization": None,
+            "level": None, "track": None, "job_function": _denylisted_job_function(t),
+            "classification_confidence": "high", "model": HEURISTIC_FILTER_MODEL,
+        }
+        for t in denylisted_titles
     }
-    heuristic_rows = _rows_for(denylisted_titles, {t: denylisted_result for t in denylisted_titles})
+    heuristic_rows = _rows_for(denylisted_titles, denylisted_results)
     insert_classifications(heuristic_rows)
     heuristic_filtered = len(heuristic_rows)
     other_count += _count_other(heuristic_rows)
@@ -626,14 +732,15 @@ def update_classifications(classifications: list[dict]) -> None:
                 UPDATE classifications
                 SET role_category = %s, specialization = %s, level = %s, track = %s,
                     classification_confidence = %s, taxonomy_version = %s, model = %s,
-                    classified_at = %s
+                    classified_at = %s, job_function = %s
                 WHERE posting_id = %s
                 """,
                 [
                     (
                         c["role_category"], c["specialization"], c["level"], c["track"],
                         c.get("classification_confidence", "low"), TAXONOMY_VERSION,
-                        c.get("model", CLASSIFICATION_MODEL), classified_at, c["id"],
+                        c.get("model", CLASSIFICATION_MODEL), classified_at,
+                        c.get("job_function"), c["id"],
                     )
                     for c in classifications
                 ],
@@ -697,12 +804,15 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
     already_current_titles = [t for t in unique_titles if t in cache]
     cache_hits = sum(len(postings_by_title[t]) for t in already_current_titles)
 
-    denylisted_result = {
-        "role_category": "other", "specialization": None,
-        "level": None, "track": None, "classification_confidence": "high",
-        "model": HEURISTIC_FILTER_MODEL,
+    denylisted_results = {
+        t: {
+            "role_category": "other", "specialization": None,
+            "level": None, "track": None, "job_function": _denylisted_job_function(t),
+            "classification_confidence": "high", "model": HEURISTIC_FILTER_MODEL,
+        }
+        for t in denylisted_titles
     }
-    heuristic_rows = _rows_for(denylisted_titles, {t: denylisted_result for t in denylisted_titles})
+    heuristic_rows = _rows_for(denylisted_titles, denylisted_results)
     update_classifications(heuristic_rows)
     heuristic_filtered = len(heuristic_rows)
     other_count = _count_other(heuristic_rows)
@@ -766,7 +876,10 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
 # See backend/specs/pipeline-visibility/api.md — API Endpoints — GET /admin/.
 # ---------------------------------------------------------------------------
 
-DISTRIBUTION_DIMENSIONS = ("role_category", "level", "track", "specialization", "classification_confidence")
+DISTRIBUTION_DIMENSIONS = (
+    "role_category", "level", "track", "specialization", "classification_confidence",
+    "job_function",
+)
 
 
 def get_classification_distribution() -> dict[str, list[dict]]:

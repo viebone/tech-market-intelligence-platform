@@ -4,7 +4,7 @@ feature: market-health
 directive: low
 status: active
 created: 2026-07-16
-updated: 2026-08-11
+updated: 2026-09-21
 ---
 
 # Job Classification Taxonomy — Reference Spec
@@ -51,9 +51,45 @@ below), "Product Manager" becomes an awkward parent category for "VP Product," w
 
 | Role Category | Occupation Family | Specializations |
 |---|---|---|
-| Designer | Design | UX Designer, UX Researcher, Product Designer, UI Designer, Content Designer / UX Writer, Design Systems, Other Design |
-| Product Manager | Product | Product Manager, Product Owner, Technical Product Manager, Data Product Manager, Growth Product Manager |
-| Engineer | Engineering | Frontend Engineer, Backend Engineer, Full-stack Engineer, Mobile Engineer, ML/AI Engineer, Data Engineer, DevOps/SRE |
+| Designer | Design | UX Designer, UX Researcher, Product Designer, UI Designer, Content Designer / UX Writer, Design Systems, Brand Designer, Motion Designer, Other Design |
+| Product Manager | Product | Product Manager, Product Owner, Technical Product Manager, Data Product Manager, Growth Product Manager, Platform Product Manager, AI Product Manager, Forward Deployed Product Manager, Other Product |
+| Engineer | Engineering | Frontend Engineer, Backend Engineer, Full-Stack Engineer, Mobile Engineer, Machine Learning Engineer, AI Engineer, Data Engineer, Data Scientist, DevOps/SRE Engineer, Security Engineer, Infrastructure Engineer, Platform Engineer, Network Engineer, Research Engineer, Solutions Engineer, Solutions Architect, Support Engineer, Customer Engineer, Forward Deployed Engineer, Software Engineer, Other Engineering |
+
+**Specialization revision (2026-09-21).** Widened from real production data, not guessed —
+`classifications.specialization` has never had closed-set enforcement in code (unlike `level`/
+`track`; see `classification.py::_validate`), so the LLM has been organically producing most of
+these values for a while. This revision catches the documented list up to what's actually
+there, and adds an explicit "Other {Family}" catch-all for Product and Engineering, matching
+Design's existing "Other Design" — an asymmetry that had no real justification.
+
+Two real naming decisions worth recording:
+- `ML/AI Engineer` (the old combined value) is retired — production data shows the LLM never
+  actually producing that exact string. Split into `Machine Learning Engineer` (213 real
+  postings, matches the dominant real phrasing) and `AI Engineer` kept as a **separate**,
+  smaller, newer value (38 postings) rather than merged back in — the working theory is these
+  name genuinely different skill profiles (ML systems engineering vs. building on top of LLM
+  APIs), not just spelling noise; revisit if real data later shows otherwise.
+- The pre-sales/customer-facing engineering cluster (`Solutions Engineer`, `Solutions
+  Architect`, `Support Engineer`, `Customer Engineer`, `Forward Deployed Engineer`) was already
+  recognized structurally by the Skills section's skill_group table below, but never formally
+  named as `specialization` values until now — real volume (565 postings combined) justified
+  promoting them.
+
+**Three real classification inconsistencies fixed by this revision** (not just documented
+around — see Classification Method's updated LLM guidance, below):
+1. **Technical Program Manager** was landing inconsistently — sometimes `Product Manager` /
+   `Technical Program Manager`, sometimes `other`, for near-identical titles. Resolved:
+   `Technical Program Manager` is `Product Manager`; a generic `Program Manager` or `Project
+   Manager` with no technical-product qualifier stays `other` (not tech-specific enough).
+2. **Data Scientist** was landing inconsistently when the title carried a team/division
+   qualifier (e.g. `Data Scientist, Core Infrastructure` → `other`, while `Data Scientist, Ads`
+   → `Engineer`). Resolved: a division/team qualifier after `Data Scientist` never changes the
+   classification — it names the team, not a different occupation.
+3. **Engineering Manager** was appearing as a `specialization` value directly — the same
+   specialization/track conflation the 2026-08-11 redesign already fixed once for `level` (where
+   `manager` wrongly appeared as a level rung). Resolved: an "Engineering Manager"-shaped title
+   gets `specialization` = the underlying technical domain (best inferable, e.g. `Software
+   Engineer`) and `track = management` — never `specialization = "Engineering Manager"`.
 
 A specialization is a detail level within a fixed Role Category — it narrows, it never
 crosses a category boundary. This list starts narrow and widens only once real posting data
@@ -174,6 +210,52 @@ revised over time — not by guessing upfront what categories will eventually ma
 revision itself is an example: the Level/Track split and the Designer specialization
 additions both came from reviewing real raw titles and real classified data, not from
 redesigning the taxonomy in the abstract.
+
+---
+
+## Job Function (2026-09-21)
+
+A **new, additive field** — never a fourth Role Category, and never a replacement for `other`.
+Populated only when `role_category = "other"`; `null` for every Designer/Product Manager/
+Engineer posting. Same title-only classification pass as Role Category/Specialization/Level/
+Track above (not a Requirements-pipeline field), returned by the same LLM call.
+
+**Why this exists:** roughly 52% of classified postings land `other` today, and until this
+revision that was a dead end — a real, permanent, correctly-not-forced-into-the-3-categories
+classification, but with zero further breakdown. Real production data shows `other` is
+dominated by recognizable, recurring non-tech functions (Account Executive, Corporate Counsel,
+Customer Success Manager, Revenue Strategy & Operations, People Partner, and similar) — this
+gives that population a real second-tier signal without touching the closed 3-category set at
+all, its accent colours, or the trend chart's 3 lines.
+
+Closed set, grounded in real `other`-bucket title data, with the same `unknown`/catch-all
+discipline as every other field in this taxonomy:
+
+| Job Function | Example titles it covers |
+|---|---|
+| Sales & Business Development | Account Executive, Account Manager, Business Development Representative, Sales Development Representative |
+| Marketing & Communications | Marketing Manager, Content Marketing, Communications Manager, Social Media Manager |
+| Customer Success & Support | Customer Success Manager, Customer Support, Client Success Lead, Renewals Manager |
+| People & Talent | Recruiter, Talent Acquisition, People Partner, HR Business Partner, Talent Strategist |
+| Legal & Compliance | Corporate Counsel, Commercial Counsel, Compliance Officer, Paralegal |
+| Finance & Accounting | Accountant, Controller, Bookkeeper, Revenue Strategy & Operations |
+| Operations & Business Ops | Deal Operations Administrator, Contracting Operations Specialist, Supply Chain, Procurement |
+| IT & Technical Support | IT Support Specialist, Solutions Consultant (non-Engineer-track support), Help Desk |
+| Learning & Development | Curriculum Lead, Learning & Development Manager, Training Specialist |
+| Executive & Administrative | Executive Assistant, Administrative Business Partner, Office Manager, Receptionist |
+| Other Non-Tech | Anything genuinely `other` that doesn't fit any function above — the honest catch-all, same discipline as Requirements' "Other requirements," below |
+| `unknown` | The title is confidently non-tech (hence `role_category = other`) but doesn't disclose which function — e.g. a bare "Specialist" or "Associate" with no other signal |
+
+**Relationship to the heuristic pre-filter**: `DENYLIST_KEYWORDS` (`classification.py`) is
+already organized in functional clusters (sales, recruiting/HR, finance, legal, marketing,
+customer support, logistics, admin) — a title resolved by the denylist can get its Job Function
+assigned by a direct keyword→function lookup, no LLM call needed. Only LLM-decided `other`
+postings need an actual model read for this field.
+
+**What this deliberately doesn't decide yet**: whether Job Function becomes its own Data Story,
+gets admin visibility, or is reachable via MCP/ad-hoc query — per Rule 14, that's a real
+`/data-surface-review` to run once this field has real reclassified data to design against, not
+assumed here.
 
 ---
 
@@ -435,3 +517,9 @@ old version's classifications remain inspectable as what they actually were at t
   it is always a proportion of an interpreted sample, and must be stated as such
 - Trying to fit day-to-day responsibilities into a closed taxonomy the way skills or
   education are — responsibilities are summarized, not classified into a fixed set
+- Populating Job Function for a Designer/Product Manager/Engineer posting, or treating it as a
+  fourth Role Category — it exists only underneath `other`, never alongside the tracked three
+- Letting an organizational-function word (e.g. "Manager") leak into `specialization` the way it
+  once leaked into `level` — `Engineering Manager`-shaped titles get a real technical
+  `specialization` plus `track = management`, never `specialization = "Engineering Manager"`
+  itself

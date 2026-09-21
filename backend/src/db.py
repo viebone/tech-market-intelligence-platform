@@ -202,6 +202,14 @@ ALTER TABLE classifications DROP COLUMN IF EXISTS seniority;
 ALTER TABLE classifications ADD COLUMN IF NOT EXISTS level TEXT;
 ALTER TABLE classifications ADD COLUMN IF NOT EXISTS classification_confidence TEXT;
 
+-- Job Function (2026-09-21) — purely additive, unlike the redesign above.
+-- Only ever non-null when role_category = 'other' (see job-classification.md
+-- — Job Function; classification.py::_validate enforces this). No backfill:
+-- existing 'other' rows stay NULL until the reclassification backlog run
+-- reprocesses them, same "derived going forward, backlog catches up" pattern
+-- as employer_size_band/employer_region.
+ALTER TABLE classifications ADD COLUMN IF NOT EXISTS job_function TEXT;
+
 -- Requirements Signal fields (2026-08-11): purely additive, same pattern as
 -- every posting_requirements migration before it.
 ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS education_required TEXT;
