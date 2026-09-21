@@ -179,6 +179,7 @@ def postings_list(
     level: str | None = None,
     track: str | None = None,
     specialization: str | None = None,
+    job_function: str | None = None,
     classification_confidence: str | None = None,
     taxonomy_version: str | None = None,
     requirements_status: str | None = None,
@@ -191,7 +192,8 @@ def postings_list(
 ):
     filters = {
         "role_category": role_category, "level": level, "track": track,
-        "specialization": specialization, "classification_confidence": classification_confidence,
+        "specialization": specialization, "job_function": job_function,
+        "classification_confidence": classification_confidence,
         "taxonomy_version": taxonomy_version, "requirements_status": requirements_status,
         "source": source, "search": search,
     }
@@ -241,6 +243,7 @@ def postings_list(
                 "levels": sorted(classification.LEVEL_LADDER) + ["unknown"],
                 "tracks": sorted(classification.TRACKS) + ["unknown"],
                 "specializations": classification.get_distinct_specializations(),
+                "job_functions": sorted(classification.JOB_FUNCTIONS) + ["unknown"],
                 "confidences": sorted(classification.CLASSIFICATION_CONFIDENCE_VALUES),
                 "taxonomy_versions": [r["version"] for r in classification.get_taxonomy_version_breakdown()],
                 "requirements_statuses": ["extracted", "pending", "failed", "not_eligible"],

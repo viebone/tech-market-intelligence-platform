@@ -251,6 +251,7 @@ breakdown, requirements coverage, and the most recent ingestion run, per
 | `level` | `str` | none | Exact match |
 | `track` | `str` | none | Exact match |
 | `specialization` | `str` | none | Exact match |
+| `job_function` | `str` | none | **Added 2026-09-21.** Exact match; only ever populated for `role_category = "other"` rows (`job-classification.md` — Job Function) — lets an operator drill from a Taxonomy Health/Overview number straight into the real postings behind it, same "drill down from any high-level number" promise `outcomes/pipeline-processing-visibility.md` already makes for every other dimension here |
 | `classification_confidence` | `str` | none | Exact match |
 | `taxonomy_version` | `str` | none | Exact match |
 | `requirements_status` | `"extracted" \| "pending" \| "failed" \| "not_eligible"` | none | See "Requirements Status" above |

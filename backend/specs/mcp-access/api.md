@@ -337,7 +337,7 @@ This is per the MCP spec's own transport — JSON-RPC over HTTP; this platform d
 second, REST-shaped tool API alongside it. Every tool call carries a Bearer access token; every
 tool implementation runs the same three checks before touching data — see Business Logic, below.
 
-Seven tools. Each is a genuine data primitive already proven inside this platform's own chat
+Eight tools. Each is a genuine data primitive already proven inside this platform's own chat
 feature or story catalogue (`backend/specs/market-health/api.md`) — nothing here is new,
 untested query logic.
 
@@ -438,6 +438,29 @@ already states for its own independence from the job-postings tools, applied her
 underlying reason this platform's own spec has never built that comparison itself
 (`scraped-data-sources/api.md` — "What this doesn't decide").
 
+### `get_job_function_breakdown`
+**Added 2026-09-21** (`changes/2026-09-21-job-function-story.md`) — reverses the "deferred"
+call recorded the same day (`changes/2026-09-21-emerging-role-detection.md`) now that a real
+consumer surface exists (`design/market-health/data-stories.md` — Story 4, "Beyond Design,
+Product & Engineering"). **Scope**: `jobs.read` — same reasoning as `get_market_benchmark`'s
+own scope reuse: the same conceptual grant ("job demand"), a different slice of this
+platform's own postings data, not a new source. **Not** in `PREMIUM_ONLY_TOOLS` — platform-owned
+data, no licence conflict to gate around. **Wraps**: `query_job_function_data` (new).
+**Parameters**: none — the whole point is the aggregate picture across all `other`-classified
+postings; no filter exists yet because no outcome has called for one.
+**Response**: same envelope shape; `data.functions` carries `{job_function, posting_count}` per
+function, ordered by count; `data.other_count`/`data.total_count` state the real denominator
+(postings outside the 3 tracked categories vs. all classified postings);
+`data.not_yet_reprocessed` states, plainly, how many `other` postings don't have a Job Function
+assigned yet because the 2026-09-21 taxonomy revision's reclassification backlog
+(`changes/2026-09-21-fold-reprocessing-into-ingest.md`) hasn't reached them — a real, temporary
+lag, computed live on every call, never hidden or stale. **Docstring explicitly instructs the
+calling AI never to present Job Function as a 4th `role_category` value** — same discipline
+`get_market_benchmark`'s own docstring already applies to its independent dataset, adapted
+here: Job Function isn't a different population needing "don't compare," it's a deliberately
+different *kind* of fact (a sub-breakdown of `other`) that must never be mistaken for a peer of
+Designer/Product Manager/Engineer.
+
 ### What's deliberately not a tool
 
 See also `ACCESS.md` (product root) for the full picture across *every* capability this product
@@ -472,12 +495,11 @@ MCP-exposure status.
   docstring instructs the calling AI not to attempt it; there is no server-side enforcement
   possible once an AI holds both tools' outputs, which is itself a real, named limitation of
   exposing two independently-sourced primitives rather than one pre-composed comparison.
-- **Job Function** (added 2026-09-21 — `design/market-health/job-classification.md`, the real
-  breakdown of the `other`-bucket population) — **deferred, not decided against**, same shape as
-  "Market benchmark datasets" was before 2026-09-18: no real consumer surface exists yet
-  (story, admin view, or ad-hoc query path) to decide MCP exposure against. Revisit once
-  `/data-surface-review` runs against real reclassified data (`changes/2026-09-21-emerging-
-  role-detection.md`) — named there as the explicit next step, not silently skipped.
+- ~~**Job Function** — deferred, not decided against.~~ **Resolved 2026-09-21** — exposed as
+  `get_job_function_breakdown`, above, now that a real consumer surface (Story 4, "Beyond
+  Design, Product & Engineering") exists to decide against. Marked here for history, per this
+  project's "mark removed, don't erase" convention — see `changes/2026-09-21-job-function-
+  story.md`.
 
 ---
 

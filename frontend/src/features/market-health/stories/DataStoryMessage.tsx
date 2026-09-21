@@ -4,6 +4,7 @@ import { Meter } from "./Meter";
 import { YearOnYearBars, type YearOnYearContent } from "./YearOnYearBars";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
+import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -95,6 +96,9 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   }
   if (story.story_id === "market-benchmark") {
     return <MarketBenchmarkStoryMessage story={story} />;
+  }
+  if (story.story_id === "beyond-tracked-roles") {
+    return <JobFunctionStoryMessage story={story} />;
   }
 
   const roles = section(story, "roles-offered");

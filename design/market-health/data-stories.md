@@ -458,12 +458,106 @@ replaces the working-space content with this briefing. Does not alter "Tech mark
 status" or "What we know about the market" — a fully independent third surface, same
 "different questions, different surfaces" discipline as Story 2.
 
+## Story 4 - What roles exist beyond Design, Product, and Engineering?
+
+Added 2026-09-21 — `changes/2026-09-21-job-function-story.md`. The first catalogue entry built
+from `classifications.job_function` (`job-classification.md` — Job Function, added the same
+day). Real production data shows roughly half of all classified postings fall outside the 3
+tracked Role Categories — until this story, that half had no breakdown at all beyond the bare
+label `other`. **Job Function is never a fourth tracked Role Category** — this story exists
+specifically to describe what's genuinely outside Design/Product/Engineering, never to widen
+what those three mean or to appear in the trend chart's own 3-line split.
+
+### Display name
+
+**Beyond Design, Product & Engineering** — the Task Panel item label.
+
+### User question
+
+> What roles exist beyond Design, Product, and Engineering?
+
+### Example phrasings
+- "What else are these companies hiring for?"
+- "Show me the wider workforce breakdown"
+- "What jobs aren't Design, Product, or Engineering?"
+
+### Audience job
+
+Show a professional **what a tracked company's hiring actually looks like in full** — not just
+the tracked slice. A company's real hiring posture (aggressive commercial expansion vs. lean
+operations, say) often shows up more in its Sales/Marketing/Ops volume than in its Engineering
+count alone; this story makes that visible instead of silently discarding it as `other`.
+
+### Visible answer shape
+
+One movement — no year-on-year block yet (Job Function is brand new; there is no prior-year
+window to compare against, same "not enough history yet" honesty state Stories 1 and 3 use
+before their own YoY/second-period data existed).
+
+1. **Framing line** — one sentence naming this as the picture beyond the 3 tracked categories,
+   never a reconciliation or a fourth category.
+2. **What the wider hiring picture looks like** — subtitle: "Postings outside Design, Product,
+   and Engineering, by function." Ranked bar list, one row per Job Function
+   (`job-classification.md`'s closed set), bar length = posting count. Qualifier states how many
+   of the `other` population currently have a Job Function assigned vs. how many are still
+   awaiting reprocessing (see Honesty and empty states, below — a real, current lag, not
+   hidden).
+3. **How much of all hiring this actually is** — a **Hero Figure + Meter** (the second distinct
+   visual form): Hero Figure = total postings outside the 3 tracked categories; Meter = that
+   count's share of *all* classified postings. Its own caption states the unit inline, no
+   separate subtitle needed (Data Legibility, `visual-design.md`). *Meaning:* the trend chart
+   and Story 1 only ever show the tracked slice — this quantifies how much of real hiring that
+   slice actually represents.
+4. **Most common titles in {largest function}** — subtitle names the actual largest Job
+   Function found (e.g. "Most common titles in Sales & Business Development"). Ranked bar
+   list of real, un-normalized job titles within that one function, top 10. *Meaning:* gives
+   real texture to a function label — what it actually contains, not just its name.
+
+This story leans on 2 distinct visual forms (Ranked bar list, Hero Figure + Meter), same
+deliberate judgment call as Story 3 — Job Function data is currently one dimension (a count per
+function), no time series or geography exists yet to justify a trend line or map.
+
+### Data contract
+
+Queries `classifications`/`raw_postings` only — platform-owned data, no LLM, no join to
+`market_observations`/`skill_associations` (a different data source, Story 3's own scope).
+
+| Story fact | Aggregate | Required qualifier |
+|---|---|---|
+| Job Function breakdown | `classifications` grouped by `job_function` where `role_category = 'other'`, `job_function IS NOT NULL` | States how many `other` postings have a Job Function assigned vs. how many are still awaiting reprocessing |
+| Scale | `count(*) WHERE role_category = 'other'` vs. `count(*)` (all classified) | States this is a share of *all* classified postings, not just tracked companies |
+| Top titles in largest function | `raw_postings.title` grouped, filtered to the single largest Job Function found this query, top 10 | Real title text, not normalized — same discipline as Story 1's own title/specialization fact |
+
+### Honesty and empty states
+
+- Same base rules as Stories 1-3 (current as of query time, sample sizes stated,
+  `insufficient_data` per section, never estimated/zero-filled).
+- **A real, current lag, stated plainly, not hidden**: as of this story's addition, the
+  2026-09-21 taxonomy revision's reclassification backlog is still draining
+  (`changes/2026-09-21-fold-reprocessing-into-ingest.md`) — a real share of `other` postings
+  genuinely have `job_function IS NULL` right now because they haven't been reprocessed onto
+  the current taxonomy version yet. Every section states this as a real backlog still
+  draining, never presented as if the picture were already complete.
+- **Job Function is never conflated with `role_category`** — this story never claims a Job
+  Function value for a Designer/Product Manager/Engineer posting, and never presents Job
+  Function as if it were a 4th value of `role_category` anywhere in its language.
+- **`unknown`** (a posting confidently outside the 3 tracked categories, but whose function the
+  title doesn't disclose) is its own real row in the breakdown, never hidden or folded into
+  "Other Non-Tech."
+
+### Relationship to the existing experience
+
+A dedicated Query Task, placed after Story 3 in the catalogue (document order). Selecting it
+replaces the working-space content with this briefing. Does not alter the trend chart, Story 1,
+Story 2, or Story 3 — a fully independent fourth surface, same "different questions, different
+surfaces" discipline as every prior story.
+
 ## Future catalogue direction
 
 Later entries can cover narrower questions such as role demand, skills by specialization,
 compensation coverage, source coverage, or market changes over time — **layoff activity is
-now Story 2**, and **an independent third-party benchmark is now Story 3**, both above, no
-longer future directions. **Every
+now Story 2**, **an independent third-party benchmark is now Story 3**, and **what's beyond the
+3 tracked categories is now Story 4**, all above, no longer future directions. **Every
 one must meet "Visual standard every story must meet" (above)** — a new entry that can't be
 composed into 3–6 heading/visual/qualifier blocks with a real mix of chart forms is a sign
 the question is too narrow or too broad to be a story, not a reason to relax the standard. A

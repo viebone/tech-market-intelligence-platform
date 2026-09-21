@@ -23,6 +23,7 @@ from mcp_access.envelope import build_envelope, no_data, time_window_label
 from market_query import (
     query_compensation_data,
     query_employment_events_data,
+    query_job_function_data,
     query_market_benchmark_data,
     query_market_data,
     query_requirements_data,
@@ -40,6 +41,12 @@ TOOL_SCOPES: dict[str, str] = {
     # reuses jobs.read deliberately (same conceptual grant, a different
     # source) rather than a new scope; see backend/specs/mcp-access/api.md.
     "get_market_benchmark": "jobs.read",
+    # Added 2026-09-21 (changes/2026-09-21-job-function-story.md) — resolved
+    # from "deferred, not decided against" the moment a real consumer
+    # surface (Story 4) existed to decide against, same shape as
+    # get_market_benchmark's own resolution. Reuses jobs.read — same
+    # conceptual grant as every other job-postings-derived tool.
+    "get_job_function_breakdown": "jobs.read",
 }
 
 # Tools that additionally require the Premium plan, regardless of scope.
@@ -249,5 +256,37 @@ def get_market_benchmark(entity_name: list[str] | None = None) -> dict:
         time_window={"from": None, "to": None, "label": "most recent observation per role"},
         source="IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an independent third-party "
         "benchmark, not this platform's own job-postings data",
+        total_matching=result["total_matching"],
+    )
+
+
+def get_job_function_breakdown() -> dict:
+    """
+    What this platform's tracked companies are actually hiring for outside
+    the 3 tracked Role Categories (Designer / Product Manager / Engineer) —
+    e.g. Sales & Business Development, Marketing & Communications, Legal &
+    Compliance. Job Function is NEVER a fourth tracked Role Category — never
+    present it alongside role_category values from get_job_demand as if it
+    were a 4th option; it exists specifically to describe what's genuinely
+    outside those three.
+
+    `not_yet_reprocessed` may be non-zero: a real, current backlog means some
+    postings outside the 3 tracked categories don't have a Job Function
+    assigned yet. State this plainly if asked about it — it is a real,
+    temporary lag, not a data-quality problem.
+    """
+    result = query_job_function_data()
+    return build_envelope(
+        {
+            "functions": result["functions"],
+            "other_count": result["other_count"],
+            "total_count": result["total_count"],
+            "not_yet_reprocessed": result["not_yet_reprocessed"],
+        },
+        unit="posting count per function",
+        scope={},
+        time_window={"from": None, "to": None, "label": "current, live"},
+        source="This platform's own classification taxonomy — postings outside Designer/"
+        "Product Manager/Engineer",
         total_matching=result["total_matching"],
     )

@@ -791,3 +791,56 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
         "total_matching": len(roles),
         "usable": True,
     }
+
+
+def query_job_function_data() -> dict:
+    """
+    Real breakdown of postings outside the 3 tracked Role Categories
+    (Designer/Product Manager/Engineer), by Job Function — added 2026-09-21
+    (changes/2026-09-21-job-function-story.md). Job Function is NEVER a
+    fourth tracked Role Category; this reads classifications.job_function,
+    populated only for role_category = "other" rows
+    (design/market-health/job-classification.md — Job Function).
+
+    Returns:
+        A dict with:
+        - functions: [{job_function, posting_count}], ordered by posting_count desc
+        - other_count, total_count: how many classified postings are outside
+          the 3 tracked categories vs. all classified postings
+        - not_yet_reprocessed: other_count minus postings that already have a
+          job_function assigned — a real, current reprocessing lag from the
+          2026-09-21 taxonomy revision's backlog
+          (changes/2026-09-21-fold-reprocessing-into-ingest.md), stated
+          plainly rather than hidden, same discipline as Story 4's own
+          honesty qualifier
+        - total_matching: other_count (the real denominator for `functions`)
+    """
+    with get_connection() as conn:
+        coverage_row = conn.execute(
+            """
+            SELECT
+                count(*) FILTER (WHERE role_category = 'other') AS other_count,
+                count(*) AS total_count,
+                count(*) FILTER (WHERE role_category = 'other' AND job_function IS NOT NULL) AS other_with_job_function
+            FROM classifications
+            """
+        ).fetchone()
+        other_count, total_count, other_with_job_function = coverage_row
+
+        function_rows = conn.execute(
+            """
+            SELECT job_function, count(*) AS posting_count
+            FROM classifications
+            WHERE role_category = 'other' AND job_function IS NOT NULL
+            GROUP BY job_function
+            ORDER BY posting_count DESC
+            """
+        ).fetchall()
+
+    return {
+        "functions": [{"job_function": r[0], "posting_count": r[1]} for r in function_rows],
+        "other_count": other_count,
+        "total_count": total_count,
+        "not_yet_reprocessed": other_count - other_with_job_function,
+        "total_matching": other_count,
+    }

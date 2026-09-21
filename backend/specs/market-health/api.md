@@ -389,6 +389,18 @@ every visitor already gets. Revisit the NC clause specifically if a paid consume
 ever built on top of this data (flagged, not solved, here — see the change request's Decision
 Log).
 
+**Story 4 (`changes/2026-09-21-job-function-story.md`).** "Beyond Design, Product &
+Engineering" is a data story built entirely from `classifications.job_function`
+(`job-classification.md` — Job Function, added the same day), scoped to `role_category =
+'other'` rows only. Same no-new-route catalogue-operation pattern as Stories 2-3. See
+`market_stories.py` — `build_job_function_story()`. **Deliberately states a real, current
+reprocessing lag** rather than hiding it: the taxonomy revision's own backlog
+(`changes/2026-09-21-fold-reprocessing-into-ingest.md`) means a real share of `other` postings
+have `job_function IS NULL` at any moment the backlog hasn't fully drained — every section's
+qualifier states the real count still awaiting reprocessing, computed live on every request
+(`count(*) FILTER (WHERE role_category = 'other' AND job_function IS NOT NULL)` vs. the total
+`other` count), never a stale or hardcoded figure.
+
 ---
 
 ## API Endpoints

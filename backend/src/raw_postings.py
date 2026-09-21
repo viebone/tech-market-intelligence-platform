@@ -248,6 +248,7 @@ def list_postings(
     level: str | None = None,
     track: str | None = None,
     specialization: str | None = None,
+    job_function: str | None = None,
     classification_confidence: str | None = None,
     taxonomy_version: str | None = None,
     requirements_status: str | None = None,
@@ -282,6 +283,8 @@ def list_postings(
         where.append("track = %s"); params.append(track)
     if specialization:
         where.append("specialization = %s"); params.append(specialization)
+    if job_function:
+        where.append("job_function = %s"); params.append(job_function)
     if classification_confidence:
         where.append("classification_confidence = %s"); params.append(classification_confidence)
     if taxonomy_version:
@@ -300,7 +303,7 @@ def list_postings(
         WITH postings_view AS (
             SELECT
                 rp.id, rp.source, rp.company, rp.title, rp.fetched_at,
-                c.role_category, c.level, c.track, c.specialization,
+                c.role_category, c.level, c.track, c.specialization, c.job_function,
                 c.classification_confidence, c.taxonomy_version,
                 CASE
                     WHEN pr.posting_id IS NOT NULL THEN 'extracted'
@@ -322,7 +325,8 @@ def list_postings(
             f"""
             {postings_view}
             SELECT id, source, company, title, fetched_at, role_category, level, track,
-                   specialization, classification_confidence, taxonomy_version, requirements_status
+                   specialization, job_function, classification_confidence, taxonomy_version,
+                   requirements_status
             FROM postings_view
             {where_sql}
             ORDER BY {sort_column} {direction} NULLS LAST
@@ -335,8 +339,8 @@ def list_postings(
         {
             "id": r[0], "source": r[1], "company": r[2], "title": r[3], "fetched_at": r[4],
             "role_category": r[5], "level": r[6], "track": r[7], "specialization": r[8],
-            "classification_confidence": r[9], "taxonomy_version": r[10],
-            "requirements_status": r[11],
+            "job_function": r[9], "classification_confidence": r[10], "taxonomy_version": r[11],
+            "requirements_status": r[12],
         }
         for r in rows
     ]

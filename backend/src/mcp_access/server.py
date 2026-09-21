@@ -268,6 +268,15 @@ def create_mcp_server():
             entity_name=entity_name,
         ))
 
+    @mcp_server.tool()
+    def get_job_function_breakdown() -> dict:
+        """What tracked companies are hiring for outside Designer/Product
+        Manager/Engineer — e.g. Sales, Marketing, Legal. NEVER a 4th
+        role_category; never present alongside get_job_demand's values as
+        if it were one. Requires the 'jobs.read' scope. Available on every
+        plan."""
+        return _enforce_and_call("get_job_function_breakdown", tools.get_job_function_breakdown, {})
+
     return mcp_server
 
 

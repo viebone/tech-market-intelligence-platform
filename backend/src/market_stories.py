@@ -47,6 +47,16 @@ STORY_CATALOGUE = (
             "Show me an independent market benchmark",
         ],
     },
+    {
+        "id": "beyond-tracked-roles",
+        "display_name": "Beyond Design, Product & Engineering",
+        "question": "What roles exist beyond Design, Product, and Engineering?",
+        "example_phrasings": [
+            "What else are these companies hiring for?",
+            "Show me the wider workforce breakdown",
+            "What jobs aren't Design, Product, or Engineering?",
+        ],
+    },
 )
 
 # Employment risk story window — trailing 12 months, revised 2026-09-11 from
@@ -817,6 +827,125 @@ def build_market_benchmark_story() -> dict[str, Any]:
     }
 
 
+def build_job_function_story() -> dict[str, Any]:
+    """
+    Story 4 — what real hiring looks like beyond the 3 tracked Role Categories
+    (design/market-health/data-stories.md — Story 4). Built entirely from
+    `classifications.job_function`, populated only for `role_category = "other"`
+    rows (job-classification.md — Job Function, 2026-09-21) — never a fourth
+    tracked category, never blended into the trend chart's own 3-line split.
+
+    Real, current honesty state, not hidden: the 2026-09-21 taxonomy revision's
+    reclassification backlog is still draining (changes/2026-09-21-fold-
+    reprocessing-into-ingest.md) — a real share of `other` postings genuinely
+    have `job_function IS NULL` right now because they haven't been reprocessed
+    onto the new taxonomy version yet. Every section states this plainly as a
+    coverage qualifier, per this catalogue's own "real lag, stated plainly,
+    never faked as fresh" discipline.
+    """
+    query_time = datetime.now().astimezone()
+
+    with get_connection() as conn:
+        coverage_row = conn.execute(
+            """
+            SELECT
+                count(*) FILTER (WHERE role_category = 'other') AS other_count,
+                count(*) AS total_count,
+                count(*) FILTER (WHERE role_category = 'other' AND job_function IS NOT NULL) AS other_with_job_function
+            FROM classifications
+            """
+        ).fetchone()
+        other_count, total_count, other_with_job_function = coverage_row
+
+        function_rows = _rows_as_dicts(conn.execute(
+            """
+            SELECT c.job_function, count(DISTINCT rp.id) AS posting_count
+            FROM classifications c
+            JOIN raw_postings rp ON rp.id = c.posting_id
+            WHERE c.role_category = 'other' AND c.job_function IS NOT NULL
+            GROUP BY c.job_function
+            ORDER BY posting_count DESC
+            """
+        ))
+
+        top_titles: list[dict[str, Any]] = []
+        largest_function = function_rows[0]["job_function"] if function_rows else None
+        if largest_function:
+            top_titles = _rows_as_dicts(conn.execute(
+                """
+                SELECT rp.title, count(*) AS posting_count
+                FROM classifications c
+                JOIN raw_postings rp ON rp.id = c.posting_id
+                WHERE c.job_function = %s
+                GROUP BY rp.title
+                ORDER BY posting_count DESC, rp.title
+                LIMIT 10
+                """,
+                (largest_function,),
+            ))
+
+    not_yet_reprocessed = other_count - other_with_job_function
+    reprocessing_note = (
+        f" {not_yet_reprocessed} more \"other\" posting(s) haven't been reprocessed onto the "
+        "current taxonomy version yet and aren't reflected below — not a gap, a real backlog "
+        "still draining (see the platform's own ingestion run history)."
+        if not_yet_reprocessed > 0 else ""
+    )
+    other_share = (other_count / total_count * 100) if total_count else 0.0
+
+    sections = [
+        _section(
+            "beyond-tracked-roles-breakdown",
+            "What the wider hiring picture looks like",
+            {"functions": function_rows},
+            f"Based on {other_with_job_function} of {other_count} postings outside Design, "
+            f"Product, and Engineering that have a function assigned so far." + reprocessing_note,
+            ready=bool(function_rows),
+        ),
+        _section(
+            "beyond-tracked-roles-scale",
+            "How much of all hiring this actually is",
+            {
+                "other_count": other_count,
+                "total_count": total_count,
+                "other_share": other_share,
+            },
+            f"{other_count} of {total_count} classified postings ({other_share:.1f}%) are "
+            "outside the 3 tracked categories — the trend chart and Story 1 only ever show the "
+            "tracked slice, not the full picture.",
+            ready=total_count > 0,
+        ),
+        _section(
+            "beyond-tracked-roles-top-titles",
+            f"Most common titles in {largest_function or 'the largest function'}",
+            {"job_function": largest_function, "titles": top_titles},
+            "Real job titles, not normalized — the single largest function's own most-repeated "
+            "titles, to show what it actually contains rather than just its name.",
+            ready=bool(top_titles),
+        ),
+    ]
+
+    return {
+        "story_id": "beyond-tracked-roles",
+        "question": STORY_CATALOGUE[3]["question"],
+        "as_of": query_time.isoformat(),
+        "sections": sections,
+        "provenance": {
+            "sources": ["raw_postings", "classifications"],
+            "model_used": False,
+            "query_time": query_time.isoformat(),
+        },
+        "limitations": [
+            "Job Function is never a fourth tracked Role Category — it exists only to describe "
+            "what's genuinely outside Design, Product, and Engineering, and never appears in "
+            "the trend chart's own 3-line split.",
+            "A posting's Job Function reflects the same title-only classification pass as "
+            "everything else in this taxonomy — an interpretation, not a verified fact.",
+            reprocessing_note.strip() or "All \"other\" postings currently have a Job Function assigned.",
+        ],
+    }
+
+
 def get_story(story_id: str) -> dict[str, Any]:
     if story_id == "market-data-briefing":
         return build_market_data_briefing()
@@ -824,6 +953,8 @@ def get_story(story_id: str) -> dict[str, Any]:
         return build_employment_risk_overview()
     if story_id == "market-benchmark":
         return build_market_benchmark_story()
+    if story_id == "beyond-tracked-roles":
+        return build_job_function_story()
     raise KeyError(story_id)
 
 

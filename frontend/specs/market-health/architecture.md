@@ -531,6 +531,17 @@ second catalogue entry.
 changes. Reuses `RankedBarList`/`StoryBlock`/`Meter` — no new shared component needed, unlike
 Story 2's `WorldRiskMap` (this story's data has no geography dimension).
 
+### Story 4: beyond Design, Product & Engineering (added 2026-09-21 — `changes/2026-09-21-job-function-story.md`)
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `JobFunctionStoryMessage` | Renders `POST /api/market-health/stories/beyond-tracked-roles`'s resolved sections: framing line → `RankedBarList` (Job Function breakdown of `other`-classified postings) → Hero Figure + Meter (share of all classified postings outside the 3 tracked categories) → `RankedBarList` (real, un-normalized titles within the single largest function, heading built dynamically from the response's own `job_function` value). One movement, no year-on-year block (Job Function is brand new — no prior-year window exists yet). | `frontend/src/features/market-health/stories/JobFunctionStoryMessage.tsx` |
+
+`DataStoryMessage` gains a fourth branch: `story.story_id === "beyond-tracked-roles"` delegates
+to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses `RankedBarList`/
+`StoryBlock`/`Meter` — no new shared component needed. `tsc --noEmit` and `npm run build` both
+clean.
+
 ### Reference story: market data briefing
 
 The Task Panel item **"What we know about the market"** — `DataStoryMessage` from

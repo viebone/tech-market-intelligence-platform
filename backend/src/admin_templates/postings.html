@@ -41,6 +41,15 @@
     </select>
   </div>
   <div>
+    <label for="job_function">Job Function</label>
+    <select id="job_function" name="job_function">
+      <option value="">All</option>
+      {% for v in filter_options.job_functions %}
+      <option value="{{ v }}" {{ 'selected' if filters.job_function == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
     <label for="classification_confidence">Confidence</label>
     <select id="classification_confidence" name="classification_confidence">
       <option value="">All</option>
