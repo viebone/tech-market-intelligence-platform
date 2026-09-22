@@ -69,13 +69,14 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
       {/* Framing line — states this is the picture beyond the 3 tracked categories,
           never a reconciliation or a 4th category. */}
       <p className="text-sm leading-relaxed text-gray-300">
-        What the tracked companies are hiring for outside Design, Product, and Engineering —
-        never a fourth tracked role category, and never blended into the trend chart above.
+        What the tracked companies are hiring for outside Design, Product Management, and
+        Engineering — never a fourth tracked role category, and never blended into the trend
+        chart above.
       </p>
 
       <StoryBlock
         heading="What the wider hiring picture looks like"
-        subtitle="Postings outside Design, Product, and Engineering, by function."
+        subtitle="Postings outside Design, Product Management, and Engineering, by function."
         {...blockProps(breakdownSection, functionRows.length > 0)}
       >
         <RankedBarList rows={functionRows} limit={11} />

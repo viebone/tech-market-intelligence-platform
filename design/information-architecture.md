@@ -204,7 +204,7 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Output Panel** | The panel showing outputs and settings for the active task. | Layout label |
 | **Trend Chart** | A multi-line chart showing monthly job opening counts by role category over a selected time range. | Working Space, Output Panel |
 | **Trend Reading** | A 3–4 sentence AI-generated summary of what the trend chart shows: direction, magnitude, and category divergence. | Working Space |
-| **Role Category** | One of the three tracked job categories: Designer, Product Manager, Engineer. | Charts, labels, filters |
+| **Role Category** | One of the three tracked job categories: Designer, Product Manager, Engineer. **Displayed as "Design" / "Product Management" / "Engineering"** since 2026-09-22 (`changes/2026-09-22-role-category-display-relabel.md`) — a presentation-only relabel; the term "Role Category" and its three underlying values are unchanged. | Charts, labels, filters |
 | **Time Range** | The period shown by a trend chart: This Year, Past 5 Years, or All Time. | Chart controls |
 | **Demand Signal** | A data point representing job posting volume trend for a given role or skill. | Working Space, Output Panel |
 | **Compensation Signal** | A data point representing salary range trend for a given role, seniority, or location. | Working Space, Output Panel |

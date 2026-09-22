@@ -55,6 +55,18 @@ const ROLE_CATEGORY_COLOR: Record<string, string> = {
 };
 const FALLBACK_SEGMENT_COLOR = "#4b5563"; // gray-600
 
+// Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
+// "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
+// job-classification.md's own internal "occupation family" reasoning. row.role_category (the
+// key used for color lookups and React keys, above) is unchanged — this map only substitutes
+// the visible text at the point of display.
+const ROLE_CATEGORY_LABEL: Record<string, string> = {
+  Designer: "Design",
+  "Product Manager": "Product Management",
+  Engineer: "Engineering",
+};
+const roleCategoryLabel = (value: string) => ROLE_CATEGORY_LABEL[value] ?? value;
+
 function formatMonthYear(iso: string): string {
   return new Date(iso).toLocaleDateString("default", { month: "long", year: "numeric" });
 }
@@ -125,7 +137,7 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
                   className="flex h-3 w-full gap-[2px] overflow-hidden rounded bg-gray-800"
                   role="img"
                   aria-label={`Job openings by role category: ${breakdown
-                    .map((row) => `${row.role_category} ${formatCount(row.postings)}`)
+                    .map((row) => `${roleCategoryLabel(row.role_category)} ${formatCount(row.postings)}`)
                     .join(", ")}`}
                 >
                   {breakdown.map((row) => {
@@ -134,7 +146,7 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
                     return (
                       <div
                         key={row.role_category}
-                        title={`${row.role_category}: ${formatCount(row.postings)} (${pct}%)`}
+                        title={`${roleCategoryLabel(row.role_category)}: ${formatCount(row.postings)} (${pct}%)`}
                         style={{ flex: `${row.postings} 1 0%`, backgroundColor: color }}
                         className="h-full"
                       />
@@ -154,7 +166,7 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
                           className="inline-block h-2 w-2 shrink-0 rounded-full"
                           style={{ backgroundColor: color }}
                         />
-                        <span className="text-gray-200">{row.role_category}</span>
+                        <span className="text-gray-200">{roleCategoryLabel(row.role_category)}</span>
                         <span className="tabular-nums">{pct}%</span>
                       </span>
                     );

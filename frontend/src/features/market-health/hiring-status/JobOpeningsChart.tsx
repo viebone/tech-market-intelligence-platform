@@ -33,10 +33,14 @@ const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: "month", label: "Month" },
 ];
 
+// Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
+// "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
+// job-classification.md's own internal "occupation family" reasoning — the underlying data
+// key and the stored role_category value are both unchanged, this is presentation only.
 const SERIES = [
-  { key: "designer"        as keyof OpeningDataPoint, label: "Designer",           color: "#6366f1" },
-  { key: "product_manager" as keyof OpeningDataPoint, label: "Product Manager",    color: "#a855f7" },
-  { key: "engineer"        as keyof OpeningDataPoint, label: "Engineer",           color: "#10b981" },
+  { key: "designer"        as keyof OpeningDataPoint, label: "Design",             color: "#6366f1" },
+  { key: "product_manager" as keyof OpeningDataPoint, label: "Product Management", color: "#a855f7" },
+  { key: "engineer"        as keyof OpeningDataPoint, label: "Engineering",        color: "#10b981" },
 ] as const;
 
 const PAD = { top: 20, right: 16, bottom: 52, left: 68 };

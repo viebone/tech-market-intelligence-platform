@@ -50,11 +50,11 @@ STORY_CATALOGUE = (
     {
         "id": "beyond-tracked-roles",
         "display_name": "Beyond Design, Product & Engineering",
-        "question": "What roles exist beyond Design, Product, and Engineering?",
+        "question": "What roles exist beyond Design, Product Management, and Engineering?",
         "example_phrasings": [
             "What else are these companies hiring for?",
             "Show me the wider workforce breakdown",
-            "What jobs aren't Design, Product, or Engineering?",
+            "What jobs aren't Design, Product Management, or Engineering?",
         ],
     },
 )
@@ -342,8 +342,8 @@ def build_market_data_briefing() -> dict[str, Any]:
                 current_window=current_window, prior_window=prior_window,
                 comparison_available=comparison_available,
                 comparison_starts_at=comparison_starts_at,
-                meaning="Which of the tracked areas — Design, Product, Engineering — is taking a "
-                        "bigger or smaller slice of new roles.",
+                meaning="Which of the tracked areas — Design, Product Management, Engineering — "
+                        "is taking a bigger or smaller slice of new roles.",
                 # Shares over the three tracked categories only, matching the trend
                 # chart and the welcome's Category Share Bar. `other` / `unknown`
                 # are coverage, not a market signal (see 2026-09-06 decision log).
@@ -937,8 +937,8 @@ def build_job_function_story() -> dict[str, Any]:
         },
         "limitations": [
             "Job Function is never a fourth tracked Role Category — it exists only to describe "
-            "what's genuinely outside Design, Product, and Engineering, and never appears in "
-            "the trend chart's own 3-line split.",
+            "what's genuinely outside Design, Product Management, and Engineering, and never "
+            "appears in the trend chart's own 3-line split.",
             "A posting's Job Function reflects the same title-only classification pass as "
             "everything else in this taxonomy — an interpretation, not a verified fact.",
             reprocessing_note.strip() or "All \"other\" postings currently have a Job Function assigned.",

@@ -86,6 +86,25 @@ function yoyContent(sec: DataStorySection | undefined): YearOnYearContent | unde
     : undefined;
 }
 
+// Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
+// "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
+// job-classification.md's own internal "occupation family" reasoning. YearOnYearBars is
+// generic (reused for role_category/level/track shifts alike), so this is applied only at
+// the role-mix-shift call site below, not inside the shared component — level/track values
+// must never pass through this map.
+const ROLE_CATEGORY_LABEL: Record<string, string> = {
+  Designer: "Design",
+  "Product Manager": "Product Management",
+  Engineer: "Engineering",
+};
+
+function relabelRoleCategoryRows(content: YearOnYearContent): YearOnYearContent {
+  return {
+    ...content,
+    rows: content.rows.map((row) => ({ ...row, value: ROLE_CATEGORY_LABEL[row.value] ?? row.value })),
+  };
+}
+
 export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   // A thin router as the catalogue grows past one entry (added 2026-09-11) —
   // "a switch on story_id inside one file while the catalogue is small"
@@ -197,11 +216,12 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
       <MovementLabel>How it&rsquo;s shifting — year on year</MovementLabel>
 
       {([
-        [roleMixShift, "How the role mix is shifting", "Share of postings by role category, this year vs. the year before."],
-        [seniorityShift, "How seniority is shifting", "Share of postings by seniority level, this year vs. the year before."],
-        [trackShift, "IC vs. management", "Share of postings by track, this year vs. the year before."],
-      ] as const).map(([sec, heading, subtitle]) => {
-        const content = yoyContent(sec);
+        [roleMixShift, "How the role mix is shifting", "Share of postings by role category, this year vs. the year before.", true],
+        [seniorityShift, "How seniority is shifting", "Share of postings by seniority level, this year vs. the year before.", false],
+        [trackShift, "IC vs. management", "Share of postings by track, this year vs. the year before.", false],
+      ] as const).map(([sec, heading, subtitle, isRoleCategory]) => {
+        const rawContent = yoyContent(sec);
+        const content = rawContent && isRoleCategory ? relabelRoleCategoryRows(rawContent) : rawContent;
         return (
           <StoryBlock
             key={heading}

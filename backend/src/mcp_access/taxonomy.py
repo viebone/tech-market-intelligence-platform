@@ -27,10 +27,15 @@ from market_query import (
 # Human-readable labels for the closed sets that only exist as machine
 # values today. Kept here, not invented per-value elsewhere, so a label
 # change is a one-line edit.
+# Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
+# "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
+# job-classification.md's own internal "occupation family" reasoning. The machine values
+# ("Designer" / "Product Manager" / "Engineer") stay exactly as stored — this is exactly the
+# "label change is a one-line edit" this dict's own module docstring anticipated.
 _ROLE_CATEGORY_LABELS = {
-    "Designer": "Designer",
-    "Product Manager": "Product Manager",
-    "Engineer": "Engineer",
+    "Designer": "Design",
+    "Product Manager": "Product Management",
+    "Engineer": "Engineering",
     "other": "Not a tracked occupation",
     "unknown": "Not enough signal to classify",
 }

@@ -458,15 +458,20 @@ replaces the working-space content with this briefing. Does not alter "Tech mark
 status" or "What we know about the market" — a fully independent third surface, same
 "different questions, different surfaces" discipline as Story 2.
 
-## Story 4 - What roles exist beyond Design, Product, and Engineering?
+## Story 4 - What roles exist beyond Design, Product Management, and Engineering?
 
 Added 2026-09-21 — `changes/2026-09-21-job-function-story.md`. The first catalogue entry built
 from `classifications.job_function` (`job-classification.md` — Job Function, added the same
 day). Real production data shows roughly half of all classified postings fall outside the 3
 tracked Role Categories — until this story, that half had no breakdown at all beyond the bare
 label `other`. **Job Function is never a fourth tracked Role Category** — this story exists
-specifically to describe what's genuinely outside Design/Product/Engineering, never to widen
-what those three mean or to appear in the trend chart's own 3-line split.
+specifically to describe what's genuinely outside Design/Product Management/Engineering, never
+to widen what those three mean or to appear in the trend chart's own 3-line split.
+
+**Display relabel, added 2026-09-22** (`changes/2026-09-22-role-category-display-relabel.md`):
+"Design" / "Product Management" / "Engineering" is the display-only occupation-family name for
+what's stored as `role_category` values `"Designer"` / `"Product Manager"` / `"Engineer"` —
+the underlying value is unchanged everywhere; only what a user reads changed.
 
 ### Display name
 
@@ -474,12 +479,12 @@ what those three mean or to appear in the trend chart's own 3-line split.
 
 ### User question
 
-> What roles exist beyond Design, Product, and Engineering?
+> What roles exist beyond Design, Product Management, and Engineering?
 
 ### Example phrasings
 - "What else are these companies hiring for?"
 - "Show me the wider workforce breakdown"
-- "What jobs aren't Design, Product, or Engineering?"
+- "What jobs aren't Design, Product Management, or Engineering?"
 
 ### Audience job
 
@@ -496,8 +501,8 @@ before their own YoY/second-period data existed).
 
 1. **Framing line** — one sentence naming this as the picture beyond the 3 tracked categories,
    never a reconciliation or a fourth category.
-2. **What the wider hiring picture looks like** — subtitle: "Postings outside Design, Product,
-   and Engineering, by function." Ranked bar list, one row per Job Function
+2. **What the wider hiring picture looks like** — subtitle: "Postings outside Design, Product
+   Management, and Engineering, by function." Ranked bar list, one row per Job Function
    (`job-classification.md`'s closed set), bar length = posting count. Qualifier states how many
    of the `other` population currently have a Job Function assigned vs. how many are still
    awaiting reprocessing (see Honesty and empty states, below — a real, current lag, not
