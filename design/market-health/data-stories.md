@@ -141,10 +141,11 @@ Two labelled movements. Fixed order; values live; headings fixed.
    real grouped bar chart (`SkillDemandChart`, `design/visual-design.md` — Charting library),
    two named series with an explicit legend, replacing the original single Ranked bar list
    that only distinguished must-have via bar opacity.
-4. **Pay transparency** — a **Hero Figure + Meter**: the share of postings that state a salary
-   (structured + parsed), "the rest don't disclose" stated plainly. The story's one Hero
-   Figure. The Meter's own caption already states the unit inline — no separate subtitle
-   needed (Data Legibility, `visual-design.md`).
+4. **Pay transparency** — subtitle: "Postings that state a salary range vs. those that don't."
+   **Revised 2026-09-22** (`changes/2026-09-22-nivo-pie-charts.md`) — a real 2-slice donut
+   (`SharePieChart`, `design/visual-design.md` — Charting library), disclosed vs. undisclosed,
+   replacing a Meter: this is a genuine 2-category partition of all postings, not a coverage
+   percentage, so the donut's "Meter vs. donut" dividing line applies.
 5. **Where the roles are** — subtitle: "Open postings currently tracked, by city." Top
    locations (country or city), Ranked bar list, with the "only N postings have a normalised
    location" caveat.
@@ -282,11 +283,16 @@ to absorb that lag while still being a bounded "recent activity" window, not all
    coloured by net direction (more hiring vs. more layoffs), with a legend and a hover tooltip
    giving both totals per country — never just the net figure, since net can hide real
    activity happening in both directions at once.
-3. **Contraction vs. expansion** — a **Hero Figure + Meter**: total roles reported affected by
-   contraction events (layoff/closure/restructuring/bankruptcy/offshoring) in the window (Hero
-   Figure), with a Meter showing what share of *events* (not roles) were contraction vs.
-   expansion. The Meter's own caption already states the unit inline ("of reported events were
-   contraction…") — no separate subtitle needed (Data Legibility, `visual-design.md`).
+3. **Contraction vs. expansion** — subtitle: "Share of reported events by direction, over the
+   trailing 12 months." **Revised 2026-09-22** (`changes/2026-09-22-nivo-pie-charts.md`) — a
+   real 2-slice donut (`SharePieChart`), what share of *events* (not roles) were contraction
+   vs. expansion, reusing the World risk map's own semantic colours (`red-600`/`emerald-600`)
+   rather than a new guess. Total roles reported affected by contraction events in the window
+   is stated as a plain caption line beneath the chart — a magnitude fact, not part of the
+   same 2-way proportion, so it stays out of the donut itself.
+   *(Corrects this section's earlier "Hero Figure" description — the real implementation
+   never built a separate Hero Figure component here; the roles-affected figure was always a
+   caption, not a standalone visual.)*
 4. **Companies with the most reported impact** — subtitle: "Ranked by jobs reported affected,
    summed across contraction events in the window." (Added 2026-09-11,
    `changes/2026-09-11-data-legibility-market-health.md` — the heading alone didn't state a
@@ -513,12 +519,13 @@ before their own YoY/second-period data existed).
    of the `other` population currently have a Job Function assigned vs. how many are still
    awaiting reprocessing (see Honesty and empty states, below — a real, current lag, not
    hidden).
-3. **How much of all hiring this actually is** — a **Hero Figure + Meter** (the second distinct
-   visual form): Hero Figure = total postings outside the 3 tracked categories; Meter = that
-   count's share of *all* classified postings. Its own caption states the unit inline, no
-   separate subtitle needed (Data Legibility, `visual-design.md`). *Meaning:* the trend chart
-   and Story 1 only ever show the tracked slice — this quantifies how much of real hiring that
-   slice actually represents.
+3. **How much of all hiring this actually is** — subtitle: "All classified postings, split by
+   whether they're inside or outside the 3 tracked categories." **Revised 2026-09-22**
+   (`changes/2026-09-22-nivo-pie-charts.md`) — a real 2-slice donut (`SharePieChart`, the
+   second distinct visual form), outside vs. inside the 3 tracked categories; the real
+   counts and percentage are stated as a plain caption line beneath the chart. *Meaning:* the
+   trend chart and Story 1 only ever show the tracked slice — this quantifies how much of real
+   hiring that slice actually represents.
 4. **Most common titles in {largest function}** — subtitle names the actual largest Job
    Function found (e.g. "Most common titles in Sales & Business Development"). Ranked bar
    list of real, un-normalized job titles within that one function, top 10. *Meaning:* gives

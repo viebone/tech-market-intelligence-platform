@@ -377,9 +377,24 @@ loading:       every Nivo-based component is lazy-loaded (React.lazy + Suspense,
                check a real production build's chunk output if a future chart's bundle
                impact needs verifying.
 current uses:  Story 1's skill-demand block (grouped bar, must-have vs. nice-to-have) and
-               its three year-on-year blocks (grouped bar, current vs. one year back) — see
-               design/market-health/data-stories.md — Story 1.
+               its three year-on-year blocks (grouped bar, current vs. one year back); Story
+               1's pay-transparency block, Story 2's contraction-vs-expansion block, and
+               Story 4's scale block (all three: a 2-slice donut, added 2026-09-22 —
+               `changes/2026-09-22-nivo-pie-charts.md`) — see design/market-health/
+               data-stories.md.
 ```
+
+**Meter vs. a 2-slice donut — the actual dividing line, not a style preference.** Meter stays
+the right form for a **coverage/completion** percentage — "X% of Y have this property," where
+the un-named remainder isn't itself a meaningful category worth naming (Story 3's "X of Y
+tracked roles have salary data reported"). A donut (`SharePieChart`) is for a **real 2-category
+partition** — the population genuinely splits into exactly these two named things, both worth
+seeing at a glance (disclosed vs. undisclosed pay; contraction vs. expansion; outside vs.
+inside the 3 tracked categories). Colour convention: one accent hue for the named/primary
+slice, `gray-600` for its muted complement — same "one accent, one neutral" rule as the grouped
+bar charts above — **except** where a real semantic colour already exists for both sides
+(contraction/expansion reuses the World risk map's own `red-600`/`emerald-600`, never a
+separate guess at new colours for the same real-world meaning).
 
 ### Data Story composition (added 2026-09-10 — `changes/2026-09-10-story-visual-standard.md`)
 

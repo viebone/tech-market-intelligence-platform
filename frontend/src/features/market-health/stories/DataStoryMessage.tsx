@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
-import { Meter } from "./Meter";
 import type { YearOnYearContent } from "./YearOnYearGroupedBars";
 import type { SkillDemandRow } from "./SkillDemandChart";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
@@ -19,7 +18,17 @@ const YearOnYearGroupedBars = lazy(() =>
 const SkillDemandChart = lazy(() =>
   import("./SkillDemandChart").then((m) => ({ default: m.SkillDemandChart })),
 );
+const SharePieChart = lazy(() =>
+  import("./SharePieChart").then((m) => ({ default: m.SharePieChart })),
+);
 const CHART_LOADING_FALLBACK = <div className="h-40 animate-pulse rounded bg-gray-800" />;
+
+// 2-category share colours — indigo-500 for the named/primary slice, gray-600 muted for its
+// complement. Same convention as SkillDemandChart/YearOnYearGroupedBars: one accent, one
+// neutral — never two accent hues in the same chart (design/visual-design.md — Charting
+// library).
+const DISCLOSED_COLOR = "#6366f1";
+const UNDISCLOSED_COLOR = "#4b5563";
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -177,7 +186,6 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
     .filter((row) => str(row.confidence) === "structured" || str(row.confidence) === "parsed")
     .reduce((sum, row) => sum + num(row.posting_count), 0);
   const payTotal = payRows.reduce((sum, row) => sum + num(row.posting_count), 0);
-  const disclosedPct = payTotal > 0 ? (disclosed / payTotal) * 100 : 0;
 
   // Where the roles are — top cities among the minority that carry a normalised location.
   const cityRows: RankedBarRow[] = listFrom(geo, "cities")
@@ -219,12 +227,19 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         </Suspense>
       </StoryBlock>
 
-      <StoryBlock heading="Pay transparency" {...blockProps(pay, payTotal > 0)}>
-        <Meter
-          percent={disclosedPct}
-          caption="of postings state a salary range"
-          complement={`The other ${payTotal > 0 ? `${Math.round(100 - disclosedPct)}%` : "majority"} don't disclose compensation.`}
-        />
+      <StoryBlock
+        heading="Pay transparency"
+        subtitle="Postings that state a salary range vs. those that don't."
+        {...blockProps(pay, payTotal > 0)}
+      >
+        <Suspense fallback={CHART_LOADING_FALLBACK}>
+          <SharePieChart
+            slices={[
+              { id: "disclosed", label: "States a salary range", value: disclosed, color: DISCLOSED_COLOR },
+              { id: "undisclosed", label: "Doesn't disclose", value: payTotal - disclosed, color: UNDISCLOSED_COLOR },
+            ]}
+          />
+        </Suspense>
       </StoryBlock>
 
       <StoryBlock

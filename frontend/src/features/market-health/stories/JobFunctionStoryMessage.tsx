@@ -1,7 +1,16 @@
+import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
-import { Meter } from "./Meter";
 import type { DataStoryResult } from "./DataStoryMessage";
+
+// Lazy-loaded, same pattern as changes/2026-09-22-nivo-charting-library.md.
+const SharePieChart = lazy(() =>
+  import("./SharePieChart").then((m) => ({ default: m.SharePieChart })),
+);
+const CHART_LOADING_FALLBACK = <div className="h-40 animate-pulse rounded bg-gray-800" />;
+const OUTSIDE_COLOR = "#6366f1"; // indigo-500 — the named/primary slice, this story's own subject
+const INSIDE_COLOR = "#4b5563"; // gray-600 — muted; deliberately not a role accent, since
+// "inside the 3 tracked categories" isn't itself Design/Product/Engineering as a single hue
 
 // Story 4 — "Beyond Design, Product & Engineering" (added 2026-09-21,
 // changes/2026-09-21-job-function-story.md). Built from
@@ -84,13 +93,22 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
 
       <StoryBlock
         heading="How much of all hiring this actually is"
+        subtitle="All classified postings, split by whether they're inside or outside the 3 tracked categories."
         {...blockProps(scaleSection, totalCount > 0)}
       >
-        <Meter
-          percent={otherShare}
-          caption="of all classified postings are outside the 3 tracked categories"
-          complement={`${otherCount.toLocaleString()} of ${totalCount.toLocaleString()} classified postings. The trend chart and "What we know about the market" only ever show the tracked slice.`}
-        />
+        <Suspense fallback={CHART_LOADING_FALLBACK}>
+          <SharePieChart
+            slices={[
+              { id: "outside", label: "Outside the 3 tracked categories", value: otherCount, color: OUTSIDE_COLOR },
+              { id: "inside", label: "Design, Product Management, Engineering", value: totalCount - otherCount, color: INSIDE_COLOR },
+            ]}
+          />
+        </Suspense>
+        <p className="mt-2 text-xs text-gray-500">
+          {otherCount.toLocaleString()} of {totalCount.toLocaleString()} classified postings
+          ({otherShare.toFixed(1)}%). The trend chart and "What we know about the market" only
+          ever show the tracked slice.
+        </p>
       </StoryBlock>
 
       <StoryBlock

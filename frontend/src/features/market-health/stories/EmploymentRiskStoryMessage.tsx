@@ -1,8 +1,16 @@
+import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
-import { Meter } from "./Meter";
 import { WorldRiskMap, type CountryRiskRow } from "./WorldRiskMap";
 import type { DataStoryResult } from "./DataStoryMessage";
+
+// Lazy-loaded, same pattern as changes/2026-09-22-nivo-charting-library.md.
+const SharePieChart = lazy(() =>
+  import("./SharePieChart").then((m) => ({ default: m.SharePieChart })),
+);
+const CHART_LOADING_FALLBACK = <div className="h-40 animate-pulse rounded bg-gray-800" />;
+const CONTRACTION_COLOR = "#dc2626"; // red-600 — matches WorldRiskMap's own contraction hue
+const EXPANSION_COLOR = "#059669"; // emerald-600 — matches WorldRiskMap's own expansion hue
 
 // Story 2 — "Employment risk across the market" (added 2026-09-11,
 // changes/2026-09-11-employment-events-independent-scope.md). Built from
@@ -93,13 +101,20 @@ export function EmploymentRiskStoryMessage({ story }: { story: DataStoryResult }
 
       <StoryBlock
         heading="Contraction vs. expansion"
+        subtitle="Share of reported events by direction, over the trailing 12 months."
         {...blockProps(directionSection, contractionRolesAffected > 0 || contractionShareOfEvents > 0)}
       >
-        <Meter
-          percent={contractionShareOfEvents}
-          caption="of reported events were contraction (layoffs, closures, restructuring)"
-          complement={`${contractionRolesAffected.toLocaleString()} roles reported affected by contraction events in this window.`}
-        />
+        <Suspense fallback={CHART_LOADING_FALLBACK}>
+          <SharePieChart
+            slices={[
+              { id: "contraction", label: "Contraction (layoffs, closures, restructuring)", value: contractionShareOfEvents, color: CONTRACTION_COLOR },
+              { id: "expansion", label: "Expansion", value: 100 - contractionShareOfEvents, color: EXPANSION_COLOR },
+            ]}
+          />
+        </Suspense>
+        <p className="mt-2 text-xs text-gray-500">
+          {contractionRolesAffected.toLocaleString()} roles reported affected by contraction events in this window.
+        </p>
       </StoryBlock>
 
       <StoryBlock

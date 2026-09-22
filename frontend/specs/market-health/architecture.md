@@ -94,6 +94,7 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `StoryBlock` *(added 2026-09-10, `subtitle` added 2026-09-11)* | The fixed data-story block anatomy — heading → optional subtitle (what's measured + its unit, `data-legibility`) → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/stories/StoryBlock.tsx` |
 | `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearGroupedBars` *(added 2026-09-06 / 2026-09-10; `YearOnYearGroupedBars` replaces `YearOnYearBars` 2026-09-22)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearGroupedBars` owns the "no prior window yet" render (falls back to `RankedBarList`) and, once a comparison is available, a real Nivo grouped bar chart with a legend — see "Charting library," below. | `frontend/src/features/market-health/stories/{RankedBarList,StoryFigure,Meter,YearOnYearGroupedBars}.tsx` |
 | `SkillDemandChart` *(added 2026-09-22)* | A real Nivo grouped bar chart (must-have vs. nice-to-have, per skill group), with an explicit legend — replaces a single `RankedBarList` that only distinguished the two by bar opacity. Generic — takes `{skill_group, must_have, nice_to_have}[]`. | `frontend/src/features/market-health/stories/SkillDemandChart.tsx` |
+| `SharePieChart` *(added 2026-09-22 — `changes/2026-09-22-nivo-pie-charts.md`)* | A real Nivo 2-slice donut for a genuine 2-category partition (not a coverage percentage — see "Charting library," below, for the dividing line against `Meter`). Generic — takes `{id, label, value, color}[]`. Used by Story 1's pay-transparency block, Story 2's contraction-vs-expansion block, and Story 4's scale block. | `frontend/src/features/market-health/stories/SharePieChart.tsx` |
 | `WorldRiskMap` *(added 2026-09-13)* | A country-level choropleth — `react-simple-maps` over a bundled `world-atlas` `countries-50m` topology (the 50m resolution, not 110m — verified the 110m file drops Singapore/Malta, real countries in this product's data). Fill = net direction (emerald-600/red-600, existing semantic tokens, opacity by magnitude); gray-800 for no reported events. Owns its own legend line and hover tooltip (both totals, never just net). Generic — takes a `{country, contraction_affected, expansion_affected, contraction_events, expansion_events}[]` prop, not employment-risk-specific by name, reusable by a future story. | `frontend/src/features/market-health/stories/WorldRiskMap.tsx` |
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/layout/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
@@ -527,11 +528,23 @@ it.
 
 `SkillDemandChart` and `YearOnYearGroupedBars` are documented above, in their own sections.
 
+**Extended 2026-09-22** (`changes/2026-09-22-nivo-pie-charts.md`) — `SharePieChart` (`@nivo/pie`)
+added for a genuinely different case than the grouped bar charts above: a real 2-category
+partition of a whole population, not a multi-series comparison. Same lazy-loading discipline —
+confirmed by a real build that the main bundle stayed at ~131.86KB gzipped (essentially
+unchanged) with `SharePieChart` in its own on-demand chunk. Applied to 3 blocks that were
+previously `Meter`-only: Story 1's pay transparency, Story 2's contraction-vs-expansion, Story
+4's scale. **Deliberately not applied to Story 3** — its "coverage and pay data availability"
+`Meter` states a completion percentage ("X of Y tracked roles have salary data reported"), not
+a 2-way partition of a meaningful population; forcing a donut there would misrepresent what the
+number actually means. `Meter` itself is unchanged and still real, live code (Story 3 remains
+its only consumer).
+
 ### Story 2: employment risk across the market (added 2026-09-11 — `changes/2026-09-11-employment-events-independent-scope.md`)
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `EmploymentRiskStoryMessage` | Renders `POST /api/market-health/stories/employment-risk-overview`'s resolved sections: framing line → `WorldRiskMap` (where it's happening, leads the story — reordered 2026-09-13, `changes/2026-09-13-employment-risk-world-map.md`) → Hero Figure + Meter (contraction roles + direction split) → 2× `RankedBarList` (top companies / sectors by roles affected). One movement, no year-on-year block (event data isn't a 12-month-comparable series the way posting volume is). | `frontend/src/features/market-health/stories/EmploymentRiskStoryMessage.tsx` |
+| `EmploymentRiskStoryMessage` | Renders `POST /api/market-health/stories/employment-risk-overview`'s resolved sections: framing line → `WorldRiskMap` (where it's happening, leads the story — reordered 2026-09-13, `changes/2026-09-13-employment-risk-world-map.md`) → `SharePieChart` *(revised 2026-09-22, was `Meter`)* (direction split, contraction vs. expansion, with the contraction-roles figure as a plain caption) → 2× `RankedBarList` (top companies / sectors by roles affected). One movement, no year-on-year block (event data isn't a 12-month-comparable series the way posting volume is). | `frontend/src/features/market-health/stories/EmploymentRiskStoryMessage.tsx` |
 
 `DataStoryMessage` becomes a thin router (added 2026-09-11): it branches on `story.story_id`
 — `"market-data-briefing"` renders inline as before (unchanged), `"employment-risk-overview"`
@@ -556,7 +569,7 @@ Story 2's `WorldRiskMap` (this story's data has no geography dimension).
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `JobFunctionStoryMessage` | Renders `POST /api/market-health/stories/beyond-tracked-roles`'s resolved sections: framing line → `RankedBarList` (Job Function breakdown of `other`-classified postings) → Hero Figure + Meter (share of all classified postings outside the 3 tracked categories) → `RankedBarList` (real, un-normalized titles within the single largest function, heading built dynamically from the response's own `job_function` value). One movement, no year-on-year block (Job Function is brand new — no prior-year window exists yet). | `frontend/src/features/market-health/stories/JobFunctionStoryMessage.tsx` |
+| `JobFunctionStoryMessage` | Renders `POST /api/market-health/stories/beyond-tracked-roles`'s resolved sections: framing line → `RankedBarList` (Job Function breakdown of `other`-classified postings) → `SharePieChart` *(revised 2026-09-22, was `Meter`)* (outside vs. inside the 3 tracked categories, with the real counts/percentage as a plain caption) → `RankedBarList` (real, un-normalized titles within the single largest function, heading built dynamically from the response's own `job_function` value). One movement, no year-on-year block (Job Function is brand new — no prior-year window exists yet). | `frontend/src/features/market-health/stories/JobFunctionStoryMessage.tsx` |
 
 `DataStoryMessage` gains a fourth branch: `story.story_id === "beyond-tracked-roles"` delegates
 to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses `RankedBarList`/
@@ -579,8 +592,10 @@ the standard above, in **two labelled movements**:
    *(revised 2026-09-22)* — a real Nivo grouped bar chart, must-have vs. nice-to-have as two
    named series with a legend, replacing the original single `RankedBarList` with an opacity
    difference;
-4. **pay transparency** — `compensation-coverage.coverage_by_confidence` → `StoryFigure` +
-   `Meter` (the story's one Hero Figure);
+4. **pay transparency** — `compensation-coverage.coverage_by_confidence` → `SharePieChart`
+   *(revised 2026-09-22, was `Meter` — this section's earlier "StoryFigure + Meter, the
+   story's one Hero Figure" description was already inaccurate; no `StoryFigure` was ever
+   built here)*, disclosed vs. undisclosed;
 5. **where the roles are** — `geographic-coverage` → `RankedBarList`, normalised-location caveat.
 
 **Movement 2 — how it's shifting (year on year)** — a short intro line naming the windows,
@@ -591,7 +606,7 @@ then:
 
 At launch and through the platform's first year, sections 6–8 arrive with
 `comparison_available: false` — `YearOnYearGroupedBars` shows each current window + the
-"comparison starts …" line. Distinct form components: `RankedBarList`, `StoryFigure`+`Meter`,
+"comparison starts …" line. Distinct form components: `RankedBarList`, `SharePieChart`,
 `SkillDemandChart`, `YearOnYearGroupedBars` → four, well past the ≥2 minimum. Shows none of the
 welcome's *current* figures. Provenance in the Reasoning Panel.
 
