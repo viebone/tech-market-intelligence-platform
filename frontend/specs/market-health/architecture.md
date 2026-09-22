@@ -92,7 +92,8 @@ Three persistent zones, all CSS-driven — no JavaScript scroll management.
 | `WelcomeMessage` *(added 2026-09-04, restructured 2026-09-04 as a landing-page-style hero — `changes/2026-09-04-welcome-visual-data-points.md`)* | Renders "About this platform" as Hero (eyebrow + headline + subhead) / Proof (Hero Figure + Stat Tiles + Category Share Bar, from `GET /api/market-health/welcome`) / Call to action (one Shortcut Card per entry in `welcome.story_shortcuts`). Selecting a shortcut calls the same task-select handler `TaskPanel` uses, with that entry's `id` — it does not send a chat message. The only entry-point-styled message in the product; see `design/visual-design.md` — Entry-point components. | `frontend/src/features/market-health/stories/WelcomeMessage.tsx` |
 | `DataStoryMessage` | Renders a resolved story-catalogue answer (`POST /api/market-health/stories/{id}`'s response) inside an AI-turn. Composes a framing line + `StoryBlock`s from the shared story component set (see Data stories → "Every story: the shared build"). Unrelated to `WelcomeMessage` — a story's own task renders this when selected; the welcome only links to it. | `frontend/src/features/market-health/stories/DataStoryMessage.tsx` |
 | `StoryBlock` *(added 2026-09-10, `subtitle` added 2026-09-11)* | The fixed data-story block anatomy — heading → optional subtitle (what's measured + its unit, `data-legibility`) → one visual → honesty qualifier + divider — and the per-block "not enough data yet" fallback. Used only inside `DataStoryMessage`. | `frontend/src/features/market-health/stories/StoryBlock.tsx` |
-| `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearBars` *(added 2026-09-06 / 2026-09-10)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearBars` also owns the "no prior window yet" render and, since 2026-09-11, the ghost/solid bar colour legend (rendered only when a comparison is available — two colours are on screen). | `frontend/src/features/market-health/stories/{RankedBarList,StoryFigure,Meter,YearOnYearBars}.tsx` |
+| `RankedBarList` / `StoryFigure` / `Meter` / `YearOnYearGroupedBars` *(added 2026-09-06 / 2026-09-10; `YearOnYearGroupedBars` replaces `YearOnYearBars` 2026-09-22)* | The data-story visual vocabulary components (`design/visual-design.md` — Data Story composition). Generic, reusable by any story. `YearOnYearGroupedBars` owns the "no prior window yet" render (falls back to `RankedBarList`) and, once a comparison is available, a real Nivo grouped bar chart with a legend — see "Charting library," below. | `frontend/src/features/market-health/stories/{RankedBarList,StoryFigure,Meter,YearOnYearGroupedBars}.tsx` |
+| `SkillDemandChart` *(added 2026-09-22)* | A real Nivo grouped bar chart (must-have vs. nice-to-have, per skill group), with an explicit legend — replaces a single `RankedBarList` that only distinguished the two by bar opacity. Generic — takes `{skill_group, must_have, nice_to_have}[]`. | `frontend/src/features/market-health/stories/SkillDemandChart.tsx` |
 | `WorldRiskMap` *(added 2026-09-13)* | A country-level choropleth — `react-simple-maps` over a bundled `world-atlas` `countries-50m` topology (the 50m resolution, not 110m — verified the 110m file drops Singapore/Malta, real countries in this product's data). Fill = net direction (emerald-600/red-600, existing semantic tokens, opacity by magnitude); gray-800 for no reported events. Owns its own legend line and hover tooltip (both totals, never just net). Generic — takes a `{country, contraction_affected, expansion_affected, contraction_events, expansion_events}[]` prop, not employment-risk-specific by name, reusable by a future story. | `frontend/src/features/market-health/stories/WorldRiskMap.tsx` |
 | `ConversationThread` | Scrollable message list between TopBar and ChatInput. Renders the opening `AIMessage`, then user and AI follow-up messages in order. Auto-scrolls to bottom on new messages. | `frontend/src/features/market-health/layout/ConversationThread.tsx` |
 | `AIMessage` | Wraps an AI turn. Left-aligned. `bg-gray-800 rounded-xl py-5 px-6`. Carries a `PromptBadge`. For the opening message, renders `TrendChart` then `WrittenSummary`. For follow-up responses, renders streamed markdown text. | `frontend/src/features/market-health/AIMessage.tsx` |
@@ -485,8 +486,9 @@ The framing line is plain `text-sm leading-relaxed text-gray-300` markup in `Dat
 `DataStoryMessage` output must satisfy `design/market-health/data-stories.md` — "Visual
 standard every story must meet". In frontend terms:
 - framing line first, then 3–6 `StoryBlock`s, nothing else at the top level;
-- every `StoryBlock` child is a `RankedBarList` / `StoryFigure` / `Meter` / share bar / trend —
-  never a bare `<p>`;
+- every `StoryBlock` child is a `RankedBarList` / `StoryFigure` / `Meter` / share bar / trend /
+  a real Nivo chart (added 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`, "Charting
+  library" below) — never a bare `<p>`;
 - **≥2 distinct** of those form components across the story;
 - **≤1** `StoryFigure` in the whole story;
 - no block renders the welcome's *current-snapshot* figures — total postings, company count,
@@ -495,16 +497,35 @@ standard every story must meet". In frontend terms:
 - `npm run build` + `tsc` clean; eyeball against the running welcome to confirm no duplication
   and consistent rhythm.
 
-### Year-on-year comparison component (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`)
+### Year-on-year comparison component (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`; revised 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`)
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `YearOnYearBars` | Renders a YoY section's `content`: for each `row`, a shared track with a `gray-700` prior-year ghost (`prior_share` width) behind an `indigo-500`/70% current fill (`current_share` width), and a right-aligned `▲/▼/– ±N pp` delta (glyph **and** sign carry direction — colour never alone). Per `design/visual-design.md` — Year-on-year comparison. When `content.comparison_available === false`: renders **only** the current window (plain `RankedBarList` of `current_share`, no ghost, no delta column) + a muted `text-xs text-gray-500` line derived from the section `qualifier` ("Year-on-year comparison starts {Month Year}"). Never renders a prior bar or delta from a `null`. | `frontend/src/features/market-health/stories/YearOnYearBars.tsx` |
+| `YearOnYearGroupedBars` | Renders a YoY section's `content` as a real Nivo grouped horizontal bar chart — one bar pair per row, `current_share` (indigo-500) vs. `prior_share` (muted gray-600), with an explicit legend ("Now" / "A year ago") and the `delta_pp` figure surfaced in the tooltip rather than as an inline glyph. Per `design/visual-design.md` — Charting library. When `content.comparison_available === false`: renders **only** the current window (plain `RankedBarList` of `current_share`, no chart, no delta) + a muted `text-xs text-gray-500` line derived from the section `qualifier` ("Year-on-year comparison starts {Month Year}"). Never renders a prior bar or delta from a `null`. Generic across role_category/level/track — a caller relabels `row.value` before this component sees it (see the Charting library note on `role_category`'s display relabel) rather than this component knowing about any one dimension. | `frontend/src/features/market-health/stories/YearOnYearGroupedBars.tsx` |
 
 The two window date ranges come from `content.current_window` / `content.prior_window` and
 are shown once under the block heading (`StoryBlock` already owns the heading; the dates go in
 the block's own markup, `text-xs text-gray-500`). The "what this means" sentence is per-block
 copy in `DataStoryMessage`, not from the API.
+
+### Charting library (added 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`)
+
+**Nivo** (`@nivo/bar`, `@nivo/theming`, MIT licensed) — reached for specifically where a real
+multi-series comparison says more than the hand-built vocabulary above can, not a replacement
+for it. A single shared theme (`nivoTheme.ts`) maps every Nivo theme slot to this product's own
+dark palette — no chart ever renders with Nivo's own light-theme defaults.
+
+**Lazy-loaded, not bundled into the initial page load.** `SkillDemandChart` and
+`YearOnYearGroupedBars` are both `React.lazy` + `Suspense` (fallback: a `h-40 animate-pulse
+bg-gray-800` block) in `DataStoryMessage.tsx`. Measured directly, not assumed: adding Nivo
+statically grew the main bundle from 130KB to 218KB gzipped and triggered Vite's >500KB chunk
+warning; lazy-loading brought the main bundle back to 131KB gzipped, with Nivo's ~86KB gzipped
+weight split into its own chunk, loaded only when a story that actually renders one of these
+two blocks is opened. Any future Nivo-based component must follow the same pattern — check a
+real production build's chunk output (`npm run build`), don't assume tree-shaking alone handles
+it.
+
+`SkillDemandChart` and `YearOnYearGroupedBars` are documented above, in their own sections.
 
 ### Story 2: employment risk across the market (added 2026-09-11 — `changes/2026-09-11-employment-events-independent-scope.md`)
 
@@ -554,23 +575,25 @@ the standard above, in **two labelled movements**:
    specialization, not `top_titles`; `unknown`/`other` excluded). Once the API sends
    `prior_share`/`delta_pp` on these items, each row also carries its `±N pp` delta; until
    then the delta column is simply absent.
-3. **what employers ask for** — `employer-mentioned-skills.skills` → `RankedBarList`, must-have
-   rows in the full-opacity hue;
+3. **what employers ask for** — `employer-mentioned-skills.skills` → `SkillDemandChart`
+   *(revised 2026-09-22)* — a real Nivo grouped bar chart, must-have vs. nice-to-have as two
+   named series with a legend, replacing the original single `RankedBarList` with an opacity
+   difference;
 4. **pay transparency** — `compensation-coverage.coverage_by_confidence` → `StoryFigure` +
    `Meter` (the story's one Hero Figure);
 5. **where the roles are** — `geographic-coverage` → `RankedBarList`, normalised-location caveat.
 
 **Movement 2 — how it's shifting (year on year)** — a short intro line naming the windows,
 then:
-6. **how the role mix is shifting** — `role-mix-shift` → `YearOnYearBars`;
-7. **how seniority is shifting** — `seniority-shift` → `YearOnYearBars`;
-8. **IC vs. management** — `track-shift` → `YearOnYearBars`.
+6. **how the role mix is shifting** — `role-mix-shift` → `YearOnYearGroupedBars`;
+7. **how seniority is shifting** — `seniority-shift` → `YearOnYearGroupedBars`;
+8. **IC vs. management** — `track-shift` → `YearOnYearGroupedBars`.
 
 At launch and through the platform's first year, sections 6–8 arrive with
-`comparison_available: false` — `YearOnYearBars` shows each current window + the "comparison
-starts …" line. Distinct form components: `RankedBarList`, `StoryFigure`+`Meter`,
-`YearOnYearBars` → three, well past the ≥2 minimum. Shows none of the welcome's *current*
-figures. Provenance in the Reasoning Panel.
+`comparison_available: false` — `YearOnYearGroupedBars` shows each current window + the
+"comparison starts …" line. Distinct form components: `RankedBarList`, `StoryFigure`+`Meter`,
+`SkillDemandChart`, `YearOnYearGroupedBars` → four, well past the ≥2 minimum. Shows none of the
+welcome's *current* figures. Provenance in the Reasoning Panel.
 
 ### Catalogue and response state
 

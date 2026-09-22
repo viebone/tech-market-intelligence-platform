@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.7
+version: 1.8
 status: active
 created: 2026-06-21
-updated: 2026-09-14
+updated: 2026-09-22
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -336,11 +336,49 @@ bar:           a track (gray-800, rounded, h-1.5) with a fill (indigo-500 at ~70
 rows:          5–8; gap-2 between rows; never a scrollbar — cap the list, don't scroll it
 emphasis:      an optional first-class subset (e.g. skills marked "must-have") may use
                the full-opacity hue while the rest stay at ~70% — a second, ordered
-               encoding, not a new colour
+               encoding, not a new colour. **Superseded for skill demand specifically,
+               2026-09-22** — that block now uses a real grouped bar chart (Charting
+               library, below) with two named series instead of an opacity difference;
+               this emphasis pattern remains valid for any future single-series list that
+               needs it, just no longer the mechanism for that one block.
 labels:        every row is directly labelled with its value (a short list, so this is
                not the "number on every point" anti-pattern); no axis
 zero/empty:    a list with no data renders its section's "not enough data yet" line,
                never an empty track
+```
+
+### Charting library (added 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`)
+
+**[Nivo](https://nivo.rocks/)** (MIT licensed) — added specifically to give data stories real
+visual variety beyond hand-rolled divs, after "What we know about the market" was found to
+repeat the Ranked bar list form three times plus three more hand-rolled year-on-year
+comparisons. Not a replacement for the hand-built vocabulary above — `RankedBarList`, `Meter`,
+`StoryBlock`, and the Category Share Bar stay exactly as they are; Nivo is reached for
+specifically where a real chart (grouped/comparative series, more than one dimension at once)
+says more than a ranked list can.
+
+```
+theme:         a single shared theme object (frontend/src/features/market-health/stories/
+               nivoTheme.ts) maps every Nivo theme slot to this spec's own tokens — text
+               gray-400, axis/grid lines gray-700/gray-800, tooltip surface gray-800 with a
+               gray-700 border, legend text gray-400. No chart in this product renders with
+               Nivo's own (light-theme) defaults, ever.
+colour:        role-category charts key off the same three role accents (indigo-500 /
+               purple-500 / emerald-500), by the stored role_category value, never the
+               display label (changes/2026-09-22-role-category-display-relabel.md). A
+               2-series comparison (e.g. must-have vs. nice-to-have, current vs. a year ago)
+               uses one accent hue for the primary series and a muted gray-600 for the
+               secondary — never two accent hues in the same chart, which would read as two
+               different categorical dimensions at once.
+loading:       every Nivo-based component is lazy-loaded (React.lazy + Suspense, a
+               `h-40 animate-pulse bg-gray-800` fallback) — Nivo's own weight (~86KB
+               gzipped, confirmed by a real build) must never load for a visitor who never
+               opens a story that uses it. This is enforced per-component, not assumed;
+               check a real production build's chunk output if a future chart's bundle
+               impact needs verifying.
+current uses:  Story 1's skill-demand block (grouped bar, must-have vs. nice-to-have) and
+               its three year-on-year blocks (grouped bar, current vs. one year back) — see
+               design/market-health/data-stories.md — Story 1.
 ```
 
 ### Data Story composition (added 2026-09-10 — `changes/2026-09-10-story-visual-standard.md`)

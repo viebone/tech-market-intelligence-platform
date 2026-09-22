@@ -33,7 +33,9 @@ never blended with this platform's own numbers), and _(new, 2026-09-21)_ "Beyond
 Product & Engineering" (what the tracked companies are actually hiring for outside the 3
 tracked role categories — roughly half of all classified postings, never shown anywhere else)
 — are built straight from the data, no model call, so they're instant and can't be wrong in the
-way an AI answer occasionally can be.
+way an AI answer occasionally can be. _(New, 2026-09-22.)_ "What we know about the market" now
+shows two of its blocks (skills demand, and the year-on-year shift blocks) as real comparison
+charts instead of plain ranked lists — same data, easier to read at a glance.
 
 **Bring your own AI.** _(New, 2026-09-15.)_ Rather than only using this platform's own chat, you
 can connect Claude, ChatGPT, Gemini, or any compatible AI assistant directly to this platform's

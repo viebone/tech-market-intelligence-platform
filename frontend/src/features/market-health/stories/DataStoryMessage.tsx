@@ -1,10 +1,25 @@
+import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
 import { Meter } from "./Meter";
-import { YearOnYearBars, type YearOnYearContent } from "./YearOnYearBars";
+import type { YearOnYearContent } from "./YearOnYearGroupedBars";
+import type { SkillDemandRow } from "./SkillDemandChart";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
+
+// Lazy-loaded (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md) — these two
+// pull in @nivo/bar + @nivo/theming (~90KB gzipped, confirmed by a real build: the initial
+// bundle grew from 130KB to 218KB gzipped before this fix, and Vite started warning about a
+// >500KB chunk). Loaded only when a story that actually renders one of these blocks is
+// opened, not bundled into every visitor's initial page load.
+const YearOnYearGroupedBars = lazy(() =>
+  import("./YearOnYearGroupedBars").then((m) => ({ default: m.YearOnYearGroupedBars })),
+);
+const SkillDemandChart = lazy(() =>
+  import("./SkillDemandChart").then((m) => ({ default: m.SkillDemandChart })),
+);
+const CHART_LOADING_FALLBACK = <div className="h-40 animate-pulse rounded bg-gray-800" />;
 
 // Per-story renderer. Composes a framing line + StoryBlocks from the shared
 // data-story component set (RankedBarList / StoryFigure / Meter), so every
@@ -88,8 +103,8 @@ function yoyContent(sec: DataStorySection | undefined): YearOnYearContent | unde
 
 // Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
 // "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
-// job-classification.md's own internal "occupation family" reasoning. YearOnYearBars is
-// generic (reused for role_category/level/track shifts alike), so this is applied only at
+// job-classification.md's own internal "occupation family" reasoning. YearOnYearGroupedBars
+// is generic (reused for role_category/level/track shifts alike), so this is applied only at
 // the role-mix-shift call site below, not inside the shared component — level/track values
 // must never pass through this map.
 const ROLE_CATEGORY_LABEL: Record<string, string> = {
@@ -134,21 +149,27 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
     .filter((row) => !HIDDEN_ROLE_LABELS.has(row.label.toLowerCase()))
     .slice(0, 7);
 
-  // What employers ask for — one row per skill group, must-have mentions emphasised.
-  const skillAgg = new Map<string, { value: number; mustHave: boolean }>();
+  // What employers ask for — must-have and nice-to-have kept as two real series
+  // (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md — see SkillDemandChart;
+  // this used to collapse both into one number with a must-have opacity flag).
+  const skillAgg = new Map<string, { mustHave: number; niceToHave: number }>();
   for (const row of listFrom(skills, "skills")) {
     const group = str(row.skill_group);
     if (!group) continue;
-    const prev = skillAgg.get(group) ?? { value: 0, mustHave: false };
+    const prev = skillAgg.get(group) ?? { mustHave: 0, niceToHave: 0 };
+    const isMustHave = str(row.requirement_level) === "must_have";
     skillAgg.set(group, {
-      value: prev.value + num(row.posting_count),
-      mustHave: prev.mustHave || str(row.requirement_level) === "must_have",
+      mustHave: prev.mustHave + (isMustHave ? num(row.posting_count) : 0),
+      niceToHave: prev.niceToHave + (isMustHave ? 0 : num(row.posting_count)),
     });
   }
-  const skillRows: RankedBarRow[] = [...skillAgg.entries()]
-    .map(([label, { value, mustHave }]) => ({ label, value, emphasis: mustHave }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
+  const skillRows: SkillDemandRow[] = [...skillAgg.entries()].map(
+    ([skill_group, { mustHave, niceToHave }]) => ({
+      skill_group,
+      must_have: mustHave,
+      nice_to_have: niceToHave,
+    }),
+  );
 
   // Pay transparency — share of postings that state a salary (structured + parsed).
   const payRows = listFrom(pay, "coverage_by_confidence");
@@ -190,11 +211,12 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
 
       <StoryBlock
         heading="What employers ask for"
-        subtitle="Postings mentioning each skill group."
+        subtitle="Postings mentioning each skill group, must-have vs. nice-to-have."
         {...blockProps(skills, skillRows.length > 0)}
       >
-        <RankedBarList rows={skillRows} limit={8} />
-        <p className="mt-2 text-xs text-gray-500">Solid bars are must-have mentions.</p>
+        <Suspense fallback={CHART_LOADING_FALLBACK}>
+          <SkillDemandChart rows={skillRows} limit={8} />
+        </Suspense>
       </StoryBlock>
 
       <StoryBlock heading="Pay transparency" {...blockProps(pay, payTotal > 0)}>
@@ -229,7 +251,11 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
             subtitle={subtitle}
             {...blockProps(sec, !!content && content.rows.length > 0)}
           >
-            {content ? <YearOnYearBars content={content} /> : null}
+            {content ? (
+              <Suspense fallback={CHART_LOADING_FALLBACK}>
+                <YearOnYearGroupedBars content={content} />
+              </Suspense>
+            ) : null}
           </StoryBlock>
         );
       })}

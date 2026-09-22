@@ -62,8 +62,10 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
       it's shifting") and may run to ~8.
 - [ ] **At least one chart**, and **≥2 distinct visual forms** across the story (3+
       preferred) — drawn from the vocabulary in `visual-design.md` (Ranked bar list, Hero
-      Figure, Stat Tile, Meter, Category Share Bar, Trend line, Year-on-year comparison). A
-      story that is five ranked bar lists in a row is under-composed.
+      Figure, Stat Tile, Meter, Category Share Bar, Trend line, Year-on-year comparison, and
+      — added 2026-09-22, `changes/2026-09-22-nivo-charting-library.md` — a real Nivo chart
+      where a genuine multi-series comparison says more than a ranked list can). A story that
+      is five ranked bar lists in a row is under-composed.
 - [ ] **Chart-first** — the visual carries the point; heading and qualifier are labels.
 - [ ] **At most one Hero Figure.**
 - [ ] Consistent block anatomy, divider rhythm, palette (one muted hue for magnitude; only
@@ -134,9 +136,11 @@ Two labelled movements. Fixed order; values live; headings fixed.
    Engineer"), as a **Ranked bar list**. Once a year-earlier window exists, each row also
    carries its "+N pp" year-on-year delta; until then the delta column is absent.
    Specialization, not raw title (too fragmented); `unknown`/`other` excluded, not relabelled.
-3. **What employers ask for** — subtitle: "Postings mentioning each skill group." Top skill
-   groups, Ranked bar list, must-have rows emphasised (full-opacity hue), with its existing
-   inline caption "Solid bars are must-have mentions" as the opacity legend.
+3. **What employers ask for** — subtitle: "Postings mentioning each skill group, must-have vs.
+   nice-to-have." **Revised 2026-09-22** (`changes/2026-09-22-nivo-charting-library.md`) — a
+   real grouped bar chart (`SkillDemandChart`, `design/visual-design.md` — Charting library),
+   two named series with an explicit legend, replacing the original single Ranked bar list
+   that only distinguished must-have via bar opacity.
 4. **Pay transparency** — a **Hero Figure + Meter**: the share of postings that state a salary
    (structured + parsed), "the rest don't disclose" stated plainly. The story's one Hero
    Figure. The Meter's own caption already states the unit inline — no separate subtitle
@@ -150,10 +154,12 @@ Two labelled movements. Fixed order; values live; headings fixed.
 A short intro line names the two windows in plain words. Each block below is a **Year-on-year
 comparison** (`design/visual-design.md`) — subtitle: "Share of postings by {dimension}, this
 year vs. the year before" — with one "what this means" sentence and, once a comparison is
-available, a legend naming the two bar colours (lighter = a year ago, solid = now — Data
-Legibility, `visual-design.md`). **At launch and for the product's first year all three are in
-the "no prior window yet" state** — current window only + "comparison starts {Month Year}",
-no legend needed (only one colour is on screen).
+available, a real grouped bar chart (`YearOnYearGroupedBars`, **revised 2026-09-22** —
+`changes/2026-09-22-nivo-charting-library.md` — replaces the original hand-rolled ghost-bar
+comparison) with an explicit legend naming the two bars (indigo = now, muted gray = a year
+ago — Data Legibility, `visual-design.md`). **At launch and for the product's first year all
+three are in the "no prior window yet" state** — current window only + "comparison starts
+{Month Year}", no legend needed (only one colour is on screen).
 
 6. **How the role mix is shifting** — subtitle: "Share of postings by role category, this year
    vs. the year before." `role_category` shares over the **three tracked areas only** (Designer
