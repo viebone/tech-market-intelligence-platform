@@ -88,6 +88,12 @@ over `market_observations`, `skill_associations`, `scrape_ingestion_runs`, and
 only incidentally (a single lookup by `url` on the Market Observations detail view, to show
 extraction provenance) — it gets no list/filter view of its own.
 
+**Added 2026-09-23** (`changes/2026-09-23-user-feedback-mechanism.md`): also READ-only over
+`PlatformFeedback` and `StoryReaction`, both owned and fully documented by
+`backend/specs/user-feedback/api.md` — not repeated here. Same ownership split as market
+benchmarks above: the feature spec owns the tables and the two anonymous write endpoints, this
+spec owns the operator-only read routes over them.
+
 **One additive column, needed to honestly answer the experience spec's "which ingestion run
 touched it" requirement (`design/pipeline-visibility/experience.md`, User Flow step 5):**
 
@@ -545,6 +551,84 @@ change (the same shape as every taxonomy revision so far, 2026-08-11 and 2026-09
 **Errors**: none beyond the shared auth redirect — an empty result at the current threshold
 renders each section's own empty state ("Nothing off-canon at this threshold," etc.).
 
+### GET /admin/feedback
+**Added 2026-09-23** (`changes/2026-09-23-user-feedback-mechanism.md`). **Purpose**: the
+summary view for user feedback — overall platform satisfaction and per-Data-Story reaction
+aggregate, per `outcomes/user-feedback-is-heard-and-shapes-the-platform.md`'s "the team can
+see, without querying the database" success criterion. A summary page, not a List → Detail
+pattern — same reasoning as `GET /admin/licensing`: a handful of aggregate numbers, not rows to
+page through (individual responses are `GET /admin/feedback/responses`, below).
+**Auth required**: yes
+**Data source**: `feedback_storage.get_feedback_summary()`.
+**Response**: `feedback_summary.html`, rendered with:
+```json
+{
+  "platform": {
+    "average_rating": 4.2,
+    "count": 118,
+    "distribution": {"1": 2, "2": 5, "3": 14, "4": 41, "5": 56}
+  },
+  "by_story": [
+    {
+      "story_id": "market-data-briefing",
+      "display_name": "What we know about the market",
+      "up": 34,
+      "down": 6,
+      "positive_share": 0.85
+    }
+  ]
+}
+```
+`by_story` covers every `story_id` currently returned by `market_data_stories.list_stories()`,
+including one with **zero** reactions so far (rendered as "No reactions yet" rather than
+omitted — a story nobody has reacted to is a real, visible state, not a gap to hide). `up`/`down`
+are the raw counts from all time (Business Logic, `backend/specs/user-feedback/api.md`) —
+`positive_share` is `up / (up + down)`, shown only when `up + down > 0`.
+`distribution` gives the 1–5 rating breakdown alongside the average, so a `4.2` average isn't
+read as if every rating clustered there — the same "a mean alone can hide a bimodal split"
+concern `data-legibility` already applies elsewhere on this dashboard.
+**Errors**: none beyond the shared auth redirect — zero platform ratings renders "Not enough
+feedback yet" instead of a `NaN` or `0.0` average (Business Logic, below).
+
+### GET /admin/feedback/responses
+**Added 2026-09-23**. **Purpose**: filterable, sortable, paginated list of every individual
+feedback response — both platform ratings and story reactions in one list, per the outcome's
+"the team can read every individual response" success criterion. Same List pattern as
+`GET /admin/market-observations`.
+**Auth required**: yes
+**Query params**:
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `type` | `str` | none | Exact match — `"platform_rating" \| "story_reaction"` |
+| `story_id` | `str` | none | Exact match — only meaningful with `type=story_reaction`; ignored otherwise |
+| `has_comment` | `bool` | none | When `true`, only rows with a non-null `comment` |
+| `sort` | `str` | `"created_at"` | Whitelisted closed set: `created_at` (only sortable column — there's no other shared, comparable field across both row types) |
+| `dir` | `"asc" \| "desc"` | `"desc"` | |
+| `page` | `int` | `1` | |
+| `page_size` | `int` | `50` | |
+**Response**: `feedback_responses.html`, rendered with the filtered/sorted/paginated row list,
+each row shaped as:
+```json
+{
+  "id": 245,
+  "type": "story_reaction",
+  "story_id": "employment-risk-overview",
+  "story_display_name": "Employment risk across the market",
+  "rating": null,
+  "reaction": "down",
+  "comment": "The world map is hard to read on a laptop screen.",
+  "created_at": "2026-09-23T14:05:47Z"
+}
+```
+(`rating` populated and `story_id`/`reaction` null for a `platform_rating` row, and vice versa
+for `story_reaction` — the two source tables are unioned at read time, not merged into one
+table; see Business Logic.) Plus active filter chips, total match count, and pagination
+controls. No detail route — the full record, including the full comment text, is already shown
+inline in the list row; splitting it into a separate detail page would add a click with nothing
+new to show.
+**Errors**: none beyond the shared auth redirect — no matches renders "No feedback matches these
+filters" rather than an empty table.
+
 ---
 
 ## Business Logic
@@ -666,6 +750,21 @@ next_due_at`, or `true` unconditionally when no run has ever happened (mirrors
 never disagree with what the ingestion script itself would decide). This function reuses that
 existing pure comparison logic rather than reimplementing it, so the dashboard and the pipeline
 can never drift apart on what "due" means.
+
+**Feedback summary aggregation (added 2026-09-23)** — `feedback_storage.get_feedback_summary()`:
+`average_rating`/`distribution` are a plain `GROUP BY rating` over `PlatformFeedback`; when the
+table is empty, the route renders "Not enough feedback yet" rather than dividing by zero. The
+`by_story` list left-joins `market_data_stories.list_stories()` (the live catalogue) against a
+`GROUP BY story_id, reaction` over `StoryReaction`, so every current story appears even with
+zero reactions — the catalogue is the driver of the list, the reaction table only fills in
+counts, matching `GET /admin/scrape-runs`'s "every registered adapter, run or not" precedent.
+
+**Feedback responses list (added 2026-09-23)** — `feedback_storage.list_feedback_responses()`
+builds its row list as a `UNION ALL` of `PlatformFeedback` and `StoryReaction`, each mapped onto
+the shared response shape (`type`, `rating` or `story_id`/`reaction`, `comment`, `created_at`) at
+query time — the two tables are never merged at rest, only at read time for this one view. The
+`type` and `story_id` filters are applied before the union (as a `WHERE` on whichever source
+table a given filter implies), not after, so pagination counts stay correct.
 
 ---
 

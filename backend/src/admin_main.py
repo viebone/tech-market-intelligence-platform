@@ -35,7 +35,9 @@ from fastapi.templating import Jinja2Templates
 import batch_jobs
 import classification
 import employment_events_storage
+import feedback_storage
 import ingestion_runs
+import market_stories
 import raw_postings
 import requirements
 import scraping_storage
@@ -597,6 +599,78 @@ def taxonomy_health(request: Request):
         {
             "active_page": "taxonomy_health",
             "candidates": classification.get_emerging_taxonomy_candidates(),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Feedback — added 2026-09-23, changes/2026-09-23-user-feedback-mechanism.md.
+# Read-only over platform_feedback/story_reactions, owned and written by the
+# two anonymous consumer endpoints in feedback.py — see backend/specs/
+# user-feedback/api.md and backend/specs/pipeline-visibility/api.md.
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/feedback", dependencies=[Depends(require_admin_session)])
+def feedback_summary(request: Request):
+    return templates.TemplateResponse(
+        request, "feedback_summary.html",
+        {"active_page": "feedback", "summary": feedback_storage.get_feedback_summary()},
+    )
+
+
+@app.get("/admin/feedback/responses", dependencies=[Depends(require_admin_session)])
+def feedback_responses(
+    request: Request,
+    type: str | None = None,
+    story_id: str | None = None,
+    has_comment: bool | None = None,
+    sort: str = "created_at",
+    dir: str = "desc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = {"type": type, "story_id": story_id, "has_comment": has_comment}
+    result = feedback_storage.list_feedback_responses(
+        **filters, sort=sort, dir=dir, page=page, page_size=page_size,
+    )
+
+    active_filters = _clean_query(filters)
+    page_base_query = urlencode({**active_filters, "sort": sort, "dir": dir})
+
+    active_filter_chips = [
+        {
+            "label": f"{key.replace('_', ' ')}: {value}",
+            "remove_href": "/admin/feedback/responses?" + urlencode({k: v for k, v in active_filters.items() if k != key}),
+        }
+        for key, value in active_filters.items()
+    ]
+
+    # created_at is the only sortable column (backend/specs/pipeline-
+    # visibility/api.md — no other field is shared/comparable across both
+    # row types), so this is a single toggle link, not a per-column dict.
+    next_dir = "asc" if dir == "desc" else "desc"
+    sort_link = "/admin/feedback/responses?" + urlencode({**active_filters, "sort": "created_at", "dir": next_dir})
+
+    total_pages = max(1, math.ceil(result["total"] / page_size))
+
+    return templates.TemplateResponse(
+        request, "feedback_responses.html",
+        {
+            "active_page": "feedback",
+            "responses": result["responses"],
+            "total": result["total"],
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "sort": sort,
+            "dir": dir,
+            "filters": filters,
+            "active_filter_chips": active_filter_chips,
+            "page_base_query": page_base_query,
+            "sort_link": sort_link,
+            "filter_options": {
+                "story_ids": [s["id"] for s in market_stories.list_stories()["stories"]],
+            },
         },
     )
 

@@ -87,6 +87,50 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
       extraction mechanics — those stay in the Reasoning Panel.
 - [ ] Engaging by composition only — no entrance animation on the data
       (`visual-design.md` — Motion, unchanged).
+- [ ] Ends with the **feedback reaction** (thumbs up / thumbs down) — added 2026-09-23,
+      `changes/2026-09-23-user-feedback-mechanism.md`, see "Feedback reaction — every story"
+      below. Every story gets it automatically; it is chrome around the story, not a block
+      within it, and does not count toward the 3–6 block range above.
+
+## Feedback reaction — every story
+
+Added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, for
+`outcomes/user-feedback-is-heard-and-shapes-the-platform.md`. Every Data Story ends with the
+same reaction control, generic across the catalogue exactly like the rest of this file's
+contract — adding a new story never means adding its own feedback handling.
+
+**Placement:** immediately below the story's last block (after Movement 2 for a story that has
+one), outside the honesty-qualifier/block structure — it reacts to the story as a whole, not to
+any one figure in it.
+
+**Shape:** two icon buttons, thumbs up and thumbs down, unselected by default, side by side,
+with a short label above them ("Was this useful?").
+
+**Behaviour:**
+- **Thumbs up:** captured immediately on click. The button shows a brief selected state
+  (matching the emerald "positive" semantic used elsewhere in this document, e.g. Story 2's
+  contraction/expansion donut). No further UI — no text field, no confirmation dialog.
+- **Thumbs down:** captured immediately on click, same selected-state treatment (this
+  product's neutral/negative badge colour — never a colour implying the *user* did something
+  wrong). Immediately reveals an inline optional free-text field beneath the buttons ("What
+  could be better about this story?") with a small Submit and a Dismiss action — same inline
+  reveal pattern as the Connected Assistant card's Revoke confirmation
+  (`design/visual-design.md` — Output Panel Settings tab), not a modal. Dismissing the text
+  field does not undo the thumbs-down capture — the reaction and the optional comment are two
+  separate captures, and the reaction is already recorded before the comment field even
+  appears.
+- **Re-reacting:** clicking the other thumb after one is already selected replaces the
+  reaction (never both selected at once). Clicking the already-selected thumb again clears it.
+  Each change is its own capture — no attempt to "undo" a prior one server-side; the most
+  recent reaction for that story-view is what admin's aggregate reflects (see backend spec).
+- **Which story a reaction belongs to:** the story's own `id` from this catalogue (Story 1's
+  `id`, Story 2's `id`, etc.) — the same identifier already used for routing, so admin can
+  aggregate per Data Story without any new per-story wiring.
+
+This control is unrelated to — and must not be confused with — the Reasoning Panel's "View
+thinking" toggle (`design/information-architecture.md`). The Reasoning Panel explains how an
+answer was produced; the feedback reaction is the user's own opinion of it. Both can appear on
+the same story with no interaction between them.
 
 ## Relationship to the Welcome
 

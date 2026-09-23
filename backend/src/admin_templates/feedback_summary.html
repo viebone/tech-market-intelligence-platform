@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Feedback — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Feedback</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Anonymous platform ratings and per-Data-Story reactions — no user/session identity is
+  captured (backend/specs/user-feedback/api.md). Individual responses:
+  <a class="row-link" href="/admin/feedback/responses">view the full list →</a>
+</div>
+
+{% set platform = summary.platform %}
+<div class="card">
+  <h2>Platform Rating</h2>
+  {% if platform.count == 0 %}
+    <div class="empty-state">Not enough feedback yet.</div>
+  {% else %}
+    <div class="card-grid">
+      <div class="card">
+        <div class="stat-value">{{ platform.average_rating }}</div>
+        <div class="stat-label">Average rating out of 5, from {{ platform.count }} response{{ '' if platform.count == 1 else 's' }}</div>
+      </div>
+    </div>
+    <div style="margin-top: 12px;">
+      {% for star in ["5", "4", "3", "2", "1"] %}
+      <div class="bar-row">
+        <div class="bar-label">{{ star }} star{{ '' if star == '1' else 's' }}</div>
+        <div class="bar-track">
+          <div class="bar-fill success" style="width: {{ (platform.distribution[star] / platform.count * 100) | round(1) }}%;"></div>
+        </div>
+        <div class="bar-count">{{ platform.distribution[star] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Story Reactions</h2>
+  <div class="stat-label" style="margin-bottom: 8px;">
+    Every Data Story currently in the catalogue, including any with no reactions yet — the
+    catalogue drives this list, not the reaction table.
+  </div>
+  {% if summary.by_story %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Story</th>
+        <th>Up</th>
+        <th>Down</th>
+        <th>Positive Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary.by_story %}
+      <tr>
+        <td>{{ row.display_name }}</td>
+        <td>{{ row.up }}</td>
+        <td>{{ row.down }}</td>
+        <td>
+          {% if row.positive_share is not none %}
+            {{ '%.0f%%' % (row.positive_share * 100) }}
+          {% else %}
+            <span class="stat-label">No reactions yet</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No stories in the catalogue.</div>
+  {% endif %}
+</div>
+{% endblock %}

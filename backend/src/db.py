@@ -580,6 +580,32 @@ CREATE TABLE IF NOT EXISTS scrape_extractions (
 -- CREATE, since both tables already existed.
 ALTER TABLE market_observations ADD COLUMN IF NOT EXISTS extraction_model TEXT;
 ALTER TABLE skill_associations ADD COLUMN IF NOT EXISTS extraction_model TEXT;
+
+-- User feedback (added 2026-09-23 — changes/2026-09-23-user-feedback-
+-- mechanism.md, backend/specs/user-feedback/api.md). Two brand-new,
+-- anonymous, append-only tables — no user/session identity, no IP address,
+-- no user-agent (the outcome's explicit scope decision). Every submission,
+-- including a changed-mind reaction, is its own new row — never an in-place
+-- edit or upsert; "current" sentiment is a read-time aggregation
+-- (feedback_storage.get_feedback_summary()), not a write-time overwrite.
+CREATE TABLE IF NOT EXISTS platform_feedback (
+    id          SERIAL PRIMARY KEY,
+    rating      INTEGER NOT NULL,
+    comment     TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- story_id is plain TEXT, not a foreign key into a stories table — there is
+-- no such table; the Data Story catalogue lives in code (market_stories.py),
+-- not the database (backend/specs/user-feedback/api.md — Tech Decisions).
+CREATE TABLE IF NOT EXISTS story_reactions (
+    id          SERIAL PRIMARY KEY,
+    story_id    TEXT NOT NULL,
+    reaction    TEXT NOT NULL,
+    comment     TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_story_reactions_story_id ON story_reactions (story_id);
 """
 
 

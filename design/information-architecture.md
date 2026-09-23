@@ -1,9 +1,9 @@
 ---
 id: information-architecture
-version: 2.6
+version: 2.7
 status: active
 created: 2026-06-11
-updated: 2026-09-14
+updated: 2026-09-23
 ---
 
 # Information Architecture — Tech Market Intelligence Platform
@@ -29,6 +29,11 @@ described below.
 
 This carve-out mirrors `design/foundations.md`'s own Scope section (v1.1), which exempts
 internal tooling from the product's Agentic Conversational UI paradigm for the same reason.
+
+**Extended 2026-09-23** (`changes/2026-09-23-user-feedback-mechanism.md`, for
+`outcomes/user-feedback-is-heard-and-shapes-the-platform.md`): the Task Panel gains a fourth
+part — a **Footer** — alongside the existing pinned welcome / story catalogue / pinned feature
+tasks. See Navigation Model, below, and `design/feedback/experience.md`.
 
 **Extended, then revised, 2026-09-14** (`changes/2026-09-13-mcp-ai-agent-access.md`, for
 `design/mcp-access/experience.md`): **Connect Your AI** is the opposite case from
@@ -132,8 +137,9 @@ recency of use; pinned items appear at the top.
 
 #### Task Panel structure
 
-Updated 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`. The Task Panel is
-not a flat, hand-maintained list — it has three parts, front to back:
+Updated 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`; extended 2026-09-23
+(`changes/2026-09-23-user-feedback-mechanism.md`). The Task Panel is not a flat, hand-maintained
+list — it has four parts, front to back:
 
 1. **A pinned welcome** — "About this platform" — always first, always the default selection
    on first load. It orients a new visitor and links to every task currently in the story
@@ -142,8 +148,15 @@ not a flat, hand-maintained list — it has three parts, front to back:
    Grows as entries are added there; order follows the catalogue's own document order. Adding
    a story adds a row to the table below; it does not change this structure.
 3. **Pinned feature tasks** — tasks tied to a specific working-space experience rather than a
-   predefined question, such as "Tech market hiring status". Currently last; more may be
-   pinned as new outcomes are prioritised by the PM.
+   predefined question, such as "Tech market hiring status". More may be pinned as new outcomes
+   are prioritised by the PM.
+4. **Footer** (added 2026-09-23) — a persistent, non-task zone, always last, always visible
+   regardless of how many tasks parts 1–3 currently hold. Contains **Give Feedback**. Unlike
+   parts 1–3, selecting a Footer entry never changes what the Working Space or Output Panel
+   show — it opens an overlay above the current screen instead (see `design/feedback/experience.md`).
+   Visually separated from the task list above it by a divider so it doesn't read as another
+   Task. Designed to hold more than one entry in future without restructuring, though it holds
+   exactly one today.
 
 #### Current task list (v1)
 
@@ -189,6 +202,18 @@ change briefly existed in this document.)*
 
 ---
 
+### Task Panel Footer
+
+Added 2026-09-23 (`changes/2026-09-23-user-feedback-mechanism.md`) — the fourth part of the
+Task Panel (see Task Panel structure, above). Reached identically from every Task, since the
+Task Panel is present everywhere.
+
+| Zone | Priority | Contains |
+|---|---|---|
+| Task Panel Footer | Primary | **Give Feedback** — opens the Feedback Panel overlay: a 1–5 platform satisfaction rating (mandatory) + optional written comment. See `design/feedback/experience.md`. |
+
+---
+
 ## Content Taxonomy
 
 All labels, headings, statuses, and terminology across the product must use these exact
@@ -220,6 +245,10 @@ terms. Experience specs must not introduce synonyms or alternate names.
 | **Settings Tab** (added 2026-09-14) | The Output Panel's second tab. Account-level, not task-level — its content doesn't change when the active Task changes. Today holds Connect Your AI only. | Output Panel |
 | **Connect Your AI** (added 2026-09-14 — `changes/2026-09-13-mcp-ai-agent-access.md`) | The settings surface where a user connects, inspects, and revokes external AI clients (Claude, ChatGPT, Gemini CLI, or any MCP-compatible client), and sees each one's granted access and plan tier. Reachable from the Output Panel's Settings tab. See `design/mcp-access/experience.md`. | Output Panel (Settings tab) |
 | **Connected Assistant** (added 2026-09-14) | A single external AI client the user has authorized, as it appears in Connect Your AI: which client, when connected, what it can see (in plain language, never a raw scope name), and its plan tier. | Connect Your AI |
+| **Task Panel Footer** (added 2026-09-23) | The fourth, persistent, non-task part of the Task Panel, always last. Selecting an entry here opens an overlay rather than changing the Working Space or Output Panel. Today holds Give Feedback only. | Task Panel |
+| **Give Feedback** (added 2026-09-23) | The Task Panel Footer entry that opens the Feedback Panel. | Task Panel Footer |
+| **Feedback Panel** (added 2026-09-23) | The overlay opened by Give Feedback: a mandatory 1–5 platform satisfaction rating and an optional written comment. Anonymous, always dismissible, never gates any part of the product. See `design/feedback/experience.md`. | Feedback Panel (overlay) |
+| **Feedback Reaction** (added 2026-09-23) | The thumbs up / thumbs down control at the bottom of every Data Story. Thumbs down also reveals an optional inline comment field. See `design/market-health/data-stories.md` — Feedback reaction. | Working Space (bottom of every Data Story) |
 
 ---
 
@@ -261,6 +290,20 @@ terms. Experience specs must not introduce synonyms or alternate names.
    screen → user grants access → is returned to their AI client, connected → the new Connected
    Assistant appears under the Settings tab the next time the user opens it. See
    `design/mcp-access/experience.md` — Part 1, Flows A and B.
+
+---
+
+8. **Giving product feedback** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`)
+   — User clicks "Give Feedback" in the Task Panel Footer, from any Task → the Feedback Panel
+   overlay opens above the current screen → selects a 1–5 satisfaction rating (required), types
+   an optional comment → submits → sees a brief thank-you → returns to exactly where they were.
+   See `design/feedback/experience.md`.
+
+9. **Reacting to a Data Story** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`)
+   — User reads a Data Story to the end → clicks thumbs up (captured, done) or thumbs down
+   (captured, then an optional inline comment field appears) → optionally types a comment and
+   submits, or dismisses it → continues reading or switches tasks. See
+   `design/market-health/data-stories.md` — Feedback reaction.
 
 ---
 

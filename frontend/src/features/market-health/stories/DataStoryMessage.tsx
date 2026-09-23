@@ -6,6 +6,7 @@ import type { SkillDemandRow } from "./SkillDemandChart";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
+import { StoryFeedbackReaction } from "../../feedback/StoryFeedbackReaction";
 
 // Lazy-loaded (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md) — these two
 // pull in @nivo/bar + @nivo/theming (~90KB gzipped, confirmed by a real build: the initial
@@ -129,11 +130,11 @@ function relabelRoleCategoryRows(content: YearOnYearContent): YearOnYearContent 
   };
 }
 
-export function DataStoryMessage({ story }: { story: DataStoryResult }) {
-  // A thin router as the catalogue grows past one entry (added 2026-09-11) —
-  // "a switch on story_id inside one file while the catalogue is small"
-  // (frontend/specs/market-health/architecture.md — Every story: the shared
-  // build). market-data-briefing keeps rendering inline below, unchanged.
+// A thin router as the catalogue grows past one entry (added 2026-09-11) —
+// "a switch on story_id inside one file while the catalogue is small"
+// (frontend/specs/market-health/architecture.md — Every story: the shared
+// build). market-data-briefing keeps rendering inline below, unchanged.
+function renderStory(story: DataStoryResult) {
   if (story.story_id === "employment-risk-overview") {
     return <EmploymentRiskStoryMessage story={story} />;
   }
@@ -275,5 +276,20 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
         );
       })}
     </article>
+  );
+}
+
+// Every Data Story — however it's routed above — ends with the same feedback
+// reaction (added 2026-09-23, changes/2026-09-23-user-feedback-mechanism.md).
+// A single change point here, rather than one inside each of the four
+// branches, keeps the reaction generic across the whole catalogue as it grows
+// — design/market-health/data-stories.md — "Feedback reaction — every story".
+export function DataStoryMessage({ story }: { story: DataStoryResult }) {
+  const renderedStory = renderStory(story);
+  return (
+    <>
+      {renderedStory}
+      <StoryFeedbackReaction storyId={story.story_id} />
+    </>
   );
 }

@@ -25,6 +25,8 @@ been decided on yet is exactly the gap this file exists to make visible.
 | Curated instant-answer chips | ✅ `SuggestedQuestions` chips | ✅ `GET /api/market-health/chat-suggestions` | ❌ Not exposed | A convenience for this product's own chat input UI, not a data capability |
 | Conversational chat | ✅ every task's chat input | ✅ `POST /api/chat` | ❌ Not applicable | This platform's *own* AI feature — MCP exists specifically so an external AI does this same reasoning on the user's own subscription instead of this one; not a gap, the whole point |
 | AI reasoning transparency (how an answer was derived) | ✅ Reasoning Panel toggle on every AI message | ✅ part of `/api/chat`'s SSE stream | N/A as a standalone capability | Its *values* (provenance, freshness) are carried inside every MCP tool's own `meta` envelope instead — the MCP-native equivalent, not a missing feature |
+| Platform satisfaction feedback (added 2026-09-23 — 1–5 rating + optional comment) | ✅ Task Panel Footer → Feedback Panel | ✅ `POST /api/feedback/platform-rating` | ❌ Not exposed | A human's own opinion of this UI — an external AI acting on the user's behalf has no such opinion to report, and letting it submit one would corrupt the signal this feature exists to collect (`backend/specs/user-feedback/api.md` — MCP Access Review) |
+| Data Story feedback reaction (added 2026-09-23 — thumbs up/down + optional comment) | ✅ bottom of every Data Story | ✅ `POST /api/feedback/story-reaction` | ❌ Not exposed | Same reasoning as platform satisfaction feedback, above |
 
 ## Operator-only capabilities
 
@@ -35,6 +37,7 @@ been decided on yet is exactly the gap this file exists to make visible.
 | Data source licensing status (added 2026-09-16) | ✅ admin dashboard (`/admin/licensing`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above — also, licence/attribution data isn't market data an external AI's user would ask for |
 | Market-benchmark data admin visibility (added 2026-09-18 — `market_observations`, `skill_associations`, scraped-source run cadence) | ✅ admin dashboard (`/admin/market-observations`, `/admin/skill-associations`, `/admin/scrape-runs`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above. Distinct from the "Market benchmark datasets" row above, which is about whether *end users or an external AI* can query this data (still deferred) — this row is purely the operator's own visibility into what's been captured |
 | Taxonomy Health (added 2026-09-21 — real off-canon specializations, "Other Non-Tech" title buildup, and the `unknown` rate, live-queried) | ✅ admin dashboard (`/admin/taxonomy-health`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above — this is detection/reporting for whoever curates the taxonomy, not market data an end user or external AI would ask for |
+| User feedback admin visibility (added 2026-09-23 — platform satisfaction summary + per-Data-Story reaction aggregate + individual response list) | ✅ admin dashboard (`/admin/feedback`, `/admin/feedback/responses`) | ✅ `admin_main.py` routes | ❌ Not exposed | Same reasoning as above — operator-only visibility into feedback data, not a capability an end user or external AI reaches directly |
 
 ## The access-control layer itself (not a data capability — not in scope for this table's MCP column)
 

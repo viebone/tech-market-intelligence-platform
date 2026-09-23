@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 import auth
 from chat import router as chat_router
 from db import init_schema
+from feedback import router as feedback_router
 from market_health import router as market_health_router
 from market_openings import router as market_openings_router
 from mcp_access.account import router as mcp_account_router
@@ -107,6 +108,11 @@ app.add_middleware(NormalizeMcpPathMiddleware)
 app.include_router(market_health_router)
 app.include_router(market_openings_router)
 app.include_router(chat_router)
+
+# User Feedback (added 2026-09-23, changes/2026-09-23-user-feedback-
+# mechanism.md) — see backend/specs/user-feedback/api.md. Two anonymous
+# POST endpoints, no auth, same posture as every other /api/* route here.
+app.include_router(feedback_router)
 
 # ---------------------------------------------------------------------------
 # Bring-your-own-AI access (added 2026-09-15, deployed same day at the

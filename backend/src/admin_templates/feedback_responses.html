@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Feedback Responses — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Feedback Responses</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Every individual platform rating and story reaction, combined into one list at query time —
+  the two tables are never merged at rest. See
+  <a class="row-link" href="/admin/feedback">Feedback summary →</a>
+</div>
+
+<form class="filter-form" method="get" action="/admin/feedback/responses">
+  <div>
+    <label for="type">Type</label>
+    <select id="type" name="type">
+      <option value="">All</option>
+      <option value="platform_rating" {{ 'selected' if filters.type == 'platform_rating' }}>Platform rating</option>
+      <option value="story_reaction" {{ 'selected' if filters.type == 'story_reaction' }}>Story reaction</option>
+    </select>
+  </div>
+  <div>
+    <label for="story_id">Story</label>
+    <select id="story_id" name="story_id">
+      <option value="">All</option>
+      {% for s in filter_options.story_ids %}
+      <option value="{{ s }}" {{ 'selected' if filters.story_id == s }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="has_comment">Has comment</label>
+    <select id="has_comment" name="has_comment">
+      <option value="">All</option>
+      <option value="true" {{ 'selected' if filters.has_comment == true }}>Yes</option>
+      <option value="false" {{ 'selected' if filters.has_comment == false }}>No</option>
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/feedback/responses">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching response{{ '' if total == 1 else 's' }}</div>
+
+{% if responses %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Rating / Story</th>
+      <th>Comment</th>
+      <th><a href="{{ sort_link }}">Created{% if sort == 'created_at' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in responses %}
+    <tr>
+      <td>
+        {% if r.type == 'platform_rating' %}<span class="badge neutral">Platform rating</span>
+        {% else %}<span class="badge neutral">Story reaction</span>{% endif %}
+      </td>
+      <td>
+        {% if r.type == 'platform_rating' %}
+          {{ r.rating }} / 5
+        {% else %}
+          {{ r.story_id }} —
+          {% if r.reaction == 'up' %}<span class="badge success">Up</span>
+          {% else %}<span class="badge error">Down</span>{% endif %}
+        {% endif %}
+      </td>
+      <td>{{ r.comment or '—' }}</td>
+      <td>{{ r.created_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/feedback/responses?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/feedback/responses?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No feedback matches these filters.</div></div>
+{% endif %}
+{% endblock %}

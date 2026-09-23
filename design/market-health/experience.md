@@ -575,6 +575,10 @@ concentrated in the first half of the year — the last three months have been f
 | Assistant is briefly unavailable (transient outage) | The AI turn shows a calm "try again shortly" message and the common questions stay available. Not a red error state; retrying a moment later normally works. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
+| Click thumbs up at the bottom of a Data Story (added 2026-09-23) | Captured immediately; button shows a brief selected state. No further UI. See `design/market-health/data-stories.md` — Feedback reaction. |
+| Click thumbs down at the bottom of a Data Story (added 2026-09-23) | Captured immediately; an inline optional comment field reveals beneath the buttons, same inline-reveal pattern as the Connect Your AI Revoke confirm — never a modal. |
+| Submit (or dismiss) the inline comment after a thumbs down (added 2026-09-23) | Comment, if any, is captured against the already-recorded reaction. Dismissing loses only the comment, never the thumbs-down itself. |
+| Click "Give Feedback" in the Task Panel Footer, from any Task (added 2026-09-23) | Feedback Panel overlay opens above the current screen; the active Task and its conversation are untouched underneath. See `design/feedback/experience.md`. |
 
 ---
 
@@ -673,6 +677,14 @@ concentrated in the first half of the year — the last three months have been f
   Layoff Signal question gets the same honest "we don't track that yet" treatment as any other
   data the platform doesn't yet hold. The trend chart is unaffected either way — it has no
   employment-event layer to be empty or "loading" (revision note above).
+- **Feedback submission fails, or the thumbs-down comment fails to send (added 2026-09-23):**
+  The reaction/rating stays selected in the UI and a plain inline retry affordance appears; the
+  user is never left thinking their click registered when it didn't. See
+  `design/feedback/experience.md` — Edge Cases for the Feedback Panel's own version of this.
+- **A user clicks a thumbs reaction, then navigates to a different Task before an in-flight
+  capture finishes (added 2026-09-23):** The capture still completes in the background; leaving
+  the story doesn't cancel it. No loading state is shown for this — it's fast enough, and not
+  central enough to the user's task, to warrant one.
 
 ---
 

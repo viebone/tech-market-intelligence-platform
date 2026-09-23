@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.8
+version: 1.9
 status: active
 created: 2026-06-21
-updated: 2026-09-22
+updated: 2026-09-23
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -790,6 +790,68 @@ actions:       "Allow" — Primary button (existing), full-width
 No accent colour is introduced for this screen — it uses the same dark surfaces, type scale,
 and button styles as the rest of the product, so a user recognises it as this platform even on
 a first visit.
+
+### Task Panel Footer & Feedback Panel (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`)
+
+**Task Panel Footer entry ("Give Feedback"):**
+```
+container:     no background at rest; matches other Task Panel item rows
+divider:       1px border-gray-800 above the Footer, separating it from the task list
+icon + label:  16px icon + "Give Feedback", text-sm gray-400 at rest, gray-100 on hover
+               (same treatment as an inactive Task Panel item — it must not look more or
+               less important than a Task)
+```
+
+**Feedback Panel (overlay):**
+```
+backdrop:      bg-gray-900/70, covers the full viewport, click-to-dismiss
+container:     centred, max-w-[420px], bg-gray-800 Surface, border border-gray-700,
+               rounded-lg, p-6 — same recipe as the OAuth consent screen's card, above
+title:         "How satisfied are you with this platform?" — Section-heading scale
+               (text-sm font-medium), gray-100
+rating control: 5 equal-width buttons in a row, gap-2, each rounded-md border
+               border-gray-700; unselected = gray-800 background, gray-400 text;
+               selected = emerald-600 background, white text (same "positive/selected"
+               semantic as the Complete/success status colour, never a new hue)
+rating labels: "Not satisfied" (left, below button 1) / "Very satisfied" (right, below
+               button 5) — Caption scale, gray-500
+comment label: "Anything you'd like to tell us? (optional)" — Body scale, gray-300
+comment field: Inputs pattern (existing), `rows=3`, resizes vertically only
+actions:       "Submit" — Primary button (existing), right-aligned, disabled (gray-700
+               background, gray-500 text, no hover) until a rating is selected
+               close icon — top-right corner of the card, Ghost/text action treatment
+confirmation:  replaces the form in place (not a second overlay) — a centred checkmark
+               glyph (emerald-400) + "Thanks — that helps us improve the platform." at
+               Body scale gray-300, auto-dismissing per the experience spec's timing
+```
+
+No new accent colour: the rating control's selected state reuses `emerald-600`/`emerald-400`,
+the same "positive" semantic already used for the Complete/success status badge, the
+contraction/expansion donut's expansion slice, and the thumbs-up state below — never a
+purpose-built "feedback" hue.
+
+### Data Story — Feedback reaction (added 2026-09-23 — same change)
+
+Chrome below every Data Story's last block, per `design/market-health/data-stories.md` —
+Feedback reaction. Not a `StoryBlock` — no heading, no subtitle slot, sits outside the
+block-anatomy rhythm entirely.
+
+```
+label:         "Was this useful?" — Caption scale, gray-500, centred above the two buttons
+buttons:       two icon buttons (thumbs up / thumbs down), 32px square, rounded-md,
+               border border-gray-700, gray-400 icon at rest, gray-100 on hover
+selected up:   emerald-600 background, white icon (same positive semantic as the
+               Feedback Panel's rating control, above)
+selected down: gray-600 background, white icon — a neutral "acknowledged" treatment,
+               never red/amber (the semantic-colour table's negative colours are
+               reserved for platform states like "Failed"; a user's own negative
+               reaction to a story is not a system error)
+comment reveal: on thumbs down, an Inputs-pattern text field (`rows=2`) fades/expands in
+               beneath the buttons using the same height-transition recipe as the
+               Reasoning Panel (`duration-200`) — never a layout jump
+comment actions: small "Submit" (Ghost/text action) + "Dismiss" (Ghost/text action),
+               right-aligned below the comment field
+```
 
 ---
 

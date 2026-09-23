@@ -39,6 +39,12 @@ now render as real comparison charts instead of plain ranked lists or a bare per
 "Employment risk"'s contraction-vs-expansion split; "Beyond Design, Product Management &
 Engineering"'s share of all hiring — same underlying data, easier to read at a glance.
 
+**Tell us how it's going.** _(New, 2026-09-23.)_ "Give Feedback" sits at the bottom of the task
+list, always available — click it to rate overall satisfaction (1–5) and optionally say more, in
+seconds, with no account needed. Every data story also ends with a quick thumbs up/down; a
+thumbs down invites an optional comment on that specific story. Nothing is required, nothing is
+ever forced on you, and every response is anonymous.
+
 **Bring your own AI.** _(New, 2026-09-15.)_ Rather than only using this platform's own chat, you
 can connect Claude, ChatGPT, Gemini, or any compatible AI assistant directly to this platform's
 data — sign up, connect it from the Settings tab, and ask your own AI the same kinds of
@@ -52,7 +58,9 @@ the raw market-benchmark data itself (demand/salary snapshots and weighted skill
 plus when each scraped source last ran and whether it's due again. _(New, 2026-09-21.)_ Also
 shows real recurring job titles/specializations the classification taxonomy doesn't have a
 category for yet, so a future revision can be based on real signal rather than a manual check.
-Not something an end user ever sees or needs.
+_(New, 2026-09-23.)_ Also shows user feedback — overall satisfaction average, a per-story
+thumbs up/down breakdown, and every individual response with its written comment, if any. Not
+something an end user ever sees or needs.
 
 ## How it's built, in one paragraph
 
