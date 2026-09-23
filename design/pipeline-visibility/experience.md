@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), **Market Observations, Skill Associations, Scraped Source Runs** (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here). Always visible. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---

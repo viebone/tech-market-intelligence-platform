@@ -656,7 +656,7 @@ def feedback_responses(
     return templates.TemplateResponse(
         request, "feedback_responses.html",
         {
-            "active_page": "feedback",
+            "active_page": "feedback_responses",
             "responses": result["responses"],
             "total": result["total"],
             "page": page,
