@@ -282,7 +282,7 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ## 4. Tracked companies
 
-**56 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**82 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -293,6 +293,14 @@ venture-backed US tech, adding variation in geography (UK) and industry (fintech
 insurtech, AI, EdTech, travel, food delivery) — see `EMPLOYER_PANEL.md` for the full 36-employer
 candidate list this was drawn from, and its own tracked verification status for the remaining
 entries. All 16 use an ATS this codebase already has an adapter for — zero new adapter work.
+
+**26 US + EU employers added 2026-09-23** (`EMPLOYER_PANEL.md` — "US + EU expansion",
+`changes/2026-09-23-us-eu-employer-panel-expansion.md`) — batch 1 of the second panel, built
+because the UK panel's candidate list was exhausted. Adds US mid-size employers across
+EdTech/health/retail/media/security and EU employers (DE, DK, ES, FR, NL, SE) plus six more UK
+ones. Deliberately mid-size boards (≤ ~90 open roles each, ~1,130 postings in total): the
+classification/LLM budget is capped, so very large boards (e.g. SpaceX ~2,570, Databricks ~881)
+are held for later batches, gated on the classification backlog. Same zero-new-adapter recipe.
 
 Two files must stay in sync (until §6 lands):
 - `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` list (drives ingestion)
@@ -356,6 +364,32 @@ Two files must stay in sync (until §6 lands):
 | incident | ashby | SaaS (Incident Management) | ✅ (real board token, not "incidentio" — confirmed by "incident.io" appearing in job descriptions) |
 | starling-bank | workable | Fintech | ✅ (first company on the new Workable adapter — confirmed real, 55 real jobs) |
 | cuvva | workable | Insurtech | ✅ (board resolves; currently 0 open roles — a legitimate "returns 0" state, not an error) |
+| duolingo | greenhouse | EdTech | ✅ (US + EU panel batch 1, 2026-09-23 — 83 roles) |
+| gusto | greenhouse | HR Tech/Payroll | ✅ (90 roles) |
+| carta | greenhouse | Fintech | ✅ (74 roles) |
+| khanacademy | greenhouse | Nonprofit/EdTech | ✅ (13 roles) |
+| doximity | greenhouse | Healthtech | ✅ (16 roles) |
+| glossier | greenhouse | Retail/Consumer | ✅ (28 roles) |
+| peloton | greenhouse | Consumer Fitness | ✅ (54 roles) |
+| n26 | greenhouse | Fintech | ✅ (76 roles; some roles target non-English markets, e.g. Italy/Spain — see `EMPLOYER_PANEL.md` non-English note) |
+| getyourguide | greenhouse | Travel/Marketplace | ✅ (53 roles) |
+| contentful | greenhouse | Enterprise Software | ✅ (19 roles) |
+| trustpilot | greenhouse | Consumer Reviews/Marketplace | ✅ (48 roles) |
+| typeform | greenhouse | SaaS | ✅ (17 roles) |
+| algolia | greenhouse | Search Software | ✅ (32 roles) |
+| gymshark | greenhouse | Retail/Consumer | ✅ (26 roles) |
+| spotify | lever | Media/Streaming | ✅ (75 roles) |
+| moonpig | lever | Retail/E-commerce | ✅ (10 roles) |
+| substack | ashby | Media/Creator Platform | ✅ (17 roles) |
+| vanta | ashby | Security Software | ✅ (91 roles) |
+| lemonade | ashby | Insurtech | ✅ (40 roles) |
+| pleo | ashby | Fintech | ✅ (35 roles) |
+| mollie | ashby | Fintech | ✅ (40 roles) |
+| deepl | ashby | AI | ✅ (38 roles) |
+| paddle | ashby | Fintech Software | ✅ (23 roles) |
+| synthesia | ashby | AI | ✅ (49 roles) |
+| thought-machine | ashby | Fintech Software | ✅ (real board token is hyphenated; 41 roles) |
+| zego | ashby | Insurtech | ✅ (44 roles) |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.
@@ -408,7 +442,7 @@ Everything tunable, and where it lives. Grouped by area.
 ### Ingestion & sources
 | Lever | Value | File |
 |---|---|---|
-| Tracked companies | 35, per adapter | `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` |
+| Tracked companies | 82, per adapter | `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` |
 | Company → industry | static dict | `backend/src/industries.py` — `COMPANY_INDUSTRY` |
 | Registered source adapters | Greenhouse, Lever, Ashby | `backend/src/sources/__init__.py` — `ALL_SOURCE_ADAPTERS` |
 | Fetch pacing / retry | 1 req/s, 3 retries, 2s backoff base | `backend/src/sources/base.py` — `PacedFetcher` defaults |

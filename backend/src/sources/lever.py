@@ -72,6 +72,10 @@ COMPANIES: list[str] = [
     # UK employer panel (added 2026-09-18, EMPLOYER_PANEL.md) — verified
     # 2026-09-18 by a real HTTP 200 against this board.
     "zopa",
+    # US + EU panel, batch 1 (added 2026-09-23, EMPLOYER_PANEL.md) — verified
+    # 2026-09-23 by a real HTTP 200 with real open roles; company name confirmed
+    # in the job descriptions themselves.
+    "spotify", "moonpig",
 ]
 
 

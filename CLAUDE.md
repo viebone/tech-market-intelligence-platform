@@ -105,7 +105,7 @@ least once, `/api/market-health/openings` returns empty series with a
 
 **Where data comes from and how to change it:** `DATA_SOURCES.md` at this product
 root is the single index — every source type (job postings now; layoffs, articles,
-research planned), every source adapter, the full list of 35 tracked companies
+research planned), every source adapter, the full list of tracked companies (82 as of 2026-09-23)
 with industry + status, and a control-lever index mapping every tunable
 (models, budgets, caps, schedules, taxonomy) to the file that owns it. To add or
 retire a tracked company, that doc's §5 is the procedure.

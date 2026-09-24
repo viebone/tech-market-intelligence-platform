@@ -71,6 +71,21 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "sylvera": "Climate/Data",
     "beamery": "HR Tech",
     "incident": "SaaS (Incident Management)",
+    # US + EU panel, batch 1 — added 2026-09-23 (EMPLOYER_PANEL.md)
+    # Greenhouse
+    "duolingo": "EdTech", "gusto": "HR Tech/Payroll", "carta": "Fintech",
+    "khanacademy": "Nonprofit/EdTech", "doximity": "Healthtech",
+    "glossier": "Retail/Consumer", "peloton": "Consumer Fitness",
+    "n26": "Fintech", "getyourguide": "Travel/Marketplace",
+    "contentful": "Enterprise Software", "trustpilot": "Consumer Reviews/Marketplace",
+    "typeform": "SaaS", "algolia": "Search Software", "gymshark": "Retail/Consumer",
+    # Lever
+    "spotify": "Media/Streaming", "moonpig": "Retail/E-commerce",
+    # Ashby
+    "substack": "Media/Creator Platform", "vanta": "Security Software",
+    "lemonade": "Insurtech", "pleo": "Fintech", "mollie": "Fintech",
+    "deepl": "AI", "paddle": "Fintech Software", "synthesia": "AI",
+    "thought-machine": "Fintech Software", "zego": "Insurtech",
 }
 
 
@@ -113,6 +128,16 @@ COMPANY_REGION: dict[str, str] = {
     "trainline": "UK", "quantexa": "UK", "faculty": "UK", "motorway": "UK",
     "marshmallow": "UK", "multiverse": "UK", "attio": "UK", "griffin": "UK",
     "sylvera": "UK", "beamery": "UK", "incident": "UK",
+    # US + EU panel, batch 1 — added 2026-09-23 (EMPLOYER_PANEL.md). HQ country,
+    # ISO-2 for EU members (the UK keeps the existing "UK" spelling above).
+    "duolingo": "US", "gusto": "US", "carta": "US", "khanacademy": "US",
+    "doximity": "US", "glossier": "US", "peloton": "US", "substack": "US",
+    "vanta": "US", "lemonade": "US",
+    "n26": "DE", "getyourguide": "DE", "contentful": "DE", "deepl": "DE",
+    "trustpilot": "DK", "pleo": "DK", "typeform": "ES", "algolia": "FR",
+    "spotify": "SE", "mollie": "NL",
+    "gymshark": "UK", "moonpig": "UK", "paddle": "UK", "synthesia": "UK",
+    "thought-machine": "UK", "zego": "UK",
 }
 
 # employer_size_band — populated ONLY where there's a real, stated basis, not

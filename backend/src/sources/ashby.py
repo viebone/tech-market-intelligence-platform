@@ -55,6 +55,11 @@ COMPANIES: list[str] = [
     # incident.io's real board slug (confirmed: "incident.io" appears
     # literally in the job descriptions), not "incidentio" as first guessed.
     "incident",
+    # US + EU panel, batch 1 (added 2026-09-23, EMPLOYER_PANEL.md) — verified
+    # 2026-09-23 by a real HTTP 200 with real open roles; company name confirmed
+    # in the job descriptions themselves.
+    "substack", "vanta", "lemonade", "pleo", "mollie", "deepl", "paddle",
+    "synthesia", "thought-machine", "zego",
 ]
 
 

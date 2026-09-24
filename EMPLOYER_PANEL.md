@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 21 of 36 added and live** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
+**Status: 21 of 36 UK candidates added and live; a separate US + EU panel started 2026-09-23 (batch 1: 26 added — see "US + EU expansion" below)** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -321,6 +321,213 @@ actively bot-challenged (a real "Quick Check Needed" page, confirmed via direct 
 makes its Open Government Licence status (a genuinely more permissive regime than any commercial
 ATS vendor's terms) moot in practice, since the site is bot-walled before that licence would
 ever matter.
+
+---
+
+## US + EU expansion — verification pass 6 (2026-09-23)
+
+`changes/2026-09-23-us-eu-employer-panel-expansion.md`. The UK panel above is exhausted (every
+remaining candidate blocked or unresolved), so this pass built a **US + EU (+ extra UK) candidate
+list from scratch**: 215 names, stratified by country and sector, probed against the four built
+adapters' real public endpoints — one request per candidate per slug variant, paced at 1 request
+per second per host, identified User-Agent, no bypassing of anything. Nothing was scraped or
+stored beyond the probe's own read of each board.
+
+**Results**
+- **136 companies** resolved on Greenhouse, Ashby or Lever with real open roles and a name/content
+  match. **26 added in batch 1** (below); **110 held** for later batches (table further down,
+  ~16,100 postings in total — far too many to add at once under the $5/month LLM cap).
+- **67 candidates had no resolvable board** on any of the three (e.g. Klarna, Personio, Snyk,
+  DoorDash, Anduril, Checkout.com). Recorded as Unverified, not Rejected — a missing slug is not
+  evidence of no ATS; many will be on platforms this project has no adapter for.
+- **14 boards resolved but list 0 roles** (Allegro, HubSpot, Optiver, Spendesk, Talkdesk,
+  TrueLayer's Ashby board, and others) — not added; nothing to ingest.
+
+**False positives caught by content inspection (not shipped)** — the `sage49` lesson again:
+- Greenhouse `bird` (MessageBird): locations are Edmonton/Kamloops, Canada — a different company.
+- Greenhouse `traderepublic`: a "Customer Council" board with 1 role, not the hiring board.
+- Greenhouse `remote`: "General Assembly Remote Jobs" — a different company.
+- Greenhouse `lovable`: Italian locations (Modena, Savignano sul Rubicone) — a different company
+  from the Swedish AI company, which is on Ashby (`lovable`, Stockholm) and is held, not added.
+
+**Cross-platform duplicates — one platform each, never both** (same reasoning as Deliveroo:
+tracking both would double-count the same jobs): Doctolib (Ashby + Greenhouse), Qonto (Ashby +
+Lever), Wayve (Ashby + Greenhouse), Miro (Ashby + Greenhouse `realtimeboardglobal`). Held table
+lists the Ashby board for each.
+
+**Workable is deliberately NOT part of this pass — probe invalid.** Workable answered HTTP 429 on
+189 requests at 1 request per second, and this pass's probe script did **not** back off (an
+oversight — it should have stopped on the first 429). Separately, its 200 responses were
+unusable: 40 unknown-company slugs resolved as accounts with **0 jobs** (Datadog, MongoDB,
+Okta, ...), so a Workable 200 with no roles proves nothing. Workable discovery needs a list of
+known Workable customers and slower pacing, not blind slug guessing — a later, separate pass.
+
+**Lever EU host** (`api.eu.lever.co`) was probed alongside `api.lever.co`: no candidate resolved
+there, so no adapter change is needed now.
+
+**Non-English postings:** batch 1 was chosen to be English-first (N26 has some
+Italian/Spanish-market roles with English titles). No French/German-language boards were added
+yet. Before adding a board whose postings are mainly non-English (e.g. Doctolib, Alan, Qonto),
+sample-check classification on it first (execution plan Step 5).
+
+**Size band:** `employer_size_band` is left **untagged** for all 26 — it is only populated where a
+real, cited headcount basis exists (see `industries.py`), never estimated. A headcount-research
+pass (as done for the original 35, `research/2026-09-19-original-35-size-bands.md`) is a
+follow-up. `employer_region` (HQ country) is tagged for all 26.
+
+### Batch 1 — added 2026-09-23 (26 companies, 1,132 postings at probe time)
+
+| Company | Platform (`token`) | HQ | Sector | Roles |
+|---|---|---|---|---|
+| Duolingo | greenhouse (`duolingo`) | US | EdTech | 83 |
+| Gusto | greenhouse (`gusto`) | US | HR Tech/Payroll | 90 |
+| Carta | greenhouse (`carta`) | US | Fintech | 74 |
+| Khan Academy | greenhouse (`khanacademy`) | US | Nonprofit/EdTech | 13 |
+| Doximity | greenhouse (`doximity`) | US | Healthtech | 16 |
+| Glossier | greenhouse (`glossier`) | US | Retail/Consumer | 28 |
+| Peloton | greenhouse (`peloton`) | US | Consumer Fitness | 54 |
+| Substack | ashby (`substack`) | US | Media/Creator Platform | 17 |
+| Vanta | ashby (`vanta`) | US | Security Software | 91 |
+| Lemonade | ashby (`lemonade`) | US | Insurtech | 40 |
+| N26 | greenhouse (`n26`) | DE | Fintech | 76 |
+| GetYourGuide | greenhouse (`getyourguide`) | DE | Travel/Marketplace | 53 |
+| Contentful | greenhouse (`contentful`) | DE | Enterprise Software | 19 |
+| DeepL | ashby (`deepl`) | DE | AI | 38 |
+| Trustpilot | greenhouse (`trustpilot`) | DK | Consumer Reviews | 48 |
+| Pleo | ashby (`pleo`) | DK | Fintech | 35 |
+| Typeform | greenhouse (`typeform`) | ES | SaaS | 17 |
+| Algolia | greenhouse (`algolia`) | FR | Search Software | 32 |
+| Spotify | lever (`spotify`) | SE | Media/Streaming | 75 |
+| Mollie | ashby (`mollie`) | NL | Fintech | 40 |
+| Gymshark | greenhouse (`gymshark`) | UK | Retail/Consumer | 26 |
+| Moonpig | lever (`moonpig`) | UK | Retail/E-commerce | 10 |
+| Paddle | ashby (`paddle`) | UK | Fintech Software | 23 |
+| Synthesia | ashby (`synthesia`) | UK | AI | 49 |
+| Thought Machine | ashby (`thought-machine`) | UK | Fintech Software | 41 |
+| Zego | ashby (`zego`) | UK | Insurtech | 44 |
+
+### Held for later batches — verified, not yet added (110 companies)
+
+Ordered by country, then role count. Release in small groups, checking the classification
+backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
+Databricks 881, Anthropic 629, Shield AI 529, Rocket Lab 518, Datadog 445, HelloFresh 440,
+MongoDB 399, Elastic 369, SumUp 365, Waymo 355, Relativity Space 336, Okta 329, Toast 326,
+Harvey 308) should go last and one at a time. **Identity not fully confirmed** (check job content
+before adding): Intercom (Greenhouse board is titled "Fin", Dublin/London roles) and Anysphere /
+Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
+
+| Company | HQ | Sector | Platform (`token`) | Roles |
+|---|---|---|---|---|
+| Bitpanda | AT | Crypto | greenhouse (`bitpanda`) | 24 |
+| Collibra | BE | Software | greenhouse (`collibra`) | 34 |
+| Ledgy | CH | Software | greenhouse (`ledgy`) | 16 |
+| Scandit | CH | Software | greenhouse (`scandit`) | 15 |
+| HelloFresh | DE | Food | greenhouse (`hellofresh`) | 440 |
+| Celonis | DE | Software | greenhouse (`celonis`) | 262 |
+| Raisin | DE | Fintech | greenhouse (`raisin`) | 34 |
+| Solaris | DE | Fintech | greenhouse (`solarisbank`) | 27 |
+| Forto | DE | Logistics | ashby (`forto`) | 7 |
+| Lunar | DK | Fintech | ashby (`lunar`) | 15 |
+| TravelPerk | ES | Travel Tech | ashby (`perk`) | 129 |
+| Cabify | ES | Mobility | greenhouse (`cabify`) | 67 |
+| Wolt | FI | Delivery | greenhouse (`wolt`) | 221 |
+| Oura | FI | Health Wearables | greenhouse (`oura`) | 97 |
+| Supercell | FI | Gaming | ashby (`supercell`) | 38 |
+| Doctolib | FR | Healthtech | ashby (`doctolib`) | 150 |
+| Pigment | FR | Software | lever (`pigment`) | 136 |
+| Alan | FR | Insurtech/Health | ashby (`alan`) | 119 |
+| Qonto | FR | Fintech | ashby (`qonto`) | 45 |
+| Back Market | FR | Marketplace | ashby (`backmarket`) | 33 |
+| Contentsquare | FR | Analytics Software | lever (`contentsquare`) | 30 |
+| Swile | FR | Fintech | lever (`swile`) | 29 |
+| Mirakl | FR | Marketplace Software | greenhouse (`mirakl`) | 16 |
+| BlaBlaCar | FR | Mobility | lever (`blablacar`) | 13 |
+| Ledger | FR | Crypto | ashby (`ledger`) | 7 |
+| Sorare | FR | Gaming/Crypto | ashby (`sorare`) | 4 |
+| Intercom | IE | Software | greenhouse (`intercom`) | 116 |
+| Tines | IE | Security Software | greenhouse (`tines`) | 24 |
+| Flipdish | IE | Restaurant Tech | greenhouse (`flipdish`) | 15 |
+| Workhuman | IE | HR Tech | ashby (`workhuman`) | 8 |
+| Satispay | IT | Fintech | ashby (`satispay`) | 84 |
+| Nord Security | LT | Security | ashby (`nord-security`) | 128 |
+| Adyen | NL | Fintech | greenhouse (`adyen`) | 217 |
+| Catawiki | NL | Marketplace | greenhouse (`catawiki`) | 47 |
+| Miro | NL | Software | ashby (`miro`) | 28 |
+| Docplanner | PL | Healthtech | ashby (`docplanner`) | 20 |
+| Brainly | PL | EdTech | ashby (`brainly`) | 1 |
+| Sword Health | PT | Healthtech | greenhouse (`swordhealth`) | 35 |
+| Feedzai | PT | Fintech/AI | greenhouse (`feedzai`) | 31 |
+| Lovable | SE | AI Software | ashby (`lovable`) | 79 |
+| SumUp | UK | Fintech | greenhouse (`sumup`) | 365 |
+| Wayve | UK | Autonomous | ashby (`wayve`) | 193 |
+| Graphcore | UK | Semiconductors/AI | greenhouse (`graphcore`) | 171 |
+| Tide | UK | Fintech | greenhouse (`tide`) | 84 |
+| Farfetch | UK | E-commerce | lever (`farfetch`) | 46 |
+| Elliptic | UK | Crypto Analytics | ashby (`elliptic`) | 32 |
+| GoCardless | UK | Fintech | greenhouse (`gocardless`) | 27 |
+| OakNorth | UK | Fintech | ashby (`oaknorth`) | 15 |
+| Stability AI | UK | AI | greenhouse (`stabilityai`) | 6 |
+| Improbable | UK | Gaming | ashby (`improbable`) | 5 |
+| PolyAI | UK | AI | greenhouse (`polyai`) | 3 |
+| TrueLayer | UK | Fintech | greenhouse (`truelayer`) | 2 |
+| SpaceX | US | Aerospace | greenhouse (`spacex`) | 2570 |
+| Databricks | US | Data/AI | greenhouse (`databricks`) | 881 |
+| Anthropic | US | AI | greenhouse (`anthropic`) | 629 |
+| Shield AI | US | Defense Tech | lever (`shieldai`) | 529 |
+| Rocket Lab | US | Aerospace | greenhouse (`rocketlab`) | 518 |
+| Datadog | US | Observability Software | greenhouse (`datadog`) | 445 |
+| MongoDB | US | Database Software | greenhouse (`mongodb`) | 399 |
+| Elastic | US | Search Software | greenhouse (`elastic`) | 369 |
+| Waymo | US | Autonomous | greenhouse (`waymo`) | 355 |
+| Relativity Space | US | Aerospace | greenhouse (`relativity`) | 336 |
+| Okta | US | Identity/Security | greenhouse (`okta`) | 329 |
+| Toast | US | Restaurant Tech | greenhouse (`toast`) | 326 |
+| Harvey | US | Legal AI | ashby (`harvey`) | 308 |
+| Oscar Health | US | Health Insurance | greenhouse (`oscar`) | 276 |
+| Samsara | US | IoT/Logistics Tech | greenhouse (`samsara`) | 260 |
+| Brex | US | Fintech | greenhouse (`brex`) | 256 |
+| Roblox | US | Gaming | greenhouse (`roblox`) | 251 |
+| Block | US | Fintech | greenhouse (`block`) | 218 |
+| Scale AI | US | AI/Data | greenhouse (`scaleai`) | 214 |
+| Saronic | US | Defense Tech | ashby (`saronic`) | 206 |
+| Sierra | US | AI | ashby (`sierra`) | 206 |
+| Flexport | US | Logistics | greenhouse (`flexport`) | 199 |
+| Lyft | US | Mobility | greenhouse (`lyft`) | 178 |
+| Riot Games | US | Gaming | greenhouse (`riotgames`) | 163 |
+| Epic Games | US | Gaming | greenhouse (`epicgames`) | 150 |
+| Redwood Materials | US | Climate/Materials | greenhouse (`redwoodmaterials`) | 141 |
+| Ripple | US | Crypto | greenhouse (`ripple`) | 128 |
+| Glean | US | AI Software | greenhouse (`gleanwork`) | 127 |
+| Planet Labs | US | Earth Observation | greenhouse (`planetlabs`) | 113 |
+| Instacart | US | Grocery Tech | greenhouse (`instacart`) | 111 |
+| Nuro | US | Autonomous | greenhouse (`nuro`) | 105 |
+| Headway | US | Healthtech | ashby (`headway`) | 84 |
+| Mozilla | US | Nonprofit/Software | greenhouse (`mozilla`) | 84 |
+| Mixpanel | US | Analytics Software | greenhouse (`mixpanel`) | 77 |
+| Chime | US | Fintech | greenhouse (`chime`) | 66 |
+| Sweetgreen | US | Restaurant | greenhouse (`sweetgreen`) | 63 |
+| SoFi | US | Fintech | greenhouse (`sofi`) | 55 |
+| Zocdoc | US | Healthtech | greenhouse (`zocdoc`) | 55 |
+| Ro | US | Digital Health | lever (`ro`) | 53 |
+| PagerDuty | US | DevOps Software | greenhouse (`pagerduty`) | 51 |
+| New Relic | US | Observability Software | greenhouse (`newrelic`) | 50 |
+| Dropbox | US | Cloud Software | greenhouse (`dropbox`) | 47 |
+| Abridge | US | Healthtech AI | ashby (`abridge`) | 47 |
+| Sentry | US | Software | ashby (`sentry`) | 46 |
+| Fastly | US | Edge Cloud | greenhouse (`fastly`) | 41 |
+| Amplitude | US | Analytics Software | greenhouse (`amplitude`) | 37 |
+| Gemini | US | Crypto | greenhouse (`gemini`) | 36 |
+| Squarespace | US | Software | greenhouse (`squarespace`) | 34 |
+| Flatiron Health | US | Healthtech | greenhouse (`flatironhealth`) | 27 |
+| Nextdoor | US | Consumer Internet | greenhouse (`nextdoor`) | 21 |
+| Coursera | US | EdTech | greenhouse (`coursera`) | 17 |
+| Vox Media | US | Media | greenhouse (`voxmedia`) | 15 |
+| Lattice | US | HR Tech | greenhouse (`lattice`) | 10 |
+| Udemy | US | EdTech | greenhouse (`udemy`) | 8 |
+| Quora | US | Consumer Internet | ashby (`quora`) | 5 |
+| BuzzFeed | US | Media | greenhouse (`buzzfeed`) | 5 |
+| Clerk | US | Software | ashby (`clerk`) | 1 |
+| Medium | US | Media | greenhouse (`medium`) | 1 |
 
 ---
 

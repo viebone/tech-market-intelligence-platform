@@ -59,6 +59,13 @@ COMPANIES: list[str] = [
     # found via direct research, not a plain lowercase-name guess:
     # rightmovecareers (not "rightmove"), ocadogroup (not "ocado").
     "rightmovecareers", "ocadogroup",
+    # US + EU panel, batch 1 (added 2026-09-23, EMPLOYER_PANEL.md) — each
+    # verified 2026-09-23 by a real HTTP 200 whose board name matches the
+    # company, with real open roles and plausible locations. Board tokens are
+    # the plain company slug except where noted in EMPLOYER_PANEL.md.
+    "duolingo", "gusto", "carta", "khanacademy", "doximity", "glossier",
+    "peloton", "n26", "getyourguide", "contentful", "trustpilot", "typeform",
+    "algolia", "gymshark",
 ]
 
 
