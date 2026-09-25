@@ -33,6 +33,21 @@ _SORT_COLUMNS = {
 }
 
 
+# ONS releases monthly; the normal maximum gap in 129 releases is 35 days (two 63-day gaps exist). Past 45 days with nothing new
+# ingested is worth a human look — it is how a broken schedule or a publisher problem would otherwise go unnoticed.
+RELEASE_OVERDUE_AFTER_DAYS = 45
+
+
+def days_since(latest_release_date: date | None, today: date) -> int | None:
+    return None if latest_release_date is None else (today - latest_release_date).days
+
+
+def is_overdue(latest_release_date: date | None, today: date, after_days: int = RELEASE_OVERDUE_AFTER_DAYS) -> bool:
+    """Pure (no DB), unit-tested. Never true for a source with no release yet — that is the separate "never run" state."""
+    d = days_since(latest_release_date, today)
+    return d is not None and d > after_days
+
+
 def series_id(source: str, series_code: str) -> str:
     return f"{source}:{series_code}"
 
@@ -344,7 +359,10 @@ def list_statistics_sources() -> list[dict]:
                 "licence_confirmed": lic.confirmed, "permits_commercial_use": lic.permits_commercial_use,
                 "attribution_text": lic.attribution_text, "licence_url": lic.licence_url,
                 "trust_bar_reviewed_on": p.trust_bar_reviewed_on, "trust_bar_reviewed_by": p.trust_bar_reviewed_by,
-                "min_check_interval_hours": p.min_check_interval_hours,
+                "min_check_interval_hours": p.min_check_interval_hours, "release_settle_days": p.release_settle_days,
+                "days_since_latest_release": days_since(latest_rel[0] if latest_rel else None, now.date()),
+                "overdue": is_overdue(latest_rel[0] if latest_rel else None, now.date()),
+                "overdue_after_days": RELEASE_OVERDUE_AFTER_DAYS,
                 "last_run_at": last[0] if last else None, "last_run_outcome": last[1] if last else None,
                 "is_due": is_due_from_last_run(last[0] if last else None, p.min_check_interval_hours, now),
                 "latest_release_date": latest_rel[0] if latest_rel else None,

@@ -302,6 +302,16 @@ def ingest_adapter(adapter, storage: StatisticsStorage, fetcher_factory, *, now:
         logger.error("%s: %s", adapter.source, result.messages[-1])
         return result
 
+    # Settle rule: a release is only ingested once it is `release_settle_days` old (PM, 2026-09-25 — "in case there are issues on
+    # their side"). Enforced HERE, from the publisher's own release date, so it does not depend on when the scheduler fires.
+    settle_cutoff = now.date() - timedelta(days=publisher.release_settle_days)
+    settling = [r for r in refs if r.release_date > settle_cutoff]
+    refs = [r for r in refs if r.release_date <= settle_cutoff]
+    for r in settling:
+        result.messages.append(f"{r.dataset_code} {r.release_date}: released too recently — waits {publisher.release_settle_days} day(s), "
+                               f"eligible from {r.release_date + timedelta(days=publisher.release_settle_days)}")
+        logger.info("%s: %s", adapter.source, result.messages[-1])
+
     pending: list[tuple[ReleaseRef, str, ParsedRelease]] = []
     outcomes: list[str] = []
     for ref in refs:

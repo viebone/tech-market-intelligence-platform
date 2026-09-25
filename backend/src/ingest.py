@@ -389,4 +389,14 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    # The periodic sources (ONS Vacancy Survey, IT Jobs Watch) ride this daily cron — see ingest_periodic.py's docstring and
+    # changes/2026-09-25-periodic-source-ingestion-in-job-sync.md. They run AFTER the job-postings work (postings keep priority and
+    # can never be delayed by them) and in a `finally` (they still get their attempt if the postings run raised). Each step is its own
+    # child process with its own timeout and its own in-code cadence gate; run_periodic_sources_safely() never raises, so nothing it does
+    # can change this job's own outcome — if run() raised, that exception still propagates exactly as before.
+    try:
+        asyncio.run(run())
+    finally:
+        from ingest_periodic import run_periodic_sources_safely
+
+        run_periodic_sources_safely()

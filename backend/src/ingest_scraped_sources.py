@@ -43,6 +43,7 @@ See backend/specs/scraped-data-sources/api.md; changes/2026-09-16-polite-scrapin
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -156,7 +157,8 @@ def ingest_adapter(adapter_cls, robots_store, page_store, extraction_store) -> d
     }
 
 
-def run() -> None:
+def run() -> bool:
+    """Returns False if any adapter had an error (so a caller — ingest_periodic.py — can see it in the exit code)."""
     init_schema()
     if is_commercial_mode():
         logger.info(
@@ -188,7 +190,10 @@ def run() -> None:
         skipped_not_due,
         "one or more adapters had an error (see log above)" if any_failed else "no errors",
     )
+    return not any_failed
 
 
 if __name__ == "__main__":
-    run()
+    # Exit non-zero on an adapter error: this script used to exit 0 regardless, which would let the periodic runner
+    # report a failed scrape as "ok" (changes/2026-09-25-periodic-source-ingestion-in-job-sync.md).
+    sys.exit(0 if run() else 1)

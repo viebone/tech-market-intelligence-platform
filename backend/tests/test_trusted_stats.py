@@ -376,9 +376,10 @@ def test_an_identical_file_is_recorded_but_never_reparsed():
             d = super().get_json(url)
             d["versions"].append({"updateDate": "2026-10-20T06:00:00.000Z"})
             return d
-    s.last_run = NOW - timedelta(hours=48)
+    later = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)      # the 20 Oct release is 3 days old — past the 2-day settle
+    s.last_run = NOW
     before = len(s.stored)
-    result, _ = _run(s, fetcher=Restamped())
+    result, _ = _run(s, fetcher=Restamped(), now=later)
     assert result.outcome == "no_new_release" and len(s.stored) == before
     assert s.releases[("ons_vacancy_survey", "VACS03", date(2026, 10, 20))]["status"] == "ingested"
 
@@ -434,6 +435,72 @@ def test_is_due_from_last_run():
     assert is_due_from_last_run(None, 24, NOW)
     assert not is_due_from_last_run(NOW - timedelta(hours=23), 24, NOW)
     assert is_due_from_last_run(NOW - timedelta(hours=24), 24, NOW)
+
+
+# ── settle rule (a release is ingested only once it is 2 days old) and the overdue warning ──
+
+def test_a_release_waits_two_days_before_it_is_ingested():
+    s = FakeStorage()
+    # the fake serves a release dated 2026-09-15
+    for now, eligible in ((datetime(2026, 9, 15, 12, tzinfo=timezone.utc), False),     # released today
+                          (datetime(2026, 9, 16, 12, tzinfo=timezone.utc), False),     # 1 day old
+                          (datetime(2026, 9, 17, 0, 1, tzinfo=timezone.utc), True),    # exactly 2 days old — eligible
+                          (datetime(2026, 9, 25, 12, tzinfo=timezone.utc), True)):
+        s = FakeStorage()
+        result, fetcher = _run(s, now=now)
+        if eligible:
+            assert result.outcome == "new_release_ingested", (now, result.outcome)
+        else:
+            assert result.outcome == "no_new_release" and s.stored == [], (now, result.outcome)
+            assert not any(u.endswith(".xlsx") for u in fetcher.requests), "a settling release must not even be downloaded"
+            assert any("waits 2 day(s)" in m and "eligible from 2026-09-17" in m for m in result.messages), result.messages
+
+
+def test_the_settle_rule_does_not_depend_on_when_the_scheduler_fires():
+    # Run at 06:00 every day around a release: nothing is ingested until the run on release date + 2, then it is, once.
+    s = FakeStorage()
+    outcomes = []
+    for day in range(15, 21):
+        s.last_run = None                                                  # isolate the settle rule from the cadence gate
+        result, _ = _run(s, now=datetime(2026, 9, day, 6, 0, tzinfo=timezone.utc))
+        outcomes.append((day, result.outcome))
+    assert outcomes[0][1] == outcomes[1][1] == "no_new_release"            # 15th, 16th: settling
+    assert outcomes[2] == (17, "new_release_ingested")                     # the 17th: released + 2 days
+    assert all(o == "no_new_release" for _d, o in outcomes[3:])            # afterwards: nothing new, nothing re-downloaded
+
+
+def test_publisher_settle_days_is_validated_and_defaults_to_two():
+    good = dict(TRUSTED_PUBLISHERS["ons_vacancy_survey"].__dict__)
+    assert TRUSTED_PUBLISHERS["ons_vacancy_survey"].release_settle_days == 2
+    try:
+        TrustedPublisher(**{**good, "release_settle_days": -1})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a negative settle period was accepted")
+    assert TrustedPublisher(**{**good, "release_settle_days": 0}).release_settle_days == 0
+
+
+def test_the_daily_gate_tolerates_cron_jitter():
+    # A daily cron starts a few minutes either side of the same time. The ONS gate is 20h (not 24h), so a run that starts
+    # seconds early the next day is still due — an exact-24h gate would skip that day at random.
+    hours = TRUSTED_PUBLISHERS["ons_vacancy_survey"].min_check_interval_hours
+    assert hours == 20
+    yesterday_0603 = datetime(2026, 9, 24, 6, 3, 55, tzinfo=timezone.utc)
+    today_0600 = datetime(2026, 9, 25, 6, 0, 2, tzinfo=timezone.utc)      # 23h56m later
+    assert is_due_from_last_run(yesterday_0603, hours, today_0600)
+    assert not is_due_from_last_run(yesterday_0603, hours, yesterday_0603 + timedelta(hours=19))
+
+
+def test_overdue_warning_thresholds():
+    from statistics_storage import days_since, is_overdue
+    today = date(2026, 11, 1)
+    assert not is_overdue(None, today)                                      # never ingested is a different state, not "overdue"
+    assert days_since(None, today) is None
+    assert not is_overdue(today - timedelta(days=35), today)                # the normal maximum gap
+    assert not is_overdue(today - timedelta(days=45), today)                # exactly the threshold: not yet
+    assert is_overdue(today - timedelta(days=46), today)
+    assert is_overdue(today - timedelta(days=63), today)                    # the two historical 63-day gaps WOULD warn (rare, worth a look)
 
 
 # ── the polite fetcher ────────────────────────────────────────────────────────

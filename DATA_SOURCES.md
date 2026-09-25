@@ -180,7 +180,8 @@ rules, triggered here for the first time by a real, named, conditional permissio
   adapter-local guess — an unregistered source is a hard error.
 - **Run cadence is enforced, not scheduled** (added 2026-09-16) — 7 days per source by default,
   checked before any request is made, regardless of how often the ingestion script itself is
-  invoked. "Should not overwhelm the server" holds even against a human running the script by
+  invoked. (Since 2026-09-25 the script *is* invoked daily, by `job-sync`'s periodic-sources step — which is exactly why the gate
+  lives in code; IT Jobs Watch is therefore scraped about every 8 days, never more often than weekly.) "Should not overwhelm the server" holds even against a human running the script by
   hand more often than intended.
 - **Value-level dedupe on top of id-level dedupe** (added 2026-09-16) — an observation/
   association identical to the last one stored for the same entity is skipped even under a new
@@ -284,7 +285,7 @@ explicitly granted, not as a default right to scrape anything with no API).
 
 ---
 
-## 3c. Trusted external statistics (spec'd 2026-09-24 — **backend built and live-verified 2026-09-25; Story 5 frontend and a scheduled service still to do**)
+## 3c. Trusted external statistics (spec'd 2026-09-24 — **built, live and scheduled (2026-09-25)**)
 
 **Status legend for this section:** ✅ done · 📋 specified, not implemented · 🔲 not started.
 
@@ -503,13 +504,14 @@ Everything tunable, and where it lives. Grouped by area.
 |---|---|---|
 | Tracked companies | 82, per adapter | `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` |
 | Company → industry | static dict | `backend/src/industries.py` — `COMPANY_INDUSTRY` |
-| Trusted-statistics publishers (trust-bar sign-off, check interval) — 📋 not built | registry | `backend/src/trusted_stats/registry.py` — `TRUSTED_PUBLISHERS` |
-| Our industry tag → SIC 2007 section (cross-check) — 📋 not built | versioned dict + completeness test | `backend/src/trusted_stats/crosswalks.py` |
-| Trusted-statistics contact identity — 📋 not built | env var (required) | `STATISTICS_CONTACT` |
+| Trusted-statistics publishers (trust-bar sign-off, check interval `min_check_interval_hours`, `release_settle_days`) | registry | `backend/src/trusted_stats/registry.py` — `TRUSTED_PUBLISHERS` |
+| Our industry tag → SIC 2007 section (cross-check) | versioned dict + completeness test | `backend/src/trusted_stats/crosswalks.py` |
+| Trusted-statistics contact identity | env var (required) | `STATISTICS_CONTACT` |
 | Registered source adapters | Greenhouse, Lever, Ashby | `backend/src/sources/__init__.py` — `ALL_SOURCE_ADAPTERS` |
 | Fetch pacing / retry | 1 req/s, 3 retries, 2s backoff base | `backend/src/sources/base.py` — `PacedFetcher` defaults |
 | Country name → ISO-2 | curated map | `backend/src/sources/base.py` — `COUNTRY_NAME_TO_ISO2` |
 | Daily ingestion schedule | `0 6 * * *` (06:00 UTC) | `backend/railway.json` — `cronSchedule` |
+| **Periodic sources run from that same daily job (added 2026-09-25)** | ONS trusted statistics + IT Jobs Watch, each a **separate child process** with its own hard timeout, run after job postings in a `finally`; one failing never affects another or job-sync. Each step's own cadence gate (ONS 20 h + 2-day settle after a release; IT Jobs Watch 7 days) decides whether a request is made | `backend/src/ingest_periodic.py` — `PERIODIC_STEPS`; docs: `DEPLOYMENT.md` "Periodic sources" |
 | "Other rate" anomaly thresholds | 0.5 relative / 0.15 absolute | `backend/src/ingestion_runs.py` |
 
 ### Classification
@@ -556,7 +558,7 @@ Everything tunable, and where it lives. Grouped by area.
 | Companies House source | Streaming API, all UK companies (revised 2026-09-11) | `backend/src/employment_events/companies_house.py` |
 | Companies House API key | env var, free registration | `COMPANIES_HOUSE_API_KEY` — `backend/.env.example` |
 | Source-event cursors | resumable stream position, per source | `employment_event_cursors` table (Postgres) |
-| Ingestion schedule | `0 7 * * *` (07:00 UTC — offset 1h from job-sync's 06:00 UTC, own service) | `backend/railway.employment-events.json` — `cronSchedule` |
+| Ingestion schedule | `0 7 * * 1` (07:00 UTC **Mondays** — own service, deployed; corrected 2026-09-25, this said daily) | `backend/railway.employment-events.json` — `cronSchedule` |
 
 ### Scraped sources (spec'd 2026-09-16)
 | Lever | Value | File |

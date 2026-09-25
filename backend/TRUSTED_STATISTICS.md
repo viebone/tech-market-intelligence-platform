@@ -6,7 +6,7 @@ Plain-language map for anyone (human or AI) about to touch this category. Full d
 among all the others is `DATA_SOURCES.md` §2 / §3c. This file is the map, not a duplicate.
 
 **Status (2026-09-25): backend built and verified live** against the production database and ONS's own figures (25 series, 7,575
-figures, Sep 2026 release). Still to do: the Story 5 frontend, and a scheduled Railway service (`DEPLOYMENT.md`). Deviations from the
+figures, Sep 2026 release). Story 5 frontend built and deployed. **Scheduled (2026-09-25)** by `job-sync`'s daily run — see "Scheduling" below. Deviations from the
 spec and the real-data findings are in `backend/specs/trusted-statistics/api.md` — "Implementation notes".
 
 ---
@@ -67,12 +67,30 @@ backend/src/trusted_stats/        # NOT `statistics/` — that shadows the Pytho
     ons_vacancy.py  # the ONS adapter: discover / parse (pure) / validate
     xlsx_reader.py  # dependency-free .xlsx reader (standard library only — no openpyxl)
 backend/src/statistics_storage.py       # mirrors scraping_storage.py
-backend/src/ingest_trusted_statistics.py# the script (daily; enforced cadence)
+backend/src/ingest_trusted_statistics.py# the script (run daily by job-sync via ingest_periodic.py; enforced cadence)
+backend/src/ingest_periodic.py          # runs this + the scraped-sources script, each isolated (child process + timeout)
 backend/src/market_query.py             # query_trusted_statistics_data (shared read path)
 backend/src/statistics_crosscheck.py    # industry_mix() / size_mix() — two labelled shares, never a difference
 backend/tests/fixtures/                 # the REAL ONS files the parser tests run against
 backend/tests/test_trusted_stats.py     # real-file regression tests
 ```
+
+## Scheduling — who runs this, and what happens when something goes wrong
+
+There is **no separate Railway service**. `job-sync` (daily 06:00 UTC) runs `ingest.py`, which — after its own job-postings work, in
+a `finally` — calls `ingest_periodic.py`. That runs this script **daily** as a child process (15-minute hard timeout) beside the
+IT Jobs Watch script (`DEPLOYMENT.md`, "Periodic sources"). Daily is safe because the gates live in code:
+
+- **At most one release check per 20 h** (`min_check_interval_hours`; 20, not 24, so a cron that starts a few seconds early is not
+  skipped for a whole day). A month with no release costs one small JSON request per day and no download.
+- **A release waits 2 days** (`release_settle_days`) before it is ingested — "in case there are issues on their side". ONS's next
+  release is expected 20 Oct 2026 -> taken by the run on 22 Oct. Nothing to remember: the daily run simply finds it eligible.
+- **Overdue warning:** the admin Statistics Sources page flags a source with no new release for more than 45 days.
+
+**A failure here cannot touch anything else.** Non-zero exit, crash, hang (killed at the timeout) or missing `STATISTICS_CONTACT`
+(reported as "skipped (misconfigured)", loudly, never launched; set to `viebone.com info@viebone.com` on `job-sync` since 2026-09-25) ends *this step only*; the scraped-sources step and job-sync are
+unaffected, and each run's outcome is in `statistics_ingestion_runs` (admin -> Statistics Sources). Run by hand:
+`python ingest_periodic.py --dry-run` / `--only trusted_statistics` from `backend/src/`.
 
 ## Add a new source — the recipe
 
@@ -91,7 +109,8 @@ backend/tests/test_trusted_stats.py     # real-file regression tests
    verify). SDMX publishers: add a config entry to the shared SDMX adapter instead.
 5. **Test against a small trimmed REAL file** with expected values taken from the publisher's own
    published figures — not a hand-made fixture.
-6. **Run** `ingest_trusted_statistics.py --source <key>`; open `/admin/statistics-sources` and
+6. **Run** `ingest_trusted_statistics.py --source <key>` (a second publisher needs no scheduling work — the script already loops over
+   every registered publisher, each isolated by its own gate and error handling); open `/admin/statistics-sources` and
    `/admin/statistics`; **compare the stored latest values with the publisher's own site**.
 7. **Docs**: `DATA_SOURCES.md` §3c table row, `LICENSING.md` row, this file's vocabulary table if
    you introduced a new system/measure, `ACCESS.md` if it changes what MCP can reach.

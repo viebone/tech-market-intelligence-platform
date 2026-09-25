@@ -39,6 +39,9 @@ class TrustedPublisher:
     trust_bar_reviewed_on: str
     trust_bar_reviewed_by: str
     notes: str = ""
+    # A release is ingested only once its release date is at least this many days old — "in case there are issues on the publisher's
+    # side" (PM, 2026-09-25). Enforced in base.ingest_adapter, so it does not depend on when the scheduler happens to fire.
+    release_settle_days: int = 2
 
     def __post_init__(self) -> None:
         if self.publisher_type not in PUBLISHER_TYPES:
@@ -50,6 +53,8 @@ class TrustedPublisher:
             raise ValueError("a publisher needs at least one dataset")
         if self.min_check_interval_hours <= 0:
             raise ValueError("min_check_interval_hours must be positive")
+        if self.release_settle_days < 0:
+            raise ValueError("release_settle_days cannot be negative")
 
 
 TRUSTED_PUBLISHERS: dict[str, TrustedPublisher] = {
@@ -61,7 +66,10 @@ TRUSTED_PUBLISHERS: dict[str, TrustedPublisher] = {
         datasets=("VACS02", "VACS03"),
         methodology_url="https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/methodologies/vacancysurveyqmi",
         source_page_url="https://www.ons.gov.uk/surveys/informationforbusinesses/businesssurveys/vacancysurvey",
-        min_check_interval_hours=24,
+        # 20, not 24: a daily cron starts a few minutes either side of the same time, so an exact-24h gate would skip a day whenever
+        # a run starts seconds early. 20h still means "at most one release check a day".
+        min_check_interval_hours=20,
+        release_settle_days=2,
         trust_bar_reviewed_on="2026-09-24",
         trust_bar_reviewed_by="PM go 2026-09-24 (chat); evidence: research/2026-09-24-ons-licence-and-access-confirmation.md",
         notes=("Monthly release. VACS02 vacancies by industry (SIC 2007), VACS03 by size of business; X06 and the VACS02 "

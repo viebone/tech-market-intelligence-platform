@@ -13,7 +13,7 @@ created: 2026-09-24
 > `market_query.py`, Story 5 (`market_stories.py`), the chat tool, the MCP tool `get_trusted_statistics`, three admin views, and
 > `backend/tests/test_trusted_stats.py` (49 offline tests against the real ONS files). **Verified live** against the production
 > database and ONS's own figures. Deviations and findings are in "Implementation notes" at the end of this file. **Frontend for
-> Story 5 is not built.** Not yet a scheduled Railway service (`DEPLOYMENT.md`).
+> Story 5 is built and deployed.** **Scheduled** (2026-09-25, `changes/2026-09-25-periodic-source-ingestion-in-job-sync.md`) by `job-sync`'s daily run via `ingest_periodic.py` — no separate service; see "Scheduling" below.
 
 ## Experience this implements
 - `design/market-health/data-stories.md` — **Story 5, "UK vacancies (official data)"** — the first
@@ -182,7 +182,7 @@ Audit + cadence record, mirroring `scrape_ingestion_runs`.
 
 - **`TRUSTED_PUBLISHERS`** (`trusted_stats/registry.py`) — one `TrustedPublisher` per `source`:
   `source`, `publisher`, `publisher_type`, `programme`, `datasets`, `methodology_url`,
-  `source_page_url`, `min_check_interval_hours` (ONS: 24), `trust_bar_reviewed_on` +
+  `source_page_url`, `min_check_interval_hours` (ONS: 20 — see "Scheduling"), `release_settle_days` (default 2), `trust_bar_reviewed_on` +
   `trust_bar_reviewed_by` (a human sign-off date), `notes`. **An adapter with no entry here, or
   no matching `SOURCE_LICENCES` entry, is a hard error** — same "refuse rather than guess" rule
   as `source_licences.py`.
@@ -294,7 +294,11 @@ or fills a missing period.
    min_interval_hours)` against `statistics_ingestion_runs`; if not due, log `skipped_not_due`
    and stop. Survives the script being invoked more often than intended (Rule 13 constraint 1,
    applied in spirit — this is a file download, not scraping, but the discipline is identical).
-   ONS: 24 h between release checks; a release lands ~monthly.
+   ONS: 20 h between release checks (not 24 — a daily cron starts seconds either side of the same time, and an exact-24 h gate would
+   skip a day at random); a release lands ~monthly. **Settle rule:** after `discover`, a release whose release date is less than
+   `release_settle_days` (2) days old is *settling* — logged ("released too recently — waits 2 day(s), eligible from <date>") and
+   skipped, not downloaded — "in case there are issues on the publisher's side" (PM, 2026-09-25). It is picked up by the first run
+   on or after release date + 2. Enforced in code, so it does not depend on when the scheduler fires.
 2. **Discover** (`adapter.discover`): ONS — GET `<dataset page URL>/current/data` (JSON). Newest
    release = `versions[-1]`; its `updateDate` is the release date; current file =
    `downloads[0].file` under `…/current/`. **One JSON request per dataset per check.**
@@ -503,8 +507,8 @@ story's own no-data state.
   inspection used only the standard library, confirming the layout is simple enough that a
   dependency-free parse is possible if `openpyxl` is ever unwanted.)
 - Env: `STATISTICS_CONTACT` (required, real contact for the User-Agent).
-- Deployment: a small scheduled service (daily), like `job-sync`; not created by this spec
-  (`DEPLOYMENT.md` updated at implementation).
+- Deployment: **scheduled by `job-sync`** — see "Scheduling" below and `DEPLOYMENT.md`, "Periodic sources". (Earlier drafts of this spec
+  proposed a separate daily service; replaced 2026-09-25.)
 
 ## Tech Decisions
 - **Package name is `trusted_stats/`, not `statistics/`** — `statistics` is a Python standard
@@ -570,7 +574,13 @@ story's own no-data state.
    24-hour cadence clock (found by the first live run).
 6. **`statistics_ingestion_runs` cadence** counts every real run (including failed/rejected) but never a skipped one; a `--force` flag
    overrides the gate for a deliberate retry.
-7. **Only `outcome` values actually recorded:** `new_release_ingested`, `no_new_release`, `rejected_validation`, `failed` (a skip is logged, not stored).
+7. **Scheduling (2026-09-25).** `ingest.py` (job-sync, daily 06:00 UTC) calls `ingest_periodic.run_periodic_sources_safely()` after its own
+   work, in a `finally`. The runner executes `ingest_trusted_statistics.py` (needs `STATISTICS_CONTACT`) and `ingest_scraped_sources.py`
+   as **separate child processes**, each with a hard timeout (15 / 25 min): a failing, crashing, hanging or misconfigured step cannot
+   affect the other or `job-sync`. A step missing its env var is skipped loudly. Next expected ONS release 20 Oct 2026 -> ingested on
+   22 Oct. The admin Statistics Sources page shows an **Overdue** badge past 45 days without a new release (normal max gap 35;
+   two 63-day gaps in 129 releases). Tests: `test_trusted_stats.py` (settle rule, jitter, overdue), `test_periodic_sources.py`.
+8. **Only `outcome` values actually recorded:** `new_release_ingested`, `no_new_release`, `rejected_validation`, `failed` (a skip is logged, not stored).
 
 **Real-data findings that change what the cross-check can honestly say:**
 - **72% of stored postings have no country recorded** (7,032 of 9,729 on 2026-09-25), and UK appears as both `GB` (587) and `UK` (70).

@@ -109,7 +109,7 @@ The one piece of this product currently running unattended in production.
 | Start command | `python src/ingest.py` |
 | Schedule | Cron `0 6 * * *` (06:00 UTC, daily) |
 | Restart policy | `NEVER` — it's a one-shot job, not a long-running service |
-| Env vars | `GEMINI_API_KEY_CLASSIFICATION`, `GEMINI_API_KEY_REQUIREMENTS` (both keys of the **prepaid** Gemini project — see "Gemini projects & LLM billing" above), `DATABASE_URL` — `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` were removed 2026-08-03 (Adzuna retired, no license to keep using it); the three replacement sources (Greenhouse, Lever, Ashby) are public and need no credentials. **Action needed**: remove these two variables from the `job-sync` service in the Railway dashboard — they're stale now, not read by any code, but should be cleaned up rather than left dangling. |
+| Env vars | **`STATISTICS_CONTACT`** and **`SCRAPER_CONTACT`** (needed by the periodic-source step — see "Periodic sources" below; a step whose variable is missing is skipped loudly, nothing else is affected), `GEMINI_API_KEY_CLASSIFICATION`, `GEMINI_API_KEY_REQUIREMENTS` (both keys of the **prepaid** Gemini project — see "Gemini projects & LLM billing" above), `DATABASE_URL` — `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` were removed 2026-08-03 (Adzuna retired, no license to keep using it); the three replacement sources (Greenhouse, Lever, Ashby) are public and need no credentials. **Action needed**: remove these two variables from the `job-sync` service in the Railway dashboard — they're stale now, not read by any code, but should be cleaned up rather than left dangling. |
 
 `DATABASE_URL` is set to the Railway variable reference `${{Postgres.DATABASE_URL}}` —
 Postgres's *internal* private-network address, not its public proxy URL. Services in
@@ -153,6 +153,59 @@ above). See `AI_INTERACTION_SETTINGS.md` for the chat side of that boundary.
    anomalies detected (a company that suddenly returns 0 results, an "other"-rate
    that jumps relative to the last 5 runs). This is what makes a run's outcome
    inspectable from the database — see "How to verify it actually ran," below.
+
+Then, **after** those four steps (and even if they raised — it runs in a `finally`), the same process runs the
+**periodic sources** — see the next section. They are separate from the job-postings work: they can never delay it, fail it, or be
+failed by it.
+
+### Periodic sources — ONS statistics and IT Jobs Watch (added 2026-09-25)
+
+`changes/2026-09-25-periodic-source-ingestion-in-job-sync.md`. Two sources are not daily feeds — ONS publishes monthly, IT Jobs Watch
+may be scraped at most weekly — but they still need something to *run* them, or a new release would sit unnoticed. Rather than a
+new Railway service per source, `ingest.py` hands over to `backend/src/ingest_periodic.py` once its own work is done. It runs each
+step **daily**; each step's own **cadence gate, enforced in code**, decides whether a request is made at all. So a daily trigger
+costs nothing on the ~28 days a month ONS has no new release.
+
+| Step | Script | What it does | Gate (in code, before any request) | Needs | Hard timeout |
+|---|---|---|---|---|---|
+| `trusted_statistics` | `ingest_trusted_statistics.py` | ONS Vacancy Survey (VACS02, VACS03) | at most one release check per 20 h (`min_check_interval_hours`); a release is taken only once it is **2 days old** (`release_settle_days` — "in case there are issues on their side"); a file is downloaded only when a newer release exists | `STATISTICS_CONTACT` | 15 min |
+| `scraped_sources` | `ingest_scraped_sources.py` | IT Jobs Watch (3 pages, LLM extraction) | at most once per 7 days (`scraping_storage.is_due`), `robots.txt` + pacing, unchanged pages skip the LLM (`content_hash`) | `SCRAPER_CONTACT`, `GEMINI_API_KEY_CLASSIFICATION` | 25 min |
+
+**One failing never bothers the others.** Each step is its own **child process** with its own hard timeout. So an exception, a
+non-zero exit, a hard crash, a hang (the process is killed at its timeout) or a missing/misconfigured step ends that step only —
+the runner logs it and moves on. The runner itself never raises, and `ingest.py` calls it in a `finally` inside a second guard, so
+nothing it does can change `job-sync`'s own exit status. Proven by real-subprocess tests
+(`backend/tests/test_periodic_sources.py`: failing, crashing, hanging, unlaunchable and misconfigured steps, each followed by a step
+that must still run).
+
+**Reading the result.** Every run ends with one log line, e.g.
+`PERIODIC SOURCES SUMMARY: trusted_statistics=ok (3.1s) | scraped_sources=ok (0.4s)`, or
+`… scraped_sources=failed (…) — 1 step(s) need attention: …`. A step that is **skipped for missing configuration is a loud warning,
+not a silent no-op** (`SKIPPED (misconfigured): required environment not set: STATISTICS_CONTACT`). The durable record is in the
+database, as for everything else: `statistics_ingestion_runs` (admin: **Statistics Sources**) and `scrape_ingestion_runs` (admin:
+**Scrape Runs**). The Statistics Sources page also shows an **Overdue** badge when no new release has been ingested for more than 45
+days (releases normally arrive every 4–5 weeks; the two longest gaps in 129 releases were 63 days).
+
+**Effect of a daily trigger on the weekly scrape.** The 7-day gate compares against the *last run time*, and a daily cron fires about
+every 24 h, so IT Jobs Watch is scraped about every **8** days rather than 7. That respects "at most weekly" (the permission
+condition); it is not tightened, deliberately.
+
+**To add a source to this runner:** it must already have its own script with a cadence gate enforced in code and a required-contact
+check; add one `PeriodicStep(name, script, timeout_seconds, required_env, description)` to `PERIODIC_STEPS` in `ingest_periodic.py`
+and a line to its test. Employment events are deliberately *not* here — they keep their own service (below).
+
+**Run it by hand** (from `backend/src/`):
+```
+python ingest_periodic.py --dry-run                 # show what would run, and which steps are misconfigured; runs nothing
+python ingest_periodic.py --only trusted_statistics # one step
+python ingest_periodic.py                           # all steps (exit code 1 if any step needs attention)
+```
+
+**Configuration (done 2026-09-25):** `STATISTICS_CONTACT` and `SCRAPER_CONTACT` are set on the Railway `job-sync` service to
+`viebone.com info@viebone.com` (organisation + monitored address, chosen by the operator; it appears in the User-Agent of every request
+to ONS and IT Jobs Watch). Both scripts refuse placeholders, so a value must always be a real contact. `GEMINI_API_KEY_CLASSIFICATION`
+and `DATABASE_URL` were already there. If a variable is ever removed, the affected step reports "skipped (misconfigured)" in the daily
+log and nothing else changes.
 
 ### Data model (Postgres, created by `backend/src/db.py`)
 
@@ -198,56 +251,36 @@ needed), or a local GUI/`psql` client using the *public* `DATABASE_URL` from
 
 ---
 
-## Service: `employment-events` (code ready 2026-09-11 — **not yet deployed**)
+## Service: `employment-events` (deployed — runs weekly, Mondays 07:00 UTC)
 
 Employment-event ingestion (`changes/2026-09-11-employment-event-ingestion.md`) — layoffs,
 closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements. Same
 cron-service shape as `job-sync`, deliberately a **separate** Railway service (not folded into
-`job-sync`) — see `backend/specs/market-health/api.md` — Tech Decisions — Scheduling.
+`job-sync`) — see `backend/specs/market-health/api.md` — Tech Decisions — Scheduling. It is
+**not** part of the periodic-sources runner above.
 
 | | |
 |---|---|
 | Source | Same repo/branch as `job-sync` |
 | Root directory | `backend/` |
-| Config file | `backend/railway.employment-events.json` (committed; not yet connected to a live Railway service) |
+| Config file | `backend/railway.employment-events.json` |
 | Start command | `python src/ingest_employment_events.py` |
-| Schedule | Cron `0 7 * * *` (07:00 UTC, daily — offset 1h from `job-sync`'s 06:00 UTC) |
+| Schedule | Cron `0 7 * * 1` (07:00 UTC, **Mondays**) |
 | Restart policy | `NEVER` |
 | Env vars needed | `DATABASE_URL` (internal reference, same as `job-sync`), `COMPANIES_HOUSE_API_KEY` (free registration — see `backend/.env.example`) |
 
-**Not yet a real Railway service** — committing `railway.employment-events.json` is only the
-config-as-code half; per Gotcha 6 below, a new service still needs the dashboard's real
-"Connect Repo" flow and its config-file path set explicitly under Settings → Config-as-code
-before it will build or run anything. Deliberately left as a manual step here rather than
-created via this session's Railway MCP access — creating a new production service is exactly
-the kind of outward-facing, hard-to-reverse action that should be a deliberate choice, not a
-side effect of a spec-chain implementation pass. Running it is also low-value until at least
-one adapter is functional (`DATA_SOURCES.md` §3a) — connect the service once that's true, not
-before.
+*(Corrected 2026-09-25: this section previously said "code ready — not yet deployed" with a daily `0 7 * * *` schedule. The committed
+config file — the source of truth per Gotcha 1 — says weekly, and the service is connected.)*
 
 ---
 
-## Service: `trusted-statistics` (code ready 2026-09-25 — **not yet deployed as a scheduled service**)
+## Trusted statistics (ONS) — no service of its own
 
-Trusted external statistics ingestion (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`, first source: the ONS
-Vacancy Survey). Same cron-service shape as `employment-events`, deliberately its own service.
-
-| | |
-|---|---|
-| Source | Same repo/branch as `job-sync` |
-| Root directory | `backend/` |
-| Config file | `backend/railway.trusted-statistics.json` (committed; **not yet connected** to a live Railway service) |
-| Start command | `python src/ingest_trusted_statistics.py` |
-| Schedule | Cron `30 7 * * *` (daily 07:30 UTC). ONS publishes monthly, but the script's own gate makes at most one release check per 24h and downloads a file **only** when a newer release exists — so a daily cron costs ~1 request/day, and a month with no release costs no download |
-| Restart policy | `NEVER` |
-| Env vars needed | `DATABASE_URL` (internal reference), **`STATISTICS_CONTACT`** (a real contact for the User-Agent — the script refuses to run without it; set your own, not a placeholder) |
-
-**Already done by hand (2026-09-25):** the tables were created and the first release (Sep 2026, VACS02 + VACS03) ingested into the
-production database by running the script locally — `statistic_series` 25, `statistic_observations` 7,575, verified against ONS's own
-figures. **Not yet a scheduled service:** a new production service needs the dashboard's "Connect Repo" flow and its config-file
-path set under Settings → Config-as-code (Gotcha 6), plus `STATISTICS_CONTACT` — deliberately left as a manual, deliberate step. Until
-it exists, the next ONS release (expected Oct 2026) will not be picked up automatically; run
-`python src/ingest_trusted_statistics.py` by hand, or connect the service.
+There is **no** `trusted-statistics` Railway service and no `railway.trusted-statistics.json` (a draft of both was removed 2026-09-25 in
+favour of the periodic-sources runner, above). ONS is ingested by `job-sync`'s daily run. First release (Sep 2026, VACS02 + VACS03)
+was ingested by hand on 2026-09-25 — `statistic_series` 25, `statistic_observations` 7,575, verified against ONS's own figures; the
+next one is expected 20 Oct 2026 and will be taken on **22 Oct** (release + 2 days) once `STATISTICS_CONTACT` is set on `job-sync`.
+Details: `backend/TRUSTED_STATISTICS.md`.
 
 ---
 

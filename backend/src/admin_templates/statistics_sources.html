@@ -22,11 +22,16 @@
     — <a href="{{ s.licence_url }}" target="_blank" rel="noopener">licence text</a></div></div>
   <div class="field-row"><div class="field-label">Attribution to show</div><div class="field-value">{{ s.attribution_text }}</div></div>
   <div class="field-row"><div class="field-label">Checked at most every</div><div class="field-value">{{ '%g' % s.min_check_interval_hours }} hours (enforced before any request)</div></div>
+  <div class="field-row"><div class="field-label">Waits after a release</div><div class="field-value">{{ s.release_settle_days }} day{{ '' if s.release_settle_days == 1 else 's' }} — a new release is ingested only once it is this old, in case the publisher corrects it</div></div>
+  <div class="field-row"><div class="field-label">Scheduled by</div><div class="field-value">the daily <code>job-sync</code> run (<code>ingest_periodic.py</code>) — no separate service</div></div>
   <div class="field-row"><div class="field-label">Last run</div><div class="field-value">
     {% if s.last_run_at %}{{ s.last_run_at }} — {{ s.last_run_outcome }}{% else %}<span class="stat-label">Never run</span>{% endif %}
     {% if s.is_due %}<span class="badge neutral">Due for next check</span>{% else %}<span class="badge success">Up to date</span>{% endif %}
   </div></div>
-  <div class="field-row"><div class="field-label">Latest release held</div><div class="field-value">{{ s.latest_release_date or '—' }}{% if s.latest_period_label %} — newest period {{ s.latest_period_label }}{% endif %}</div></div>
+  <div class="field-row"><div class="field-label">Latest release held</div><div class="field-value">{{ s.latest_release_date or '—' }}{% if s.latest_period_label %} — newest period {{ s.latest_period_label }}{% endif %}
+    {% if s.overdue %}<span class="badge neutral">Overdue</span> No new release ingested for {{ s.days_since_latest_release }} days — releases normally arrive every 4–5 weeks (warning after {{ s.overdue_after_days }} days). Check the scheduled run and the publisher's release calendar.
+    {% elif s.days_since_latest_release is not none %}<span class="stat-label">({{ s.days_since_latest_release }} days ago)</span>{% endif %}
+  </div></div>
   <div class="field-row"><div class="field-label">Stored</div><div class="field-value">{{ s.series_count }} series, {{ s.observation_count }} figures (all versions)</div></div>
   <div class="field-row"><div class="field-label">Last refused release</div><div class="field-value">
     {% if s.last_rejected_release %}<span class="badge neutral">Refused</span> {{ s.last_rejected_release.release_date }} — {{ s.last_rejected_release.validation_summary }}

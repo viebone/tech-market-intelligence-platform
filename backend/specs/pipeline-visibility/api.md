@@ -583,16 +583,21 @@ ingestion script itself uses, so the view can never disagree with the script.
       "permits_commercial_use": true,
       "attribution_text": "Source: Office for National Statistics — Vacancy Survey. Contains public sector information licensed under the Open Government Licence v3.0.",
       "trust_bar_reviewed_on": "2026-09-24", "trust_bar_reviewed_by": "…",
-      "min_check_interval_hours": 24,
+      "min_check_interval_hours": 20, "release_settle_days": 2,
       "last_run_at": "2026-09-24T09:02:21Z", "last_run_outcome": "new_release_ingested",
       "is_due": false,
       "latest_release_date": "2026-09-15", "latest_period_label": "Jun-Aug 2026",
+      "days_since_latest_release": 10, "overdue": false, "overdue_after_days": 45,
       "series_count": 25, "observation_count": 9012,
       "last_rejected_release": null
     }
   ]
 }
 ```
+`overdue` (added 2026-09-25, `changes/2026-09-25-periodic-source-ingestion-in-job-sync.md`) is `true` when the newest release held is more than
+`overdue_after_days` (45) days old — releases normally arrive every 4–5 weeks — and renders an "Overdue" badge with the day count; a source
+that has never ingested a release is *not* "overdue" (it shows "Never run"). The page also states that the source is scheduled by the
+daily `job-sync` run and how long a release waits before ingestion.
 `last_run_at` is `null` and `is_due` is `true` for a registered source with no run row —
 rendered "Never run". `last_rejected_release`, when present, carries the release date and its
 `validation_summary` so a refused file is visible, not only logged. A source whose licence is not
