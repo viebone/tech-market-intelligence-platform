@@ -9,7 +9,7 @@ at runtime. To change something, edit the file this points to.
 feeds, research and articles later — all normalised into one internal model. This document
 keeps that growing surface reviewable in one place.
 
-Last reviewed: 2026-09-11.
+Last reviewed: 2026-09-24 (§2, the §3b category note, new §3c, §7 and §8 updated for the new **trusted external statistics** source type).
 
 ---
 
@@ -53,6 +53,7 @@ market-health API + chat + data stories
 | **Company career pages / ATS portals** | 🔲 planned | Same as job postings — a new *adapter*, not a new type | `raw_postings` | For companies not on a supported ATS (custom career sites, legacy ATS). Mechanism is scraping, not a public API — needs a per-site adapter or a generic HTML/JSON-LD adapter. Same `FetchedPosting` output. Can now build on the generic scraping infrastructure in §3b, once it exists. |
 | **Employment events** (renamed from "Layoff events" 2026-09-11 — scope broadened to match) | 🟡 code shipped, 2/3 adapters not yet functional | An `employment_events` row (company, event date, event type, direction, jobs affected, source) — layoffs **and** closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements | Table `employment_events` — *not* `raw_postings`, *not* classified | Feeds the broadened `Layoff Signal` (IA) and the trend chart's "Employment events strip". Data model, endpoint, chat tool, and three adapters implemented — see §3a below. `/change-request`: `changes/2026-09-11-employment-event-ingestion.md`. |
 | **Market benchmark datasets (scraped, no API)** | 🟡 code shipped 2026-09-16, not yet run against real data | A `market_observations` row (entity, employment type, location, period, rank, vacancy count/share, salary percentiles) + a `skill_associations` row (role↔skill co-occurrence, weighted) — aggregate market intelligence, not a posting or an event, source-agnostic like `employment_events` (a future second benchmark source is a new `source` value, not a new table) | New tables `market_observations`, `skill_associations` — *not* `raw_postings`, *not* `employment_events` | First source: **IT Jobs Watch** (itjobswatch.co.uk) — declined API/paid access for this project, explicitly granted scraping permission instead (CC-licensed content, conditional on politeness — robots.txt, low rate, identification, caching, attribution). Deliberately modeled as a *category* of source ("market datasets"), parallel to job postings, not a member of them — see `research/2026-09-16-itjobswatch-data-model-analysis.md`. Ingestion only so far; nothing surfaces this data yet. See §3b below and `backend/specs/scraped-data-sources/api.md`. `/change-request`: `changes/2026-09-16-polite-scraping-adapters.md`. |
+| **Trusted external statistics** (added 2026-09-24) | 🟡 **specified, not built** — first source ONS Vacancy Survey | A `statistic_series` + `statistic_observations` row per published figure (publisher, dataset, series code, period, value, unit, release date, licence, attribution) — market analysis and statistics from governments, statistical offices, intergovernmental bodies and other well-recognised institutions, used for insight beyond what the platform captures and to cross-check its own figures. **Always names its source.** | New tables `statistic_series`, `statistic_observations`, `statistic_releases`, `statistics_ingestion_runs` — *not* `market_observations`, *not* `raw_postings` | A fourth shape (published statistical series). Standardised container + provenance, one small adapter per publisher format, native dimension codes kept, revisions kept as vintages, no LLM. See §3c below and `backend/specs/trusted-statistics/api.md`. `/change-request`: `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`. |
 | **Research / reports / articles** | 🔲 planned | Enrichment text with market commentary | New table — explicitly *not* forced through the posting/classification shape (`job-data-source-flexibility.md` — Success looks like) | Feeds narrative + context, cited as an external source in provenance. Needs its own contract + CR. |
 
 **Out of scope for now** (per the outcome): cross-source dedupe of the same posting; automatic
@@ -189,8 +190,11 @@ rules, triggered here for the first time by a real, named, conditional permissio
 **Market benchmark datasets are their own source *category*** (revised 2026-09-16 —
 `research/2026-09-16-itjobswatch-data-model-analysis.md`), stored source-agnostically in
 `market_observations` + `skill_associations` — parallel to job postings and employment events,
-not a member of either. IT Jobs Watch is the first adapter; a future benchmark source (e.g. ONS)
-is a new `source` value in the same two tables, not a new table.
+not a member of either. IT Jobs Watch is the first adapter; ~~a future benchmark source (e.g. ONS)
+is a new `source` value in the same two tables, not a new table.~~ **Superseded 2026-09-24:** official
+statistics (ONS and similar) are their **own** category, §3c below — a different data shape (metric ×
+dimension × period, revisable) that must also hold other publishers' statistics later. Struck through,
+not erased, per this project's convention. `market_observations`/`skill_associations` are unchanged.
 
 **Good-practice review (`polite-scraping-review` skill, run 2026-09-16, licence updated same day
 after real research against the live site; re-run 2026-09-18 after replacing regex extraction
@@ -277,6 +281,61 @@ tracked company (§5).
 `ScrapedSourceAdapter`, register it in `ALL_SCRAPED_SOURCE_ADAPTERS`, get the target's own
 scraping-permission terms in writing first (this mechanism exists *because* a permission was
 explicitly granted, not as a default right to scrape anything with no API).
+
+---
+
+## 3c. Trusted external statistics (spec'd 2026-09-24 — **backend built and live-verified 2026-09-25; Story 5 frontend and a scheduled service still to do**)
+
+**Status legend for this section:** ✅ done · 📋 specified, not implemented · 🔲 not started.
+
+**What this is.** A source category for **published market analysis and statistics from trusted
+institutions** — governments and statistical offices, intergovernmental bodies (OECD, Eurostat,
+ILO, …), and other well-recognised organisations. Two jobs: give insight **beyond what this
+platform captures**, and give an **independent reference to cross-check** the platform's own
+figures against. **Every figure always names its publisher.** Full design:
+`backend/specs/trusted-statistics/api.md`; developer map and recipe: `backend/TRUSTED_STATISTICS.md`;
+licensing: `LICENSING.md`.
+
+**How it is standardised (the answer to "one custom pipeline per source?"):**
+- **One store for everything** — `statistic_series` (what a figure is), `statistic_releases`
+  (each publisher release), `statistic_observations` (each value, per period, per vintage).
+- **One small adapter per publisher *format*** — `discover` / `parse` (pure) / `validate`. The
+  shared orchestrator owns cadence, download, hashing, licence stamping, storage and logging.
+  SDMX publishers (OECD, Eurostat, ILO, ECB, IMF) will share one generic adapter driven by config.
+- **Native codes kept** (`{system, code, label}`); crosswalks to this platform's taxonomy are
+  built per cross-check, never forced at ingestion. **Meaning is never harmonised across
+  publishers** — the standard is structural, not semantic.
+- **Revisions kept as vintages**; **a value never travels without its source**; **no LLM**.
+- **A trust bar** every publisher passes before its first ingestion (named publisher, published
+  methodology, citable URL, reuse terms read off the publisher's own page, machine-readable
+  route, statistics not opinion).
+
+| Source | Status | Access | Auth | Notes |
+|---|---|---|---|---|
+| **ONS Vacancy Survey** (`ons_vacancy_survey`) — VACS02 vacancies by industry (SIC 2007), VACS03 vacancies by size of business | ✅ **live 2026-09-25** — adapter built, licence ✅ confirmed (OGL v3.0) and registered, first release (Sep 2026) ingested into production: 25 series, 7,575 figures (303 monthly periods back to Apr–Jun 2001), latest values match ONS's own (702k total; 91/99/103/169/240 by size). Not yet run on a schedule — see `DEPLOYMENT.md` | ONS page-data JSON (`…/current/data`) for release discovery + the published XLSX file. **No HTML parsed.** | None — keyless | Monthly release (latest 15 Sep 2026); 3-month rolling averages, thousands; latest period flagged provisional (revisions are real). Real files inspected 2026-09-24 — see `research/2026-09-24-ons-licence-and-access-confirmation.md`. First slice = VACS02 `levels` + VACS03; VACS02 `job openings rate`, divisions 45/46/47 and **X06** deferred until inspected. |
+| ~~LMI for All / DWP Find a Job~~ | ❌ **Not a source** | — | — | Wound down by its operator (data frozen end-2024, API access "until end of October 2025"), vacancy search returns nothing, postings' licence unconfirmed, Adzuna-operated. See `research/2026-09-24-lmi-for-all-vacancy-feed-verification.md`. |
+| Candidate publishers (Eurostat job-vacancy statistics via SDMX; OECD; ILO) | 🔲 **not decided** | — | — | Which comes next is a PM call. Eurostat/SDMX is the natural test of the shared adapter. Each must pass the trust bar first. |
+
+**Good-practice constraints, mirrored from Rule 13 even though this is a file download, not
+scraping** (`/polite-scraping-review` is not applicable — no HTML is parsed; recorded in the spec):
+
+| Source | Run cadence (enforced how) | Politeness | New-only fetching | Licence (confirmed?) |
+|---|---|---|---|---|
+| `ons_vacancy_survey` | ✅ 24 h between release checks — `is_due_from_last_run()` against `statistics_ingestion_runs`, checked **before any request** (verified live: a within-24h run made no request) | ✅ descriptive User-Agent with a real contact (`STATISTICS_CONTACT`, refuses to run if unset/placeholder and records nothing), ≥3 s pacing, `robots.txt` honoured (ONS publishes none — 404 = no restrictions); ≈1 request/day steady state, a file only on a new release | ✅ a release already ingested is never re-downloaded (release date = newest `versions[].updateDate`; verified live: forced re-run downloaded nothing); an unchanged file hash is never re-parsed; an unchanged value is never re-stored, a changed value becomes a new vintage | **OGL v3.0 — ✅ confirmed** 2026-09-24, read off ons.gov.uk + the National Archives; commercial use permitted; attribution required; never use the ONS logo |
+
+**Control levers:** `TRUSTED_PUBLISHERS` (`backend/src/trusted_stats/registry.py` — trust-bar
+sign-off, `min_check_interval_hours`), `source_licences.py` (licence + `rejected` switch),
+`STATISTICS_CONTACT` env var, `trusted_stats/crosswalks.py` (our industry tag → SIC section,
+versioned), `trusted_stats/sic.py` (canonical section names).
+
+**Consumers (backend built 2026-09-25; the Story 5 frontend is not):** Story 5 "UK vacancies (official data)"
+(`design/market-health/data-stories.md`), chat tool `query_trusted_statistics_data`, MCP tool
+`get_trusted_statistics` (`ACCESS.md`), admin views `/admin/statistics`,
+`/admin/statistics/{id}`, `/admin/statistics-sources`.
+
+**Expected lag, stated:** until the first ingestion runs, Story 5 and the admin views show their
+honest "not collected yet" state; afterwards figures update whenever ONS publishes its monthly
+release. That is a normal, expected state — not a defect and never faked.
 
 ---
 
@@ -444,6 +503,9 @@ Everything tunable, and where it lives. Grouped by area.
 |---|---|---|
 | Tracked companies | 82, per adapter | `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` |
 | Company → industry | static dict | `backend/src/industries.py` — `COMPANY_INDUSTRY` |
+| Trusted-statistics publishers (trust-bar sign-off, check interval) — 📋 not built | registry | `backend/src/trusted_stats/registry.py` — `TRUSTED_PUBLISHERS` |
+| Our industry tag → SIC 2007 section (cross-check) — 📋 not built | versioned dict + completeness test | `backend/src/trusted_stats/crosswalks.py` |
+| Trusted-statistics contact identity — 📋 not built | env var (required) | `STATISTICS_CONTACT` |
 | Registered source adapters | Greenhouse, Lever, Ashby | `backend/src/sources/__init__.py` — `ALL_SOURCE_ADAPTERS` |
 | Fetch pacing / retry | 1 req/s, 3 retries, 2s backoff base | `backend/src/sources/base.py` — `PacedFetcher` defaults |
 | Country name → ISO-2 | curated map | `backend/src/sources/base.py` — `COUNTRY_NAME_TO_ISO2` |
@@ -535,6 +597,9 @@ Everything tunable, and where it lives. Grouped by area.
 - `changes/2026-07-28-multi-source-job-data-ingestion.md` — the change that replaced Adzuna with the three ATS adapters
 - `changes/2026-09-11-employment-event-ingestion.md` — the change that added employment events
   (§2, §3a above); source evaluation in `research/2026-09-11-employment-event-data-sources.md`
+- `backend/specs/trusted-statistics/api.md` — the trusted external statistics category (§2, §3c above);
+  `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; developer map `backend/TRUSTED_STATISTICS.md`;
+  ONS evidence in `research/2026-09-24-ons-licence-and-access-confirmation.md`
 - `backend/specs/scraped-data-sources/api.md` — the generic scraping-adapter mechanism and IT
   Jobs Watch's own data model (§2, §3b above); `changes/2026-09-16-polite-scraping-adapters.md`;
   permission grant in `research/2026-09-16-itjobswatch-scraping-permission.md`

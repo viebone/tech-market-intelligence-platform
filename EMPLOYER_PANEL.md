@@ -25,6 +25,19 @@ employers, not just the same category of company the platform already over-repre
 
 ---
 
+**Employer size bands (added 2026-09-25):** the four size labels used for this panel (Startup <50,
+Small/Growth 50–500, Medium 500–5,000, Large 5,000+) are the platform's own and match no published
+standard, which is why a size cross-check against official statistics isn't possible yet. The PM decided on
+2026-09-25 to store headcount as the source of truth and use ONS's five bands as the default label
+(`changes/2026-09-25-employer-size-standard-bands.md`, `in-progress`); the standards are in
+`EMPLOYER_SIZE_STANDARDS.md` and the headcount research for all 48 unresearched companies (26 US/EU, Lever,
+21 UK) is in `research/2026-09-25-panel-headcount-research.md`. **Implemented 2026-09-25:** `backend/src/employer_headcount.py` now holds a cited headcount range per
+company and derives the ONS band; `COMPANY_SIZE_BAND` is retired; the live `raw_postings` column was backfilled
+(9,729 rows). Ambiguous ranges were resolved to the more probable band by PM decision, with the reasoning
+recorded per company. **Not yet deployed** to the Railway services — re-run the backfill after deploying.
+
+---
+
 ## Working process — how an entry moves through this list
 
 1. **Unverified** (default state for everything below) — a candidate, nothing checked yet.

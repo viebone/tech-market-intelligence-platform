@@ -517,6 +517,90 @@ or pagination — same "small registry, every entry matters equally" reasoning a
 **Errors**: none beyond the shared auth redirect — an empty adapter registry renders the page's
 own "No scraped sources registered yet" empty state.
 
+### GET /admin/statistics
+**Added 2026-09-24; IMPLEMENTED 2026-09-25** (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; verified with a `TestClient` against the live database — all three routes 200, ONS named on every page, 404 for an unknown id, "Never revised" shown when one vintage exists). **Purpose**: Filterable, sortable, paginated view of `statistic_observations` (with
+their `statistic_series` definition), per `design/pipeline-visibility/experience.md` User Flow
+step 11. Same List pattern as `GET /admin/market-observations`. Backed by
+`backend/specs/trusted-statistics/api.md`.
+**Auth required**: yes
+**Query params**:
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `source` | `str` | none | Exact match — a `TRUSTED_PUBLISHERS` key |
+| `dataset_code` | `str` | none | Exact match (e.g. `VACS02`) |
+| `dimension_type` | `str` | none | Exact match — `total` \| `industry` \| `size_band` \| … |
+| `series_code` | `str` | none | Exact match (e.g. `JP9P`) |
+| `vintages` | `"latest" \| "all"` | `"latest"` | `latest` reads `statistic_observations_latest` (one row per series + period); `all` shows every stored vintage, including superseded values |
+| `sort` | `str` | `"period_end"` | Whitelisted closed set: `period_end`, `series_code`, `value`, `released_on` |
+| `dir` | `"asc" \| "desc"` | `"desc"` | |
+| `page` | `int` | `1` | |
+| `page_size` | `int` | `50` | |
+**Response**: `statistics.html`, rendered with the filtered/sorted/paginated rows (`id`,
+`source`, `dataset_code`, `series_code`, `title`, `period_label`, `value` **with its unit**,
+`value_status`, `released_on`, `licence_confirmed`), active filter chips, total match count and
+pagination. Each row links to `/admin/statistics/{id}`. Every row shows its publisher — the
+operator view names the source exactly as any user-facing surface must.
+
+### GET /admin/statistics/{observation_id}
+**Added 2026-09-24**. **Purpose**: Full detail for a single observation, per User Flow step 11.
+**Auth required**: yes
+**Response**: `statistic_detail.html`, rendered with (a) every column of the observation row
+including `raw_cell`; (b) the full `statistic_series` definition — publisher, programme, dataset,
+series code, unit and scale, measure, seasonal adjustment, period type, dimensions, designation,
+definition and coverage notes, methodology and source URLs, licence, `licence_confirmed`,
+attribution text; (c) the release it came from (release date, file name, `content_hash`, counts
+parsed / new / revised / unchanged, validation summary); and (d) the **vintage history** for
+this series + period — every stored value, its `released_on`, and `value_status`, newest first —
+so an operator can see exactly what ONS revised and when. When only one vintage exists it says
+so ("Never revised") rather than showing an empty table.
+**Errors**:
+| Code | Reason |
+|---|---|
+| 404 | No observation with that id |
+
+### GET /admin/statistics-sources
+**Added 2026-09-24**. **Purpose**: Every *registered* trusted-statistics publisher — its trust
+bar, licence, cadence and collection state — per User Flow step 11. A flat list, not List →
+Detail, same reasoning as `GET /admin/licensing` and `GET /admin/scrape-runs`, and like the
+latter it shows every **registered** source (`trusted_stats.registry.TRUSTED_PUBLISHERS`), not
+only ones that have produced data — a never-run source is exactly the state this view exists to
+surface.
+**Auth required**: yes
+**Data source**: `statistics_storage.list_statistics_sources()` — joins `TRUSTED_PUBLISHERS`,
+`source_licences.SOURCE_LICENCES` / `overall_status()`, `statistics_ingestion_runs`,
+`statistic_releases` and counts of `statistic_series` / `statistic_observations`. No filtering or
+pagination (small registry, every entry matters equally). Reuses the same `is_due` helper the
+ingestion script itself uses, so the view can never disagree with the script.
+**Response**: `statistics_sources.html`, one row per registered source:
+```json
+{
+  "sources": [
+    {
+      "source": "ons_vacancy_survey",
+      "publisher": "Office for National Statistics", "publisher_type": "national_statistics_office",
+      "programme": "Vacancy Survey", "datasets": ["VACS02", "VACS03"],
+      "licence": "Open Government Licence v3.0", "licence_status": "licensed", "licence_confirmed": true,
+      "permits_commercial_use": true,
+      "attribution_text": "Source: Office for National Statistics — Vacancy Survey. Contains public sector information licensed under the Open Government Licence v3.0.",
+      "trust_bar_reviewed_on": "2026-09-24", "trust_bar_reviewed_by": "…",
+      "min_check_interval_hours": 24,
+      "last_run_at": "2026-09-24T09:02:21Z", "last_run_outcome": "new_release_ingested",
+      "is_due": false,
+      "latest_release_date": "2026-09-15", "latest_period_label": "Jun-Aug 2026",
+      "series_count": 25, "observation_count": 9012,
+      "last_rejected_release": null
+    }
+  ]
+}
+```
+`last_run_at` is `null` and `is_due` is `true` for a registered source with no run row —
+rendered "Never run". `last_rejected_release`, when present, carries the release date and its
+`validation_summary` so a refused file is visible, not only logged. A source whose licence is not
+confirmed shows the visible "not yet confirmed" state (the same treatment `/admin/licensing`
+gives it).
+**Errors**: none beyond the shared auth redirect — an empty registry renders the page's own "No
+trusted statistics sources registered yet" empty state.
+
 ### GET /admin/taxonomy-health
 **Added 2026-09-21** (`changes/2026-09-21-emerging-role-detection.md`). **Purpose**: surfaces
 what the classification pipeline keeps seeing that `design/market-health/job-classification.md`

@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Trusted Statistics, Statistics Sources** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here). Always visible. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
@@ -146,6 +146,25 @@ data read directly from the pipeline's own stored results.
     (not only ones that have produced data yet), when it last ran and whether it's currently due
     for its next run — a flat list, same shape as Sources & Licensing, since a source that's
     never run is exactly the state this view exists to make visible, not hide.
+
+11. **(Added 2026-09-24.)** Independently of every pipeline above, the operator can navigate to
+    **Trusted Statistics** to see every stored figure from a trusted external publisher (today:
+    the Office for National Statistics' vacancy estimates) as a filterable, sortable table —
+    filtered by source, dataset, dimension (total / industry / business size) or series code —
+    showing each value **with its unit and its publisher**, its period in the publisher's own
+    words, whether it is provisional, its release date, and whether its licence is confirmed. By
+    default only the latest value for each period is shown; a switch shows every stored version,
+    including values a later release changed. Clicking a row opens its **Detail** view: the full
+    row, the series definition (what it counts, what it leaves out, seasonal adjustment, links to
+    the publisher's methodology and dataset page), the release it came from and how that release
+    was checked, the licence and exact attribution text, and the **version history** for that
+    period ("Never revised" when there is only one). The operator can separately navigate to
+    **Statistics Sources** to see, for every *registered* publisher (not only ones that have
+    produced data), its trust-bar sign-off, licence status, how often it is checked, when it last
+    ran and with what outcome, the latest release and period it holds, how many series and
+    figures are stored, and any release the system refused to accept and why — a flat list, same
+    shape as Sources & Licensing, since a source that has never run, or whose last file was
+    rejected, is exactly what this view exists to make visible.
 
 ---
 

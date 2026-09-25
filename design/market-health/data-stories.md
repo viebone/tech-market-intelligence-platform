@@ -79,6 +79,20 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
       means. Before ~13 months of data exists it shows the current window only + a muted
       "comparison starts {Month Year}" line — "coming soon", not an error (`visual-design.md`
       — Year-on-year comparison; Honesty and empty states, below).
+- [ ] **A story built from an outside publisher's statistics** (added 2026-09-24,
+      `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md` — Story 5) **names the publisher
+      visibly beside the framing line**, with the exact attribution text from the licence
+      registry, never only in the Reasoning Panel; states each figure's period in words; and
+      flags a provisional figure. A **cross-check** against platform figures is allowed only
+      as two labelled, separately-sourced series — never a difference, a score, or a verdict —
+      only on a dimension with an honest mapping, and always with the "not expected to match"
+      qualifier. A story that shows such a cross-check may carry a **third labelled movement**
+      ("how this compares with…") on top of the usual two; the ~8-block ceiling still applies.
+- [ ] **A year-on-year block built from an official statistic** (added 2026-09-24) compares two
+      periods of the same length a year apart *as the publisher defines them* (for the ONS
+      vacancy series: two overlapping three-month averages, e.g. Jun–Aug 2026 against Jun–Aug
+      2025), not the platform's two 12-month windows; it states both periods in words and names
+      what the two bar colours mean, exactly like the platform's own year-on-year block.
 - [ ] **No *current-snapshot* duplication of the welcome** — job count, company count,
       collection start, and the *current* role-category split all belong to "About this
       platform". A story may show a *year-on-year shift* in the same dimension (a different
@@ -614,12 +628,183 @@ replaces the working-space content with this briefing. Does not alter the trend 
 Story 2, or Story 3 — a fully independent fourth surface, same "different questions, different
 surfaces" discipline as every prior story.
 
+## Story 5 - What does official UK data say about job vacancies?
+
+Added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`, for
+`outcomes/job-data-source-flexibility.md` (trusted external statistics) and
+`outcomes/understand-market-health-before-searching.md`. The first catalogue entry built from
+the **trusted external statistics** category (`backend/specs/trusted-statistics/api.md`) — the
+Office for National Statistics' Vacancy Survey. It is a **new story, not an extension of Story
+3**: Story 3 is one specialist website's ranking for a hand-picked set of IT roles and never
+blends with platform numbers; this is an economy-wide, official estimate by industry and by
+business size. Different publisher, different population, different question — merging them
+under one heading would mix two populations.
+
+It is also the first story that puts a **platform figure beside an outside figure**. That is
+allowed here, under strict rules (see the third movement and "Honesty and empty states"): two
+labelled, separately-sourced values; never a difference, a score, or a verdict; and only on a
+dimension where an honest mapping exists (industry — yes; employer size — **not yet**, because
+this platform's size bands and the official ones don't line up).
+
+### Display name
+
+**UK vacancies (official data)** — the Task Panel item label.
+
+### User question
+
+> What does official UK data say about job vacancies by industry and company size?
+
+### Example phrasings
+- "How many job vacancies are there in the UK?"
+- "What does the ONS say about vacancies?"
+- "Which industries have the most vacancies?"
+- "How does this compare with official figures?"
+
+### Audience job
+
+Give a professional the **wider, official picture** — how many vacancies the UK economy has,
+where they are, how that is shifting — and let them see how the roles this platform tracks sit
+against it, so they can judge how far this platform's own view leans (towards technology and
+finance employers, for instance) before relying on it. A second, authoritative read — always
+named as such.
+
+### Visible answer shape
+
+Three labelled movements (an extension of the standard's two — see "Visual standard", above,
+amended for this story): **the UK market right now**, **how it's shifting**, and **how this
+compares with the roles we track**.
+
+1. **Framing line** — one sentence: official estimates of UK job vacancies from the Office for
+   National Statistics, for the three months to {Month Year}, covering the whole UK economy
+   rather than only the roles this platform tracks. Immediately beneath it, the attribution
+   text renders visibly on the page itself, never only in the Reasoning Panel: "Source: Office
+   for National Statistics — Vacancy Survey. Contains public sector information licensed under
+   the Open Government Licence v3.0." (read from the licence registry, not typed into the
+   story). If the latest figure is provisional, a short muted line says so ("This is a first
+   estimate and may be revised.").
+
+**Movement 1 — The UK market right now**
+
+2. **UK job vacancies** — a **Hero Figure**: the total estimated vacancies for the latest three
+   months (e.g. "702,000"), caption "estimated job vacancies, three months to Aug 2026", and one
+   plain line beneath with the change since the previous non-overlapping three months, in words
+   with a direction glyph ("▼ 8,000 fewer than the three months to May 2026 (−1.1%)"). No
+   separate subtitle — the caption states the unit. *Qualifier:* it is an estimate from a
+   monthly survey of businesses; the latest figure is provisional; it leaves out farming,
+   forestry and fishing, households employing staff, and employment agencies; and the survey covers
+   Great Britain, which the publisher scales up to the whole UK.
+3. **Vacancies by industry** — subtitle: "Estimated vacancies by industry, in thousands, three
+   months to Aug 2026." **Ranked bar list**, the 10 largest of the 18 industry groups, bar
+   length = vacancies. *Qualifier:* industry groups follow the official UK classification;
+   the 8 smaller groups are not shown.
+4. **Vacancies by size of business** — subtitle: "Share of all vacancies, by how many people
+   the employing business has." **Ranked bar list in size order** (smallest business size to
+   largest — not sorted by value, because the order *is* the meaning), five rows (1–9, 10–49,
+   50–249, 250–2,499, 2,500 or more employees), bar length = share, the count in thousands
+   shown beside it. *Qualifier:* business size means the number of people the business employs,
+   not how big the vacancy is.
+
+**Movement 2 — How it's shifting**
+
+5. **Which industries are changing** — a **year-on-year comparison**. Subtitle: "Estimated
+   vacancies by industry, in thousands: three months to Aug 2026 compared with the same three
+   months a year earlier." A legend line names the two bar colours ("Lighter bar: Jun–Aug 2025.
+   Solid bar: Jun–Aug 2026."). The 8 industries with the most vacancies now, each row carrying
+   its change in thousands with a ▲ / ▼ / – glyph (colour never carries direction alone). One
+   plain sentence beneath states what a shift means: "A drop can mean slower hiring or roles
+   being filled faster — this shows the change, not the reason." *Qualifier:* both periods are
+   official estimates; the newer one may be revised.
+
+**Movement 3 — How this compares with the roles we track**
+
+6. **Where our roles sit against the UK market** — a **two-series comparison** (grouped
+   horizontal bars, one row per industry group). Subtitle: "Share of the UK-based roles we
+   track, and share of all UK vacancies, by industry group." A legend names both series: "Solid
+   bar: roles we track — share of {n} UK-based roles we hold as of {date}. Lighter bar: UK
+   vacancies — share of all vacancies, official estimate for Jun–Aug 2026." Rows: the five
+   industry groups with the most UK vacancies, plus any group holding at least 5% of the roles
+   we track (up to 8 rows), plus a final row **"Not placed in an industry group"** carrying only
+   the platform side. *Qualifier (always shown):* "These are not expected to match. The official
+   figures estimate vacancies across the whole UK economy from a business survey; we track
+   hiring at a chosen set of employers, most of them technology and finance companies. This
+   shows how our view leans — not whether either one is right." A second qualifier line states
+   the coverage gap: "{x} of {n} UK-based roles are at employers whose industry we couldn't place
+   in a group."
+
+The story uses five distinct visual forms across its blocks (Hero Figure, ranked bar list,
+year-on-year comparison, two-series comparison, and the ordered ranked list), comfortably
+above the standard's minimum. It never repeats the welcome's current-snapshot figures (the
+platform's own job count, company count, or current role split) — the only platform figure it
+shows is the industry *share* in block 6, which is a different question (how our sample leans
+against an outside reference).
+
+### Data contract
+
+Reads trusted statistics only through `query_trusted_statistics_data` (never the tables
+directly) and the platform's own postings only inside `statistics_crosscheck.industry_mix()`
+(`backend/specs/trusted-statistics/api.md`). No LLM. Gated on
+`source_licences.is_source_usable("ons_vacancy_survey")` before any query runs.
+
+| Story fact | Aggregate | Required qualifier |
+|---|---|---|
+| Total vacancies + change | Latest-vintage `AP2Y` value for the latest period; the value for the period three months earlier (non-overlapping) for the change | Estimate; provisional flag stated; sectors excluded; period stated in words |
+| By industry | Latest-vintage 18 SIC-section series for the latest period, top 10 | States 8 groups are not shown; classification named in the Reasoning Panel, not the visible copy |
+| By business size | Latest-vintage five size-class series, shown as shares of `AP2Y`, in size order | States what "size" means |
+| Year-on-year | Same series, latest period vs the same period one year earlier; both stated in words | Both periods official estimates; newer may be revised |
+| Comparison | Platform side: share of UK-located postings by industry group via the versioned crosswalk; ONS side: share of the all-industries total | Not expected to match; how many roles are unplaced; dates and denominators for both sides |
+| Attribution | `source_licences.get_licence("ons_vacancy_survey").attribution_text` | Rendered visibly in the framing block, always |
+
+### Honesty and empty states
+
+- Same base rules as Stories 1-4 (current as of query time, denominators stated,
+  `insufficient_data` per section, never estimated or zero-filled).
+- **Not collected yet** (the ingestion has not run against the published files): every section
+  renders "We haven't collected the official UK figures yet." This is an expected, temporary
+  state, not an error — and never a stale or invented number. After the first collection, the
+  story updates whenever the Office for National Statistics publishes its next monthly release;
+  a newer release simply shows newer figures. (Lag statement required by `data-surface-review`.)
+- **`is_source_usable("ons_vacancy_survey")` returns `False`** (a human has set `rejected=True`):
+  every section renders "This data source isn't currently available." — never a stale render.
+- **A rejected release** (the parser refused a file it didn't recognise) leaves the previously
+  stored figures showing, with their own dates — the story states the period it is showing, so
+  an older period is visibly older, never passed off as current.
+- **Seasonal adjustment is stated, not assumed.** The industry figures are seasonally adjusted (a few
+  series are footnoted by the publisher as not adjusted); the size-of-business figures are described as
+  seasonally adjusted in the publisher's methodology notes, though not in the data file itself. Block 4's
+  qualifier says which, in plain words, rather than silently treating the two sets as identical.
+- **The survey behind these figures covers Great Britain**, and the publisher scales it up to the whole
+  UK (Northern Ireland is about 3% of UK employment). Block 2's qualifier says so — "UK" in this story
+  means the publisher's own UK estimate, not a UK-wide survey.
+- **Provisional figures** are flagged in words (framing line). Revisions are never announced in
+  this story; the newest value simply shows.
+- **A cross-check is context, not proof.** The story never states or implies that the platform
+  is "accurate", "biased", or "validated" by the official figures, never shows a difference or
+  a score between the two series, and never uses colour to imply one side is right. The
+  comparison block is shown only for **industry**. A size comparison is **deliberately absent**:
+  this platform's employer size bands don't line up with the official ones, and inventing a
+  match would be worse than showing none (follow-up tracked in the backend spec's Open
+  Questions).
+- **No UK-based roles** (or none placed in an industry group): block 6 renders "We don't hold
+  enough UK-based roles to compare yet." — the first five blocks still render.
+- **Provenance of the platform side** (block 6) is named as "roles we track" — never presented
+  as the market. The Reasoning Panel lists both sources, the crosswalk version, and the
+  unplaced-role count.
+
+### Relationship to the existing experience
+
+A dedicated Query Task, placed after Story 4 in the catalogue (document order). Selecting it
+replaces the working-space content with this briefing. It appears in the Task Panel and the
+Welcome's shortcut list automatically (catalogue rule) — no navigation or IA change. Does not
+alter the trend chart or Stories 1-4. Story 3 (IT Jobs Watch) is unchanged and remains a
+separate, independent benchmark; the two are never blended or diffed against each other.
+
 ## Future catalogue direction
 
 Later entries can cover narrower questions such as role demand, skills by specialization,
 compensation coverage, source coverage, or market changes over time — **layoff activity is
-now Story 2**, **an independent third-party benchmark is now Story 3**, and **what's beyond the
-3 tracked categories is now Story 4**, all above, no longer future directions. **Every
+now Story 2**, **an independent third-party benchmark is now Story 3**, **what's beyond the
+3 tracked categories is now Story 4**, and **official UK vacancy statistics (with an
+industry cross-check) are now Story 5**, all above, no longer future directions. **Every
 one must meet "Visual standard every story must meet" (above)** — a new entry that can't be
 composed into 3–6 heading/visual/qualifier blocks with a real mix of chart forms is a sign
 the question is too narrow or too broad to be a story, not a reason to relax the standard. A

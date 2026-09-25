@@ -45,6 +45,17 @@ depends on.
 - One source failing, rate-limiting, or being removed degrades coverage for that source only —
   ingestion as a whole keeps running on every other source, matching the fault-isolation
   precedent already set for Adzuna (`changes/2026-07-27-adzuna-ingestion-resilience.md`)
+- A **trusted external statistics** source type exists alongside job postings, employment
+  events, and market benchmarks (added 2026-09-24, per
+  `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`, prompted by
+  `research/2026-09-24-trusted-external-statistics-source-type.md`): market analysis and
+  statistics published by governments, intergovernmental bodies, and other well-recognised
+  institutions or companies, under reuse terms that permit it. It exists to (a) give insights
+  beyond what the platform captures itself, and (b) cross-check and validate the platform's own
+  figures against an independent authority. **Every such figure always names its publisher and
+  dataset** — wherever it is stored, shown, or handed to an AI. A cross-check is presented as
+  independent context, never as proof that either number is right (definitions and coverage
+  differ between a national survey and this platform's own sample)
 - Enrichment content (articles, reports) that isn't a structured job posting can still feed
   the platform's market-health narrative without being forced into the posting/classification
   shape it doesn't fit

@@ -80,7 +80,7 @@ its prior state, so nothing here is ever mutated after insert.
 | `salary_confidence` | `"structured" \| "parsed" \| None` | **Load-bearing for the Compensation Signal's honesty rule** (`design/market-health/experience.md`, User Flow 7a): `"structured"` = read directly from a source-provided structured field (Ashby); `"parsed"` = extracted via regex from free text (Lever); `NULL` = no compensation data captured for this posting (includes all Greenhouse postings — see Business Logic). A compensation answer must never present a `"parsed"` figure with the same certainty as a `"structured"` one, and must never blend the two into one undifferentiated number. |
 | `salary_extraction_method` | `str \| None` | e.g. `"ashby-structured"`, `"lever-regex"` — provenance/debugging detail, distinct from `classifications.model` (which is about role/specialization/level/track, not compensation). `NULL` iff `salary_confidence` is `NULL`. |
 | `industry` | `str \| None` | The tracked company's industry (e.g. `"Fintech"`, `"AI"`, `"Social Media"`) — a static, curated lookup keyed by `company`, **not** an LLM inference (see Business Logic — Industry tagging). `NULL` for any company not yet tagged in the lookup; never guessed. |
-| `employer_size_band` | `str \| None` | Added 2026-09-19 (`EMPLOYER_PANEL.md`). Same static-lookup discipline as `industry`, keyed by `company` — `NULL` until a company is actually tagged. Populated for the UK employer panel additions using the size bucket already assigned in `research/2026-09-18-uk-employer-panel-plan.md` (a user-supplied classification), and for 33 of the original 35 companies via real headcount research the same day (`research/2026-09-19-original-35-size-bands.md`, cited per-company). `NULL` only for `lever` (the ATS company itself), where no real figure was found — never guessed. See Business Logic — Employer metadata tagging. |
+| `employer_size_band` | `str \| None` | Added 2026-09-19 (`EMPLOYER_PANEL.md`). Same static-lookup discipline as `industry`, keyed by `company` — `NULL` until a company is actually tagged. **Revised 2026-09-25 (`changes/2026-09-25-employer-size-standard-bands.md`, PM decision — specified, not built): the value becomes an ONS band code (`1-9`, `10-49`, `50-249`, `250-2499`, `2500+`), `ambiguous`, or `NULL`, derived from a cited headcount range in `COMPANY_HEADCOUNT` (Business Logic — Employer size, revised); the old Startup / Small-Growth / Medium / Large labels are retired. Nothing reads this column today.** Populated for the UK employer panel additions using the size bucket already assigned in `research/2026-09-18-uk-employer-panel-plan.md` (a user-supplied classification), and for 33 of the original 35 companies via real headcount research the same day (`research/2026-09-19-original-35-size-bands.md`, cited per-company). `NULL` only for `lever` (the ATS company itself), where no real figure was found — never guessed. See Business Logic — Employer metadata tagging. |
 | `employer_region` | `str \| None` | Added 2026-09-19. Same discipline, but populated confidently for every currently-tracked company — HQ country/region is well-established public fact, unlike `employer_size_band`. `NULL` for any future company not yet tagged. |
 
 **Migration note (2026-08-03).** `source`, `source_ref`, and `company` are new columns added to
@@ -400,6 +400,82 @@ have `job_function IS NULL` at any moment the backlog hasn't fully drained — e
 qualifier states the real count still awaiting reprocessing, computed live on every request
 (`count(*) FILTER (WHERE role_category = 'other' AND job_function IS NOT NULL)` vs. the total
 `other` count), never a stale or hardcoded figure.
+
+**Story 5 (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`).** "UK vacancies (official
+data)" — `story_id = "uk-vacancies-official"`, experience in `design/market-health/data-stories.md`
+— Story 5. The first story built from **trusted external statistics**
+(`backend/specs/trusted-statistics/api.md`, which owns the tables, the ONS adapter, licence
+registration, and the read function; not repeated here). Same no-new-route catalogue-operation
+pattern as Stories 2-4 — a catalogue entry, `market_stories.py::build_uk_vacancies_story()`, and
+tests. **No LLM.**
+
+Reads statistics **only** through `query_trusted_statistics_data` (never the tables directly)
+and, for the comparison block only, `statistics_crosscheck.industry_mix()`. Before any query it
+calls `source_licences.is_source_usable("ons_vacancy_survey")`; `False` → every section
+`insufficient_data` with "This data source isn't currently available." Sources with no data yet
+→ every section `insufficient_data` with "We haven't collected the official UK figures yet." —
+the stated, expected lag (recorded in the change request's Data Surface Review), never a stale or
+invented number.
+
+**Response** — same envelope as the other stories (`story_id`, `question`, `as_of`, `sections`,
+`provenance`, `limitations`), with these sections. Every `content` that carries an ONS figure
+also carries the `attribution` object (rule 4 of the trusted-statistics spec):
+
+```json
+"attribution": {
+  "publisher": "Office for National Statistics",
+  "programme": "Vacancy Survey",
+  "text": "Source: Office for National Statistics — Vacancy Survey. Contains public sector information licensed under the Open Government Licence v3.0.",
+  "source_url": "https://www.ons.gov.uk/employmentandlabourmarket/peoplenotinwork/unemployment/datasets/vacanciesbysizeofbusinessvacs03",
+  "licence": "Open Government Licence v3.0", "licence_confirmed": true,
+  "period_label": "Jun-Aug 2026", "value_status": "provisional", "released_on": "2026-09-15"
+}
+```
+
+| Section id | Movement | `content` shape |
+|---|---|---|
+| `uk-vacancies-total` | 1 | `{ attribution, total: 702000, unit: "estimated job vacancies", period_label, previous_period_label: "Mar-May 2026", previous_total: 710000, change: -8000, change_pct: -1.1, coverage_note }` — `change` is derived server-side from stored levels (total × `unit_scale`), never stored |
+| `uk-vacancies-by-industry` | 1 | `{ attribution, rows: [{ code: "J", label, value: 61, unit: "thousand vacancies" }], shown: 10, of: 18 }` — top 10 by value; labels from `SIC_2007_SECTIONS` |
+| `uk-vacancies-by-size` | 1 | `{ attribution, rows: [{ code: "1-9", label: "1–9 employees", value: 91, share_pct: 13.0 }] }` — **fixed size order**, not sorted by value; `share_pct` = value / `AP2Y` total |
+| `uk-industry-shift` | 2 | `{ attribution, current_period_label: "Jun-Aug 2026", prior_period_label: "Jun-Aug 2025", rows: [{ code, label, current, prior, delta, unit: "thousand vacancies" }] }` — top 8 by current value; `prior` from the same series one year earlier (latest vintage of that period); rows lacking a prior value are omitted, and if none have one the section is `insufficient_data` |
+| `industry-crosscheck` | 3 | `{ attribution, primary_name: "Roles we track", secondary_name: "UK vacancies (ONS)", legend, platform_total: 1240, platform_as_of, unplaced_count, unplaced_share_pct, crosswalk_version, rows: [{ code, label, primary_share_pct, secondary_share_pct }] }` — `legend` is composed server-side (names, denominators, dates) so the client never builds provenance text; rows = ONS top 5 ∪ platform groups ≥5%, max 8, plus one `{ code: null, label: "Not placed in an industry group", primary_share_pct, secondary_share_pct: null }`; **no difference field exists in this payload, deliberately** |
+
+`limitations` always includes: the survey's excluded sectors (from the series' `coverage_note`),
+"the latest figures are provisional and may be revised", "the comparison is not expected to
+match — different populations", and — computed from each series' stored `seasonal_adjustment` —
+the adjustment status of what is shown: industry figures are seasonally adjusted (except series ONS
+footnotes as not adjusted), and the size-of-business series is stated as seasonally adjusted by ONS's
+methodology page though not in the data file itself (the block's qualifier says where that status
+comes from). Also always stated: the survey covers Great Britain and ONS weights it up to the UK
+(Northern Ireland is about 3% of UK employment).
+`provenance.sources` lists `ons_vacancy_survey` (and `raw_postings` for the comparison block) and
+`provenance.model_used = false`; the Reasoning Panel additionally lists dataset codes
+(VACS02, VACS03), the crosswalk version, and the unplaced-role count.
+
+**Cross-check computation** — `statistics_crosscheck.industry_mix()`
+(`trusted-statistics/api.md`, Business Logic §6): platform side = share of UK-located postings
+in `raw_postings` by SIC section via the versioned crosswalk (a tag mapped to `None` counts as
+"unplaced"); ONS side = each section's share of the latest all-industries total. Empty platform
+side (no UK-based postings, or all unplaced) → the section alone is `insufficient_data`
+("We don't hold enough UK-based roles to compare yet."); blocks 1-4 are unaffected.
+
+**Chat tool (`query_trusted_statistics_data`).** Registered alongside `query_market_data`,
+`query_compensation_data`, `query_requirements_data`, `query_employment_events_data`,
+`query_market_benchmark_data` and `query_job_function_data` in `chat.py`'s tool declarations so a
+free-form question about official UK vacancies reaches the data (the ad-hoc query path, per
+`data-surface-review`). Same DB-only rule as every other chat tool: the answer is composed only
+from stored statistics and **must name the publisher and period** (the tool result carries the
+`source` object; the chat system prompt's existing "cite only what the tools returned" rule
+applies, with one addition — state the publisher's name and that the figure is an official
+estimate of the whole UK economy, not this platform's own postings). The tool description
+instructs the model not to present these figures as a check on, or a correction of, the
+platform's own numbers.
+
+**Catalogue registration:** `id = "uk-vacancies-official"`, `display_name = "UK vacancies
+(official data)"`, `question` and `example_phrasings` per the experience spec; placed after
+Story 4 (document order). Curated instant-answer chips: **none added** — the story is the fast
+path; a single-number chip ("how many vacancies in the UK?") is a candidate for the curated
+catalogue later but is not decided here.
 
 ---
 
@@ -724,6 +800,58 @@ only for the UK employer panel companies (`EMPLOYER_PANEL.md`), then extended th
 research — never a general impression. `lever` (the ATS company itself) is the sole remaining
 `NULL`, since no real figure was found for it — not guessed, and not silently dropped either
 (`EMPLOYER_PANEL.md` records it explicitly).
+
+**Employer size — revised design (2026-09-25, `changes/2026-09-25-employer-size-standard-bands.md`; IMPLEMENTED 2026-09-25 — `backend/src/employer_headcount.py`, `backfill_employer_size_band.py`, `backend/tests/test_employer_headcount.py`, 14 tests).**
+PM decisions: headcount is the source of truth (Option A) and the platform's default size label is ONS's
+five bands. Standards and rationale: `EMPLOYER_SIZE_STANDARDS.md`. Evidence for every company:
+`research/2026-09-25-panel-headcount-research.md`.
+- **Source of truth — `COMPANY_HEADCOUNT`** (`industries.py` or a sibling module), a static, curated,
+  git-tracked lookup keyed by `company`, same discipline as `COMPANY_INDUSTRY` (no LLM, `None` until
+  researched, never guessed). Each entry: `low`, `high` (a range — one number is `low == high`), `as_of`
+  (**free text** — the period the figure describes; sources are dated inconsistently, so a date type would
+  have been false precision), `basis` (`worldwide` \| `uk` \| `group` \| `parent_only`), `source` (short
+  citation), `confidence` (`high` \| `medium` \| `low`), `note`, and — only where the range straddles a band boundary — `band_choice` + `band_choice_reason`.
+- **Derived band — `ons_size_band(entry)`**: returns `1-9`, `10-49`, `50-249`, `250-2499` or `2500+` when
+  the *whole* `low..high` range sits in one band; **`ambiguous` when it straddles a boundary and no
+  choice was recorded**; the recorded `band_choice` when one was; `None` when there is no entry.
+  **PM decision 2026-09-25: for the companies whose ranges straddle a boundary, choose the more probable
+  band rather than leave them unplaced.** Five entries carry a choice (Gymshark, Faculty, Substack, Notion,
+  Supabase — all `250-2499`), each with its reasoning in `band_choice_reason` and `confidence = low`; a
+  choice is only accepted where the range really straddles, the band is one the range touches, a reason is
+  given, and confidence is `low` (all enforced in the entry's constructor, so a bad entry fails at import).
+  A future straddling entry with no recorded choice is `ambiguous`, and a test fails the build until a
+  choice is made. **Never guessed and never rounded to make a range fit.** Other publishers'
+  systems (e.g. the international 10/50/250 class, US establishment classes) are further pure functions
+  of the same entry, added only when a publisher needs one.
+- **`raw_postings.employer_size_band`** keeps being written at ingestion (same snapshot pattern as
+  `industry`/`employer_region`) but now with the ONS band code, `ambiguous` or `NULL`. **It is a
+  convenience snapshot, not the source of truth**: any comparison derives the band from
+  `COMPANY_HEADCOUNT` at query time, so an updated headcount never leaves a stale value behind. A
+  one-off backfill re-derives stored rows from the company lookup. **Run 2026-09-25 against the live database:
+  9,729 rows across 73 companies in one transaction (8,642 that were `NULL` because the column was only
+  ever populated at ingestion going forward, plus 1,087 carrying a retired label); afterwards every row is
+  on an ONS band code — 6,308 `2500+`, 3,248 `250-2499`, 173 `50-249` — with no retired label and no `NULL`
+  left, `raw_response` untouched, and a second dry run reporting 0 changes (idempotent).** This is a
+  deliberate, narrow exception to `db.py`'s "no backfill" note for the derived employer columns: the
+  immutability of `raw_postings` protects `raw_response`, and this touches only a derived metadata
+  snapshot (precedent: the existing `UPDATE raw_postings SET ingestion_run_id`). `python
+  backfill_employer_size_band.py` is a dry run by default; `--apply` writes; it aborts and rolls back if
+  the updated count differs from the plan. **Re-run it after the new code is deployed** — until then a
+  deployed older `job-sync` would still insert new rows with a retired label.
+- **Basis is carried, not hidden.** Most figures are worldwide/group headcounts; ONS measures UK
+  business size. Any surface or function that uses a derived band for a UK comparison must state that
+  the underlying headcount is worldwide/group where `basis` says so.
+- **Tests:** band-boundary cases (9/10, 49/50, 249/250, 2,499/2,500 — each side); an entry with
+  `low > high`, no `source`, or no `as_of` is rejected; **every tracked company either has an entry or
+  is listed in an explicit `UNKNOWN_HEADCOUNT` set** (adding a company without deciding fails the
+  build — same enforcement pattern as `test_source_licences.py`); a straddling range yields
+  `ambiguous`, never a band.
+- **MCP Access Review (recorded):** no MCP tool exposes this field. `list_tracked_companies` returns
+  company and industry only — **deferred**, not exposed: revisit when an outcome calls for size to be
+  reachable by an external AI, and only after the worldwide-vs-UK basis has a way to travel with the
+  value (a bare band would mislead). Recorded in `ACCESS.md`.
+- **Data Surface Review:** not applicable — an attribute of existing company metadata, not a new data
+  category (no new table).
 
 **Classification (daily, after ingestion)**
 Classification runs once per ingestion run, across every newly-inserted posting from every

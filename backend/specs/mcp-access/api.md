@@ -337,9 +337,11 @@ This is per the MCP spec's own transport — JSON-RPC over HTTP; this platform d
 second, REST-shaped tool API alongside it. Every tool call carries a Bearer access token; every
 tool implementation runs the same three checks before touching data — see Business Logic, below.
 
-Eight tools. Each is a genuine data primitive already proven inside this platform's own chat
+Nine tools. Each is a genuine data primitive already proven inside this platform's own chat
 feature or story catalogue (`backend/specs/market-health/api.md`) — nothing here is new,
-untested query logic.
+untested query logic. (The ninth, `get_trusted_statistics`, added 2026-09-24, follows the same
+rule: its read function is the one Story 5 and the chat tool already share, so it is exercised
+by the story before any external client reaches it.)
 
 ### `get_taxonomy`
 **Scope**: none. **Purpose**: returns the canonical enum values so a calling AI never has to
@@ -348,6 +350,11 @@ Returns `role_category`, `specialization`, `level`, `track`, `skill_group` (from
 `job-classification.md`) and `event_type`, `direction`, `confidence` (from
 `EMPLOYMENT_EVENTS.md`), each as `{ "value": ..., "label": ... }` pairs — machine value plus the
 plain-language label this platform already uses for it.
+**Extended 2026-09-24** (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`): also returns
+`statistic_dimensions` — the valid `industry_code` values (the 18 official UK industry groups,
+`{ "value": "J", "label": "Information and communication" }`), the five `size_band` values, and
+the registered trusted `publisher` keys — so a calling AI can pass valid parameters to
+`get_trusted_statistics` without guessing.
 
 ### `get_job_demand`
 **Scope**: `jobs.read`. **Wraps**: `query_market_data`.
@@ -461,6 +468,40 @@ here: Job Function isn't a different population needing "don't compare," it's a 
 different *kind* of fact (a sub-breakdown of `other`) that must never be mistaken for a peer of
 Designer/Product Manager/Engineer.
 
+### `get_trusted_statistics`
+**Added 2026-09-24** (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`) — the first tool over
+the **trusted external statistics** category (`backend/specs/trusted-statistics/api.md`), decided
+*exposed* in that spec's MCP Access Review (not deferred: a real consumer surface — Story 5, "UK
+vacancies (official data)" — is specified alongside it). **Scope**: `jobs.read` — reused, same
+reasoning as `get_market_benchmark`/`get_job_function_breakdown` (the same conceptual grant, "job
+market data", from a different source). **Not** in `PREMIUM_ONLY_TOOLS`: the Open Government
+Licence v3.0 permits commercial use, so there is no licence conflict to gate around.
+**Wraps**: `query_trusted_statistics_data` (new — the single read path shared with Story 5 and the
+chat tool). **Gate**: `source_licences.is_source_usable(source)` per publisher before querying;
+an unavailable source returns `envelope.no_data("This data source isn't currently available.")`.
+**Parameters**: `dimension` (`total` | `industry` | `size_band`, default `total`), `publisher`
+(optional — a registered key from `get_taxonomy`'s `statistic_dimensions`), `industry_code`,
+`size_band`, `period` (`latest` default | `year_ago` | `previous_quarter`), `date_from`, `date_to`.
+**Response**: same envelope shape. `data.statistics` is the wrapped function's own list — each
+entry carries its `series.source` object (publisher, programme, dataset, series code, source
+URL, designation, licence, `licence_confirmed`, attribution text) with **every field non-empty
+by contract**; `meta.source` names every publisher used **and** the licence/attribution text in
+words ("Office for National Statistics — Vacancy Survey (VACS02/VACS03), Open Government Licence
+v3.0. An official estimate for the whole UK economy — not this platform's own job postings."),
+since an external AI may quote a figure verbatim with no framing of its own (Part 2's binding
+contract). `meta.unit` states what a bare value counts ("thousand vacancies", "vacancies per 100
+jobs") and `meta.time_window` gives the publisher's own period label ("three months to Aug 2026
+(rolling average)") — never a bare date pair. `meta.total_matching` and `meta.sources_checked`
+are carried through, so "checked, nothing collected yet" reads as exactly that, never "doesn't
+exist". `meta.coverage_note` states the survey's excluded sectors; provisional figures carry
+`value_status: "provisional"` per observation. **The tool's docstring instructs the calling AI
+to name the publisher whenever it repeats a figure, to describe these as official estimates
+across the whole UK economy, and never to present them as a check on, or correction of, this
+platform's own postings figures (`get_job_demand` and the others) unless the user asks for a
+comparison — and then to state that the two measure different populations.** There is no
+server-side enforcement possible once an AI holds both tools' outputs; that is the same real,
+named limitation `get_market_benchmark` already records.
+
 ### What's deliberately not a tool
 
 See also `ACCESS.md` (product root) for the full picture across *every* capability this product
@@ -500,6 +541,14 @@ MCP-exposure status.
   Design, Product & Engineering") exists to decide against. Marked here for history, per this
   project's "mark removed, don't erase" convention — see `changes/2026-09-21-job-function-
   story.md`.
+- **`statistics_crosscheck.industry_mix()` — the platform-vs-ONS composition** (added 2026-09-24) —
+  not a tool. It is a pre-composed comparison carrying a curated crosswalk whose caveats belong in
+  Story 5's own qualifier, and this outcome exposes primitives, not reports. A calling AI holding
+  `get_job_demand` and `get_trusted_statistics` composes any comparison itself, with each tool's
+  own caveats — the same reasoning as "Any 'compare X vs Y' tool," above.
+- **Story 5 ("UK vacancies (official data)") as a pre-composed story** — not a tool, same
+  reasoning as every other story (`ACCESS.md`, "Data stories").
+- **Trusted-statistics admin views** — operator-only, no end-user data.
 
 ---
 

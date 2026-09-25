@@ -576,6 +576,55 @@ to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses
 `StoryBlock`/`Meter` — no new shared component needed. `tsc --noEmit` and `npm run build` both
 clean.
 
+### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED 2026-09-25**, uncommitted / undeployed)
+
+> **Implementation notes (2026-09-25).** Built: `UkVacanciesStoryMessage`, `SourceAttribution`, `SourceComparisonBars`, the `mode` prop on
+> `YearOnYearGroupedBars`, the router branch in `DataStoryMessage`. `tsc` + `vite build` clean; `SourceComparisonBars` is a lazy 1.9 kB chunk on
+> top of the existing shared Nivo chunk; the main bundle grew ~0.03 kB gzip. Verified by **server-side rendering the real component with the
+> live story from the production database** and reading the resulting text in all three states (live, not-collected, source-unavailable) —
+> **not** in a real browser: the two Nivo/CSS charts (Which industries are changing / Where our roles sit) render as their loading fallback in
+> that check, so their *visual* rendering is verified only by type-check and build. **Deviations:** (1) `mode="level"` renders the
+> `visual-design.md` ghost/solid anatomy with a row-aligned glyph delta (▲ +6 thousand / ▼ −12 thousand / – no change) in CSS, **not Nivo** — a
+> row-aligned delta isn't a Nivo primitive, and it keeps that block out of the chart bundle; (2) `RankedBarList` gained an additive optional
+> `valueLabel` (the size block shows "14.1% · 99k"); (3) `SourceComparisonBars` has no `minValue` (not in this Nivo version; bars start at 0).
+> **Two copy bugs the render check found and fixed at the source (backend):** ONS's raw footnote wording (SIC codes, "QMI") and a raw ISO date
+> leaked into visible copy, and the empty state showed a duplicated message and "three months to ." — now pinned by backend tests.
+
+Experience: `design/market-health/data-stories.md` — Story 5. Backend contract:
+`backend/specs/market-health/api.md` (Story 5) and `backend/specs/trusted-statistics/api.md`.
+First story built from an outside publisher's statistics, and the first with a **third labelled
+movement** and a platform-vs-publisher comparison.
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), `RankedBarList` in **size order** (by business size, share) → *(Movement 2)* `YearOnYearGroupedBars` (levels mode) → *(Movement 3)* `SourceComparisonBars`. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
+| `SourceAttribution` *(new, generic)* | Renders a story's visible attribution line (`text-xs text-gray-400`) from the section payload's `attribution` object — publisher, attribution text, and a period/provisional note. **Never hard-codes a publisher or licence string**; a story built from any future trusted source reuses it. If `licence_confirmed === false` it also renders the visible "usage terms not yet confirmed" caveat (`data-legibility` Provenance) — unused for ONS today, required for the first surface of any unconfirmed publisher. | `frontend/src/features/market-health/stories/SourceAttribution.tsx` |
+| `SourceComparisonBars` *(new)* | Nivo grouped horizontal bar chart for the **two-series comparison** (`design/visual-design.md`): rows `{ label, primary?: number, secondary?: number }`, `primaryName` / `secondaryName` for the legend and tooltip, both values are shares (%). A row missing one side renders only the existing bar plus its inline caption (never a zero bar). Legend line always shown above the chart, built from names, denominators and dates supplied by the API — not composed client-side. Tooltip names each series with its own source and figure, **never a difference or "over/under-represented"**. Lazy-loaded (`React.lazy` + `Suspense`, same `h-40 animate-pulse bg-gray-800` fallback), themed via the shared `nivoTheme.ts`; primary `indigo-500`, secondary `gray-600`. | `frontend/src/features/market-health/stories/SourceComparisonBars.tsx` |
+
+**Modification to an existing component (small, additive):** `YearOnYearGroupedBars` gains a
+`mode: "share" | "level"` prop (default `"share"`, so every current caller is unchanged). In
+`"level"` mode it takes `formatValue` (thousands), draws no percentage, and shows the delta as
+"▲ +6 thousand" / "▼ −12 thousand" / "– no change" (glyph + sign, never colour alone); the
+legend line and both period labels come from the section payload. Nothing else about the
+component changes — the no-prior-window fallback still renders `RankedBarList`.
+
+`DataStoryMessage` gains a fifth branch: `story.story_id === "uk-vacancies-official"` delegates
+to `UkVacanciesStoryMessage` — same thin-router pattern as Stories 2-4; no other existing file
+changes beyond the `YearOnYearGroupedBars` prop above. `RankedBarList` must render the array in
+the order given (size order for block 4 is meaningful) — verify at implementation that it does
+not re-sort; if it does, add a `preserveOrder` prop rather than a new component.
+
+**API contract addition:** no new route — `POST /api/market-health/stories/{story_id}` with
+`story_id = "uk-vacancies-official"`. The catalogue metadata (`GET /api/market-health/stories`)
+gains the new entry, so the Task Panel item and the Welcome shortcut appear with no per-story
+frontend copy (catalogue rule).
+
+**State:** none new — the story's resolved payload is server-state via the same TanStack Query
+call every story uses.
+
+**Out of scope:** any client-side computation of a difference or ratio between the two series;
+size-band comparison; revision history display.
+
 ### Reference story: market data briefing
 
 The Task Panel item **"What we know about the market"** — `DataStoryMessage` from

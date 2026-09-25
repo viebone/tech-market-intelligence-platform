@@ -73,6 +73,11 @@ Each is one page, written from real user research. Read in this order:
 - [`backend/EMPLOYMENT_EVENTS.md`](backend/EMPLOYMENT_EVENTS.md) — plain-language companion
   to the above, specifically for the employment-events table: schema, immutability, real
   per-source field coverage, and the history of every decision that shaped it.
+- [`backend/TRUSTED_STATISTICS.md`](backend/TRUSTED_STATISTICS.md) — plain-language map of the
+  trusted-external-statistics category (ONS and future publishers): the eight-rule standard,
+  the one shared table set, the real-file gotchas, and the recipe for adding a source. Spec:
+  [`backend/specs/trusted-statistics/api.md`](backend/specs/trusted-statistics/api.md).
+  *(Specified 2026-09-24 — not built yet.)*
 - [`backend/specs/pipeline-visibility/api.md`](backend/specs/pipeline-visibility/api.md) —
   the admin dashboard's routes and business logic.
 - [`backend/specs/ai-reasoning-panel/api.md`](backend/specs/ai-reasoning-panel/api.md) —

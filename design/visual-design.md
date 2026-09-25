@@ -1,9 +1,9 @@
 ---
 id: visual-design
-version: 1.9
+version: 2.0
 status: active
 created: 2026-06-21
-updated: 2026-09-23
+updated: 2026-09-24
 ---
 
 # Visual Design — Tech Market Intelligence Platform
@@ -380,8 +380,9 @@ current uses:  Story 1's skill-demand block (grouped bar, must-have vs. nice-to-
                its three year-on-year blocks (grouped bar, current vs. one year back); Story
                1's pay-transparency block, Story 2's contraction-vs-expansion block, and
                Story 4's scale block (all three: a 2-slice donut, added 2026-09-22 —
-               `changes/2026-09-22-nivo-pie-charts.md`) — see design/market-health/
-               data-stories.md.
+               `changes/2026-09-22-nivo-pie-charts.md`); Story 5's official-statistic
+               year-on-year block and its two-series comparison (added 2026-09-24) — see
+               design/market-health/data-stories.md.
 ```
 
 **Meter vs. a 2-slice donut — the actual dividing line, not a style preference.** Meter stays
@@ -441,7 +442,41 @@ design goal.
 | **Category Share Bar** | a part-to-whole split across the 3 tracked Role Categories | "Category Share Bar", above |
 | **Trend line** | a value over time, where the block's data is genuinely time-series | Chart Specification, `design/market-health/experience.md` (compact variant) |
 | **Year-on-year comparison** | how a set of proportions shifted between the trailing 12 months and the 12 months a year earlier — one year back, never more | below |
+| **Two-series comparison** (added 2026-09-24) | two separately-sourced sets of shares over the same categories — e.g. the roles this platform tracks vs. an official statistic — shown side by side, never as a difference | below |
 | **World risk map** | a geographic "where" comparison across countries — a choropleth, not a ranked list | below |
+
+**Two-series comparison** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`,
+Story 5's third movement). No new tokens — it reuses the Charting-library rule for a 2-series
+chart (one accent hue for the primary series, `gray-600` for the secondary):
+```
+form:     Nivo grouped horizontal bars (same component family as the year-on-year comparison),
+          one row per category, two bars per row
+series:   PRIMARY   the platform's own figure     indigo-500  — "the roles we track"
+          SECONDARY the outside publisher's figure gray-600    — named for the publisher
+          The publisher is the muted, reference series on purpose: the platform's own view is
+          the thing being placed against it, and the muted bar reads as "the yardstick".
+legend:   one line, always shown, above the chart, naming BOTH series in words with their
+          denominators and dates — e.g. "Solid bar: roles we track — share of 1,240 UK-based
+          roles, as of 24 Sep 2026. Lighter bar: UK vacancies — share of all vacancies, ONS
+          estimate for Jun–Aug 2026." Colour is never the only signal (Data Legibility).
+values:   both series are SHARES (%), never one share and one count — the only honest way to
+          put two different-sized populations on one axis. Unit stated once in the subtitle.
+tooltip:  names the row, then each series with its own source name and figure —
+          "Information and communication — roles we track: 61% · ONS UK vacancies: 9%".
+          No difference, ratio, or "over/under-represented" wording anywhere, including the tooltip.
+last row: a row whose category has no honest counterpart on the other side (e.g. "Not placed in
+          an industry group", platform side only) renders only the bar that exists, with an
+          inline caption saying why — never a zero bar for the missing side.
+qualifier: always the "not expected to match" line (data-stories.md, Story 5) — required, not
+          optional, wherever this form is used.
+```
+
+**Year-on-year comparison for an official statistic** (added 2026-09-24): identical anatomy to
+the platform's own year-on-year comparison above — same ghost/solid bars, same legend line, same
+glyph-plus-number delta — with two differences: the bars are **levels in thousands** rather than
+shares, so the delta reads "▲ +6 thousand" / "▼ −12 thousand" (never "pp"); and the two windows
+are the publisher's own same-length periods a year apart (e.g. "Jun–Aug 2026" and "Jun–Aug
+2025"), stated in words under the heading.
 
 **World risk map** (added 2026-09-13 — `changes/2026-09-13-employment-risk-world-map.md`):
 ```

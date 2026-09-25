@@ -227,6 +227,30 @@ before.
 
 ---
 
+## Service: `trusted-statistics` (code ready 2026-09-25 — **not yet deployed as a scheduled service**)
+
+Trusted external statistics ingestion (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`, first source: the ONS
+Vacancy Survey). Same cron-service shape as `employment-events`, deliberately its own service.
+
+| | |
+|---|---|
+| Source | Same repo/branch as `job-sync` |
+| Root directory | `backend/` |
+| Config file | `backend/railway.trusted-statistics.json` (committed; **not yet connected** to a live Railway service) |
+| Start command | `python src/ingest_trusted_statistics.py` |
+| Schedule | Cron `30 7 * * *` (daily 07:30 UTC). ONS publishes monthly, but the script's own gate makes at most one release check per 24h and downloads a file **only** when a newer release exists — so a daily cron costs ~1 request/day, and a month with no release costs no download |
+| Restart policy | `NEVER` |
+| Env vars needed | `DATABASE_URL` (internal reference), **`STATISTICS_CONTACT`** (a real contact for the User-Agent — the script refuses to run without it; set your own, not a placeholder) |
+
+**Already done by hand (2026-09-25):** the tables were created and the first release (Sep 2026, VACS02 + VACS03) ingested into the
+production database by running the script locally — `statistic_series` 25, `statistic_observations` 7,575, verified against ONS's own
+figures. **Not yet a scheduled service:** a new production service needs the dashboard's "Connect Repo" flow and its config-file
+path set under Settings → Config-as-code (Gotcha 6), plus `STATISTICS_CONTACT` — deliberately left as a manual, deliberate step. Until
+it exists, the next ONS release (expected Oct 2026) will not be picked up automatically; run
+`python src/ingest_trusted_statistics.py` by hand, or connect the service.
+
+---
+
 ## Gotchas learned the hard way (2026-07-26 deploy)
 
 These cost real time to figure out and will bite again if forgotten:
