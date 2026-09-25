@@ -90,6 +90,12 @@ ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS industry TEXT;
 -- Employer panel metadata (added 2026-09-19 — EMPLOYER_PANEL.md, Business
 -- Logic — Employer metadata tagging). Same "static curated lookup, NULL
 -- until tagged, never guessed" discipline as `industry` above.
+-- 2026-09-25: employer_size_band now holds an ONS size band code ('1-9', '10-49', '50-249',
+-- '250-2499', '2500+'), 'ambiguous' or NULL, DERIVED from employer_headcount.py — the retired
+-- Startup / Small/Growth / Medium / Large labels are gone. The column is a snapshot; the source
+-- of truth is employer_headcount.COMPANY_HEADCOUNT. Existing rows were backfilled once by
+-- backfill_employer_size_band.py (changes/2026-09-25-employer-size-standard-bands.md) — an approved,
+-- narrow exception to the "no backfill" note above, since it touches derived metadata, not raw_response.
 ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS employer_size_band TEXT;
 ALTER TABLE raw_postings ADD COLUMN IF NOT EXISTS employer_region TEXT;
 

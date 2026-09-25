@@ -8,6 +8,8 @@ backend/specs/market-health/api.md — Business Logic — Industry tagging.
 
 from __future__ import annotations
 
+from employer_headcount import size_band_for  # noqa: F401  (re-exported: size now comes from headcount — see the RETIRED note below)
+
 COMPANY_INDUSTRY: dict[str, str] = {
     # Greenhouse
     "stripe": "Fintech",
@@ -140,55 +142,19 @@ COMPANY_REGION: dict[str, str] = {
     "thought-machine": "UK", "zego": "UK",
 }
 
-# employer_size_band — populated ONLY where there's a real, stated basis, not
-# a general impression. The 19 UK panel companies use the size bucket the
-# user's own plan (research/2026-09-18-uk-employer-panel-plan.md) already
-# assigned each one — a user-supplied classification, not this codebase's
-# guess. Bands: Large (5,000+ employees), Medium (500-5,000), Small/Growth
-# (50-500), Startup (<50) — matching the plan's own segmentation.
+# employer_size_band — RETIRED as a hand-assigned label 2026-09-25
+# (changes/2026-09-25-employer-size-standard-bands.md). This file used to hold
+# COMPANY_SIZE_BAND, one of four platform-invented labels per company — Startup (<50),
+# Small/Growth (50-500), Medium (500-5,000), Large (5,000+) — boundaries that matched no
+# published standard, so nothing external could be compared against them, and 5 of the 21
+# user-assigned UK buckets did not fit their real headcount. It is replaced by
+# employer_headcount.py: a CITED headcount range per company (the source of truth), with the
+# ONS size band (1-9, 10-49, 50-249, 250-2,499, 2,500+) derived from it. The old labels and
+# the research behind them are kept in research/2026-09-19-original-35-size-bands.md and
+# research/2026-09-18-uk-employer-panel-plan.md — "mark removed, don't erase".
 #
-# The original 35 companies — added 2026-09-19
-# (research/2026-09-19-original-35-size-bands.md) via real headcount
-# research (Revelio Labs / company-reported figures, not general
-# impression), same "confirm empirically" discipline as every ATS-token
-# verification in EMPLOYER_PANEL.md. Figures conflict across sources for
-# several companies (methodology differences — contractors counted or not,
-# LinkedIn-graph vs. payroll); the band chosen is the one the weight of
-# sources supports, not a single cherry-picked number — see that research
-# file for every company's cited range. `lever` (the company, now a
-# sub-brand of Employ Inc.) is left deliberately untagged — no real figure
-# was found, not guessed.
-COMPANY_SIZE_BAND: dict[str, str] = {
-    # Greenhouse — original 15 (real 2026 headcount research, see
-    # research/2026-09-19-original-35-size-bands.md for cited ranges)
-    "stripe": "Large", "airbnb": "Large", "pinterest": "Large",
-    "asana": "Medium", "reddit": "Medium", "robinhood": "Medium",
-    "coinbase": "Medium", "affirm": "Medium", "webflow": "Medium",
-    "figma": "Medium", "airtable": "Medium", "cloudflare": "Large",
-    "twilio": "Large", "discord": "Medium", "gitlab": "Medium",
-    # Greenhouse — UK employer panel (user-supplied classification)
-    "monzo": "Medium", "deliveroo": "Medium", "wise": "Medium",
-    "autotrader": "Medium", "cleo": "Small/Growth",
-    "rightmovecareers": "Medium", "ocadogroup": "Medium",
-    # Workable — UK employer panel (user-supplied classification)
-    "starling-bank": "Medium", "cuvva": "Small/Growth",
-    # Lever — original 5 (lever itself left untagged, see comment above)
-    "palantir": "Medium", "plaid": "Medium", "clari": "Medium",
-    "restream": "Small/Growth",
-    # Lever — UK employer panel
-    "zopa": "Medium",
-    # Ashby — original 15
-    "ramp": "Medium", "linear": "Small/Growth", "openai": "Large",
-    "notion": "Medium", "modal": "Small/Growth", "replit": "Small/Growth",
-    "mercury": "Medium", "deel": "Large", "loom": "Small/Growth",
-    "vercel": "Medium", "supabase": "Small/Growth", "perplexity": "Medium",
-    "elevenlabs": "Medium", "ashby": "Small/Growth", "watershed": "Medium",
-    # Ashby — UK employer panel
-    "trainline": "Medium", "quantexa": "Medium", "faculty": "Medium/Small",
-    "motorway": "Medium", "marshmallow": "Medium", "multiverse": "Medium",
-    "attio": "Small/Growth", "griffin": "Small/Growth", "sylvera": "Small/Growth",
-    "beamery": "Small/Growth", "incident": "Small/Growth",
-}
+# size_band_for() keeps its name and contract (None = not tagged, never guessed) so
+# raw_postings.insert_new_postings() is unchanged; it now returns an ONS band code.
 
 
 def region_for(company: str | None) -> str | None:
@@ -196,12 +162,3 @@ def region_for(company: str | None) -> str | None:
     if not company:
         return None
     return COMPANY_REGION.get(company)
-
-
-def size_band_for(company: str | None) -> str | None:
-    """None if company is unknown or not yet tagged — never guessed. See
-    COMPANY_SIZE_BAND's own comment for why most of the original 35
-    companies are deliberately untagged rather than estimated."""
-    if not company:
-        return None
-    return COMPANY_SIZE_BAND.get(company)

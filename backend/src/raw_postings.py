@@ -6,6 +6,11 @@ updated — the exact source response is the only chance to ever capture a
 given posting, since a company can edit or unpublish a posting at any time
 with no way to recover its prior state.
 See backend/specs/market-health/api.md — Data Models — RawPosting.
+
+One deliberate, narrow exception to "never updated": employer_size_band is a DERIVED metadata snapshot
+(an ONS size band from employer_headcount.py), not part of the captured response, and was re-derived
+once for existing rows by backfill_employer_size_band.py (changes/2026-09-25-employer-size-standard-
+bands.md) — alongside the existing UPDATE of ingestion_run_id below. raw_response is never touched.
 """
 
 from __future__ import annotations
