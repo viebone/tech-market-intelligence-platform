@@ -576,7 +576,7 @@ to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses
 `StoryBlock`/`Meter` — no new shared component needed. `tsc --noEmit` and `npm run build` both
 clean.
 
-### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED 2026-09-25**, uncommitted / undeployed)
+### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`)
 
 > **Implementation notes (2026-09-25).** Built: `UkVacanciesStoryMessage`, `SourceAttribution`, `SourceComparisonBars`, the `mode` prop on
 > `YearOnYearGroupedBars`, the router branch in `DataStoryMessage`. `tsc` + `vite build` clean; `SourceComparisonBars` is a lazy 1.9 kB chunk on
