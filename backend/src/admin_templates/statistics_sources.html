@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Statistics Sources — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Statistics Sources</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Every <em>registered</em> trusted-statistics publisher — including one that has never run or whose last file was
+  refused, since those are exactly the states this view exists to surface, not hide. Cadence is enforced in code
+  before any request is made; "due" here is the same comparison the ingestion script itself makes, so this view
+  cannot disagree with it. See <code>backend/TRUSTED_STATISTICS.md</code>.
+</div>
+
+{% if sources %}
+{% for s in sources %}
+<div class="card">
+  <h2>{{ s.publisher }} — {{ s.programme }} <span class="stat-label">({{ s.source }})</span></h2>
+  <div class="field-row"><div class="field-label">Publisher type</div><div class="field-value">{{ s.publisher_type }}</div></div>
+  <div class="field-row"><div class="field-label">Datasets</div><div class="field-value">{{ s.datasets | join(', ') }}</div></div>
+  <div class="field-row"><div class="field-label">Trust bar</div><div class="field-value">Signed off {{ s.trust_bar_reviewed_on }} — {{ s.trust_bar_reviewed_by }}</div></div>
+  <div class="field-row"><div class="field-label">Licence</div><div class="field-value">{{ s.licence }}
+    {% if s.licence_confirmed %}<span class="badge success">Confirmed</span>{% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+    — {{ 'commercial use permitted' if s.permits_commercial_use else 'commercial use not permitted' }}
+    — <a href="{{ s.licence_url }}" target="_blank" rel="noopener">licence text</a></div></div>
+  <div class="field-row"><div class="field-label">Attribution to show</div><div class="field-value">{{ s.attribution_text }}</div></div>
+  <div class="field-row"><div class="field-label">Checked at most every</div><div class="field-value">{{ '%g' % s.min_check_interval_hours }} hours (enforced before any request)</div></div>
+  <div class="field-row"><div class="field-label">Last run</div><div class="field-value">
+    {% if s.last_run_at %}{{ s.last_run_at }} — {{ s.last_run_outcome }}{% else %}<span class="stat-label">Never run</span>{% endif %}
+    {% if s.is_due %}<span class="badge neutral">Due for next check</span>{% else %}<span class="badge success">Up to date</span>{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Latest release held</div><div class="field-value">{{ s.latest_release_date or '—' }}{% if s.latest_period_label %} — newest period {{ s.latest_period_label }}{% endif %}</div></div>
+  <div class="field-row"><div class="field-label">Stored</div><div class="field-value">{{ s.series_count }} series, {{ s.observation_count }} figures (all versions)</div></div>
+  <div class="field-row"><div class="field-label">Last refused release</div><div class="field-value">
+    {% if s.last_rejected_release %}<span class="badge neutral">Refused</span> {{ s.last_rejected_release.release_date }} — {{ s.last_rejected_release.validation_summary }}
+    {% else %}None{% endif %}
+  </div></div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card"><div class="empty-state">No trusted statistics sources registered yet.</div></div>
+{% endif %}
+{% endblock %}

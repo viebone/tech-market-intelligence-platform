@@ -6,6 +6,7 @@ import type { SkillDemandRow } from "./SkillDemandChart";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
+import { UkVacanciesStoryMessage } from "./UkVacanciesStoryMessage";
 import { StoryFeedbackReaction } from "../../feedback/StoryFeedbackReaction";
 
 // Lazy-loaded (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md) — these two
@@ -60,8 +61,8 @@ export interface DataStoryResult {
   limitations: string[];
   /** Added 2026-09-18 (Story 3, market-benchmark) — a source's licence
    * attribution text, when the story's data requires visible credit on the
-   * page itself, not only in the Reasoning Panel. Absent for every other
-   * story. */
+   * page itself, not only in the Reasoning Panel. Also sent by Story 5
+   * (uk-vacancies-official, 2026-09-25). Absent for every other story. */
   attribution_text?: string;
 }
 
@@ -143,6 +144,9 @@ function renderStory(story: DataStoryResult) {
   }
   if (story.story_id === "beyond-tracked-roles") {
     return <JobFunctionStoryMessage story={story} />;
+  }
+  if (story.story_id === "uk-vacancies-official") {
+    return <UkVacanciesStoryMessage story={story} />;
   }
 
   const roles = section(story, "roles-offered");

@@ -59,6 +59,7 @@ from market_query import (
     query_employment_events_data,
     query_market_data,
     query_requirements_data,
+    query_trusted_statistics_data,
 )
 from mock_data import LAYOFF_SIGNALS
 from models import ReasoningStep, ReasoningTrace, SourceAccess
@@ -156,7 +157,7 @@ def _render_transcript(messages: list[ChatMessage]) -> str:
 # ---------------------------------------------------------------------------
 
 _DATA_STAGE_SYSTEM_TEMPLATE = """You are a market intelligence assistant for tech professionals. \
-Today's date is {today}. You have four tools to examine real platform data — call whichever \
+Today's date is {today}. You have five tools to examine real platform data — call whichever \
 fit (or several) as needed to answer the user's question with real numbers:
 - query_market_data: demand/volume questions — counts, trends, comparisons across role, \
 specialization, level, track, or country.
@@ -181,6 +182,13 @@ events entries carry a confidence of "confirmed" (a statutory filing/official re
 "reported" (compiled from public announcements) — never state a "reported" event with a \
 "confirmed" event's certainty. This data is fully independent of the platform's job-posting \
 data — never join, compare, or cross-reference it against query_market_data and the others.
+- query_trusted_statistics_data: OFFICIAL UK statistics from a trusted publisher (today the Office \
+for National Statistics' Vacancy Survey) — how many job vacancies the whole UK economy has, by \
+industry and by size of business, and how that has changed. These are economy-wide official \
+ESTIMATES from a business survey, not this platform's own postings: whenever you use a figure from \
+it, name the publisher and the period it covers and say it is an official estimate for the whole UK \
+economy. Values are in the unit the series states (ONS levels are thousands of vacancies). Never \
+present these figures as a check on, or correction of, the platform's own postings numbers.
 
 Below is the recent conversation. Answer the LAST message in it, using the earlier messages \
 only to understand what a short reply like "yes please" or "what about X" is referring to.
@@ -225,6 +233,7 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
                 query_compensation_data,
                 query_requirements_data,
                 query_employment_events_data,
+                query_trusted_statistics_data,
             ],
         )
 
@@ -308,6 +317,13 @@ def _build_synthesis_system(stage1_text: str, tool_calls: list) -> str:
             "stop there, don't reason further. Never join, compare, or cross-reference this "
             "data against query_market_data/query_compensation_data/query_requirements_data — "
             "employment events are a fully independent dataset.",
+            "",
+            "If query_trusted_statistics_data was called: name the publisher (each statistic's "
+            "source.publisher) and the period (period_label) whenever you state one of its "
+            "figures, describe it as an official estimate for the whole UK economy — not this "
+            "platform's own postings — and never present it as a check on or correction of the "
+            "platform's own numbers. Say when a figure is provisional (value_status). If any "
+            "source has licence_confirmed false, say the usage terms are not yet confirmed.",
         ]
     return "\n".join(sections)
 
@@ -356,6 +372,36 @@ def _build_reasoning_trace(
                     f"Queried employment-event registries via {call.name}({call.args}). Found "
                     f"{result.get('total_matching', 0)} matching event(s) across "
                     f"{len(result.get('sources_checked', []))} registry/registries checked."
+                ),
+            ))
+            step_seq += 1
+            continue
+
+        if call.name == "query_trusted_statistics_data":
+            # Added 2026-09-25 (backend/specs/trusted-statistics/api.md): official statistics from a trusted
+            # publisher are a separate source from the job-board database — attributed BY NAME, with the licence,
+            # and an unconfirmed licence is flagged here every time it is used (data-legibility, Provenance).
+            seen_sources: dict[tuple, dict] = {}
+            for st in result.get("statistics", []):
+                src = st["series"]["source"]
+                seen_sources[(src["publisher"], src["programme"], src["dataset_code"])] = src
+            for (publisher, programme, dataset), src in seen_sources.items():
+                sources.append(SourceAccess(
+                    sequence=seq,
+                    source_type="data_source",
+                    name=f"{publisher} — {programme} ({dataset}), {src['licence']}",
+                    purpose=f"{call.name}({call.args})",
+                ))
+                seq += 1
+            unconfirmed = [k[0] for k, src in seen_sources.items() if not src["licence_confirmed"]]
+            steps.append(ReasoningStep(
+                sequence=step_seq,
+                content=(
+                    f"Queried official statistics via {call.name}({call.args}). Found {result.get('total_matching', 0)} "
+                    f"series (latest period: {result.get('latest_period_label')}) from "
+                    f"{', '.join(sorted({k[0] for k in seen_sources})) or 'no collected source yet'}. These are official "
+                    "estimates for the whole UK economy, not this platform's own postings."
+                    + (f" WARNING: the usage terms for {', '.join(unconfirmed)} are not yet confirmed." if unconfirmed else "")
                 ),
             ))
             step_seq += 1

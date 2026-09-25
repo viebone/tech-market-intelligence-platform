@@ -612,6 +612,98 @@ CREATE TABLE IF NOT EXISTS story_reactions (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_story_reactions_story_id ON story_reactions (story_id);
+
+-- Trusted external statistics (added 2026-09-25 — changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md,
+-- backend/specs/trusted-statistics/api.md, backend/TRUSTED_STATISTICS.md). A fourth data shape — published
+-- statistical series from trusted institutions — with NO relationship to raw_postings, employment_events
+-- or market_observations. One store for every publisher; every row names its source (publisher, dataset,
+-- licence, attribution travel on the series and the observation). Additive: brand-new tables and a view.
+CREATE TABLE IF NOT EXISTS statistic_series (
+    id                   TEXT PRIMARY KEY,            -- f"{source}:{series_code}"
+    source               TEXT NOT NULL,
+    publisher            TEXT NOT NULL,
+    programme            TEXT NOT NULL,
+    dataset_code         TEXT NOT NULL,               -- the dataset this series was FIRST seen in
+    series_code          TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    measure              TEXT NOT NULL,
+    unit                 TEXT NOT NULL,
+    unit_scale           INTEGER NOT NULL,
+    seasonal_adjustment  TEXT NOT NULL,
+    period_type          TEXT NOT NULL,
+    frequency            TEXT NOT NULL,
+    dimensions           JSONB NOT NULL,
+    dimension_type       TEXT NOT NULL,
+    definition_note      TEXT NOT NULL DEFAULT '',
+    coverage_note        TEXT NOT NULL DEFAULT '',
+    designation          TEXT NOT NULL,
+    methodology_url      TEXT NOT NULL,
+    source_page_url      TEXT NOT NULL,
+    licence              TEXT NOT NULL,
+    licence_confirmed    BOOLEAN NOT NULL,
+    attribution_text     TEXT NOT NULL,
+    first_seen_at        TIMESTAMPTZ NOT NULL,
+    updated_at           TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_statistic_series_source ON statistic_series (source);
+CREATE INDEX IF NOT EXISTS idx_statistic_series_dimension_type ON statistic_series (dimension_type);
+
+CREATE TABLE IF NOT EXISTS statistic_releases (
+    id                     TEXT PRIMARY KEY,          -- f"{source}:{dataset_code}:{release_date}"
+    source                 TEXT NOT NULL,
+    dataset_code           TEXT NOT NULL,
+    release_date           DATE NOT NULL,             -- the publisher's own release date
+    release_uri            TEXT NOT NULL,
+    file_url               TEXT NOT NULL,
+    file_name              TEXT NOT NULL,
+    content_hash           TEXT,                      -- new-only guard: an unchanged file is never re-parsed
+    fetched_at             TIMESTAMPTZ NOT NULL,
+    rows_parsed            INTEGER NOT NULL DEFAULT 0,
+    observations_new       INTEGER NOT NULL DEFAULT 0,
+    observations_revised   INTEGER NOT NULL DEFAULT 0,
+    observations_unchanged INTEGER NOT NULL DEFAULT 0,
+    status                 TEXT NOT NULL,             -- ingested | rejected_validation | failed
+    validation_summary     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_statistic_releases_source_dataset ON statistic_releases (source, dataset_code, release_date);
+
+-- One row per (series, period, release that CHANGED it) — revisions are vintages, never overwrites.
+CREATE TABLE IF NOT EXISTS statistic_observations (
+    id                 TEXT PRIMARY KEY,              -- f"{series_id}:{period_start}:{release_date}"
+    series_id          TEXT NOT NULL REFERENCES statistic_series (id),
+    release_id         TEXT NOT NULL REFERENCES statistic_releases (id),
+    period_start       DATE NOT NULL,
+    period_end         DATE NOT NULL,
+    period_label       TEXT NOT NULL,                 -- the publisher's own words, verbatim
+    value              NUMERIC NOT NULL,              -- as published (thousands for ONS levels)
+    value_status       TEXT NOT NULL,                 -- provisional | final | revised | unknown
+    raw_cell           TEXT NOT NULL,
+    released_on        DATE NOT NULL,
+    licence            TEXT NOT NULL,
+    licence_confirmed  BOOLEAN NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_statistic_obs_series_period ON statistic_observations (series_id, period_start);
+
+-- Audit + enforced cadence (mirrors scrape_ingestion_runs): the ingestion script checks the latest real run
+-- here BEFORE making any request, so "at most once a day" holds however often the script is invoked.
+CREATE TABLE IF NOT EXISTS statistics_ingestion_runs (
+    id          SERIAL PRIMARY KEY,
+    source      TEXT NOT NULL,
+    ran_at      TIMESTAMPTZ NOT NULL,
+    outcome     TEXT NOT NULL,
+    release_id  TEXT,
+    message     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_statistics_runs_source ON statistics_ingestion_runs (source, ran_at);
+
+-- The newest vintage per (series, period). EVERY reader uses this view; only the admin detail page reads
+-- full history from statistic_observations.
+CREATE OR REPLACE VIEW statistic_observations_latest AS
+    SELECT DISTINCT ON (series_id, period_start) *
+    FROM statistic_observations
+    ORDER BY series_id, period_start, released_on DESC, created_at DESC;
 """
 
 

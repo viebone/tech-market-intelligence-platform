@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from sources import ALL_SOURCE_ADAPTERS  # noqa: E402
 from employment_events import ALL_EMPLOYMENT_EVENT_ADAPTERS  # noqa: E402
 from scraping import ALL_SCRAPED_SOURCE_ADAPTERS  # noqa: E402
+from trusted_stats import ALL_STATISTICS_ADAPTERS  # noqa: E402
 from source_licences import SOURCE_LICENCES, LicenceNotRegisteredError, get_licence  # noqa: E402
 
 
@@ -34,6 +35,7 @@ def _all_registered_adapter_names() -> set[str]:
     names.update(adapter.name for adapter in ALL_SOURCE_ADAPTERS)
     names.update(adapter.name for adapter in ALL_EMPLOYMENT_EVENT_ADAPTERS)
     names.update(adapter_cls.name for adapter_cls in ALL_SCRAPED_SOURCE_ADAPTERS)  # classes, not instances
+    names.update(adapter.source for adapter in ALL_STATISTICS_ADAPTERS)  # trusted external statistics (added 2026-09-25)
     return names
 
 

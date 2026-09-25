@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Trusted Statistics — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Trusted Statistics</h1>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Official statistics from trusted publishers (today: the Office for National Statistics' Vacancy Survey) — a
+  separate category from job postings, employment events and market benchmarks, never joined to any of them.
+  Every figure is shown with its unit and its publisher. By default only the latest value for each period is
+  shown; choose "All versions" to include values a later release changed. See
+  <code>backend/specs/trusted-statistics/api.md</code>.
+</div>
+
+<form class="filter-form" method="get" action="/admin/statistics">
+  <div>
+    <label for="source">Source</label>
+    <select id="source" name="source">
+      <option value="">All</option>
+      {% for v in filter_options.sources %}
+      <option value="{{ v }}" {{ 'selected' if filters.source == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="dataset_code">Dataset</label>
+    <select id="dataset_code" name="dataset_code">
+      <option value="">All</option>
+      {% for v in filter_options.datasets %}
+      <option value="{{ v }}" {{ 'selected' if filters.dataset_code == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="dimension_type">Dimension</label>
+    <select id="dimension_type" name="dimension_type">
+      <option value="">All</option>
+      {% for v in filter_options.dimension_types %}
+      <option value="{{ v }}" {{ 'selected' if filters.dimension_type == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="series_code">Series code</label>
+    <input id="series_code" name="series_code" value="{{ filters.series_code or '' }}" placeholder="e.g. AP2Y">
+  </div>
+  <div>
+    <label for="vintages">Versions</label>
+    <select id="vintages" name="vintages">
+      <option value="latest" {{ 'selected' if vintages == 'latest' }}>Latest only</option>
+      <option value="all" {{ 'selected' if vintages == 'all' }}>All versions</option>
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+  {% if active_filter_chips %}
+  <a class="btn-ghost" href="/admin/statistics">Clear all</a>
+  {% endif %}
+</form>
+
+{% if active_filter_chips %}
+<div class="filter-chips">
+  {% for chip in active_filter_chips %}
+  <a class="filter-chip" href="{{ chip.remove_href }}">{{ chip.label }} <span class="remove">×</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="stat-label" style="margin-bottom: 8px;">{{ total }} matching figure{{ '' if total == 1 else 's' }}</div>
+
+{% if rows %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Publisher</th>
+      <th>Dataset</th>
+      <th><a href="{{ sort_links.series_code }}">Series{% if sort == 'series_code' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.period_end }}">Period{% if sort == 'period_end' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th><a href="{{ sort_links.value }}">Value{% if sort == 'value' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Status</th>
+      <th><a href="{{ sort_links.released_on }}">Released{% if sort == 'released_on' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
+      <th>Licence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    {% set o = r.observation %}{% set s = r.series %}
+    <tr>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ s.publisher }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ s.dataset_code }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ s.series_code }} — {{ s.title }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ o.period_label }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ '%g' % o.value }} {{ s.unit }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}"><span class="badge {{ 'neutral' if o.value_status != 'final' else 'success' }}">{{ o.value_status }}</span></a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">{{ o.released_on }}</a></td>
+      <td><a class="row-link" href="/admin/statistics/{{ o.id }}">
+        {% if o.licence_confirmed %}<span class="badge success">Confirmed</span>
+        {% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+      </a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="/admin/statistics?{{ page_base_query }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="/admin/statistics?{{ page_base_query }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No statistics match these filters — or none have been collected yet (see Statistics Sources).</div></div>
+{% endif %}
+{% endblock %}

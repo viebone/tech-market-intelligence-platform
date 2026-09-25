@@ -164,6 +164,29 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         permits_commercial_use=True,
         data_summary="Per-posting: title, company, full raw job-object response kept verbatim (includeCompensation=true, so structured pay data is often present); parsed country/city/salary where present.",
     ),
+    # ons_vacancy_survey: CONFIRMED 2026-09-24 — read directly off ons.gov.uk's own dataset page for VACS03
+    # ("All content is available under the Open Government Licence v3.0, except where otherwise stated"),
+    # ONS's terms and conditions page, and the licence text at nationalarchives.gov.uk. The OGL permits
+    # commercial and non-commercial use with acknowledgement of the source; ONS states no attribution wording
+    # beyond the licence notice, so the OGL's own default wording plus the named source is used. The OGL does
+    # NOT cover departmental logos — never use the ONS logo. First source of the "trusted external
+    # statistics" category (trusted_stats/, backend/specs/trusted-statistics/api.md). Evidence with exact
+    # quotes: research/2026-09-24-ons-licence-and-access-confirmation.md.
+    "ons_vacancy_survey": SourceLicence(
+        source="ons_vacancy_survey",
+        licence="Open Government Licence v3.0",
+        attribution_text=(
+            "Source: Office for National Statistics — Vacancy Survey. "
+            "Contains public sector information licensed under the Open Government Licence v3.0."
+        ),
+        licence_url="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary=(
+            "Aggregate UK vacancy estimates by industry (SIC 2007) and size of business — levels in thousands, "
+            "3-month rolling averages. No individual postings, no personal data."
+        ),
+    ),
     # workable: added 2026-09-19, per direct research against Workable's own
     # help docs (help.workable.com's "Using the Workable API to create a
     # careers page" article) — same "no formal licence, no restriction

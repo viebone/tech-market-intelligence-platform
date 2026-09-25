@@ -15,7 +15,10 @@ scope.
 
 from __future__ import annotations
 
+from employer_headcount import ONS_SIZE_BANDS
 from employment_events.base import EVENT_TYPES
+from trusted_stats.registry import TRUSTED_PUBLISHERS
+from trusted_stats.sic import SIC_2007_SECTIONS, VACANCY_SURVEY_SECTIONS
 from market_query import (
     _ALLOWED_EDUCATION_REQUIRED,
     _ALLOWED_LEVEL,
@@ -79,6 +82,17 @@ def get_taxonomy() -> dict:
                     "'UX Designer', 'Backend Engineer'); an unrecognised value simply matches "
                     "no postings rather than erroring."
                 )
+            },
+            # Added 2026-09-25 — the valid parameter values for get_trusted_statistics, so a calling AI never has to guess.
+            "statistic_dimensions": {
+                "dimension": _pairs({"total", "industry", "size_band"},
+                                    {"total": "All vacancies", "industry": "By industry (SIC 2007)", "size_band": "By size of business"}),
+                "industry_code": [{"value": c, "label": SIC_2007_SECTIONS[c]} for c in VACANCY_SURVEY_SECTIONS],
+                "size_band": [{"value": c, "label": l} for c, l, _lo, _hi in ONS_SIZE_BANDS],
+                "publisher": [{"value": k, "label": f"{p.publisher} — {p.programme}"} for k, p in sorted(TRUSTED_PUBLISHERS.items())],
+                "period": _pairs({"latest", "year_ago", "previous_quarter"},
+                                 {"latest": "Newest period only", "year_ago": "Newest plus the same period a year earlier",
+                                  "previous_quarter": "Newest plus the previous three months"}),
             },
             "skill_group": {
                 "note": (

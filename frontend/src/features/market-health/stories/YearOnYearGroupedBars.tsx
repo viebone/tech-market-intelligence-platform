@@ -58,7 +58,7 @@ interface Row {
   delta: number | null;
 }
 
-export function YearOnYearGroupedBars({ content }: { content: YearOnYearContent }) {
+function ShareGroupedBars({ content }: { content: YearOnYearContent }) {
   const { comparison_available, rows, current_window, prior_window } = content;
 
   // "No prior window yet" — same honesty state as before: the current window has real
@@ -148,4 +148,92 @@ export function YearOnYearGroupedBars({ content }: { content: YearOnYearContent 
       </div>
     </div>
   );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `mode="level"` — added 2026-09-25 (changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md;
+// frontend/specs/market-health/architecture.md — Story 5). The same year-on-year idea for an OFFICIAL
+// STATISTIC: two periods of the same length a year apart *as the publisher defines them* (ONS: two
+// overlapping three-month averages, e.g. Jun–Aug 2026 vs Jun–Aug 2025), compared as LEVELS in
+// thousands — not the platform's shares and "pp" deltas. Default mode stays "share", so every
+// existing caller (Story 1's three shift blocks) is unchanged.
+//
+// Rendered with design/visual-design.md's ghost/solid anatomy (prior = muted ghost bar, now = solid
+// bar over the same track) plus a ROW-ALIGNED delta with a glyph AND a signed number — "▲ +6
+// thousand" / "▼ −12 thousand" / "– no change" — so direction never rests on colour alone. That
+// row-aligned delta is not a Nivo primitive; the ghost/solid form is the design spec's own, and
+// keeps this block out of the Nivo bundle. Deviation from the spec's "Nivo in level mode" wording
+// is deliberate and recorded in the change request.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface LevelYoYRow {
+  label: string;
+  current: number;
+  prior: number;
+  delta: number;
+}
+
+export interface LevelYoYContent {
+  currentPeriodLabel: string;
+  priorPeriodLabel: string | null;
+  rows: LevelYoYRow[];
+}
+
+function formatDelta(delta: number): string {
+  const magnitude = Math.abs(delta).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (delta > 0) return `▲ +${magnitude} thousand`;
+  if (delta < 0) return `▼ −${magnitude} thousand`;
+  return "– no change";
+}
+
+function LevelGroupedBars({ content }: { content: LevelYoYContent }) {
+  const { rows, currentPeriodLabel, priorPeriodLabel } = content;
+  if (rows.length === 0) return null;
+  const max = Math.max(...rows.flatMap((r) => [r.current, r.prior]), 1);
+  return (
+    <div>
+      <p className="mb-1 text-xs text-gray-500">
+        {priorPeriodLabel
+          ? `${currentPeriodLabel} compared with ${priorPeriodLabel} — three-month averages, in thousands of vacancies`
+          : `${currentPeriodLabel} — three-month average, in thousands of vacancies`}
+      </p>
+      {priorPeriodLabel ? (
+        <p className="mb-2 text-xs text-gray-500">
+          Lighter bar: {priorPeriodLabel}. Solid bar: {currentPeriodLabel}.
+        </p>
+      ) : null}
+      <ol className="flex flex-col gap-2">
+        {rows.map((row) => (
+          <li key={row.label} className="flex items-center gap-3">
+            <span className="w-44 shrink-0 truncate text-sm text-gray-300" title={row.label}>
+              {row.label}
+            </span>
+            <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
+              <span
+                className="absolute inset-y-0 left-0 rounded-full bg-gray-700"
+                style={{ width: `${Math.max((row.prior / max) * 100, 2)}%` }}
+              />
+              <span
+                className="absolute inset-y-0 left-0 rounded-full bg-indigo-500"
+                style={{ width: `${Math.max((row.current / max) * 100, 2)}%`, opacity: 0.7 }}
+              />
+            </span>
+            <span className="w-32 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-gray-400">
+              {formatDelta(row.delta)}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+type YearOnYearGroupedBarsProps =
+  | { mode?: "share"; content: YearOnYearContent }
+  | { mode: "level"; content: LevelYoYContent };
+
+export function YearOnYearGroupedBars(props: YearOnYearGroupedBarsProps) {
+  if (props.mode === "level") return <LevelGroupedBars content={props.content} />;
+  return <ShareGroupedBars content={props.content} />;
 }

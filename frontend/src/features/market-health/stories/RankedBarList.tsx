@@ -8,6 +8,10 @@ export interface RankedBarRow {
   value: number;
   /** Optional second, ordered encoding — an emphasised row uses the full-opacity hue. */
   emphasis?: boolean;
+  /** Pre-formatted text shown in place of `formatValue(value)` — e.g. "13.0% · 91k" when a row
+   * needs its share AND its count side by side (Story 5's size-of-business block, added
+   * 2026-09-25). The bar length still comes from `value`. */
+  valueLabel?: string;
 }
 
 interface RankedBarListProps {
@@ -43,8 +47,8 @@ export function RankedBarList({ rows, limit = 7, formatValue }: RankedBarListPro
               }}
             />
           </span>
-          <span className="w-12 shrink-0 text-right text-xs tabular-nums text-gray-400">
-            {fmt(row.value)}
+          <span className="min-w-[3rem] shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-gray-400">
+            {row.valueLabel ?? fmt(row.value)}
           </span>
         </li>
       ))}

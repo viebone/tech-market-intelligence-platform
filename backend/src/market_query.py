@@ -844,3 +844,137 @@ def query_job_function_data() -> dict:
         "not_yet_reprocessed": other_count - other_with_job_function,
         "total_matching": other_count,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trusted external statistics (added 2026-09-25 — changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md,
+# backend/specs/trusted-statistics/api.md). The single read path shared by Story 5, the chat tool and
+# the MCP tool `get_trusted_statistics` — nothing queries the statistic_* tables directly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_STATISTIC_DIMENSIONS = ("total", "industry", "size_band")
+_STATISTIC_PERIODS = ("latest", "year_ago", "previous_quarter")
+_REQUIRED_SOURCE_FIELDS = ("publisher", "programme", "dataset_code", "series_code", "source_url", "licence", "attribution_text")
+
+
+def _add_months(d, months: int):
+    """First-of-month arithmetic for statistic period starts (periods start on the 1st)."""
+    from datetime import date
+    total = d.year * 12 + (d.month - 1) + months
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def named_source(series: dict) -> dict:
+    """
+    The non-optional `source` object every returned statistic carries (trusted-statistics spec, rule 4:
+    a value never travels without its source). Raises if any required field is empty — a statistic that
+    cannot name its publisher, dataset, URL, licence and attribution must never be returned at all.
+    """
+    src = {
+        "publisher": series["publisher"], "programme": series["programme"], "dataset_code": series["dataset_code"],
+        "series_code": series["series_code"], "source_url": series["source_page_url"],
+        "methodology_url": series["methodology_url"], "designation": series["designation"],
+        "licence": series["licence"], "licence_confirmed": bool(series["licence_confirmed"]),
+        "attribution_text": series["attribution_text"],
+    }
+    empty = [f for f in _REQUIRED_SOURCE_FIELDS if not str(src.get(f) or "").strip()]
+    if empty:
+        raise ValueError(f"refusing to return a statistic with no named source (empty: {empty})")
+    return src
+
+
+def query_trusted_statistics_data(
+    dimension: str = "total",
+    publisher: str | None = None,
+    industry_code: str | None = None,
+    size_band: str | None = None,
+    period: str = "latest",
+    date_from=None,
+    date_to=None,
+) -> dict:
+    """
+    Official statistics from trusted institutions (today: the ONS Vacancy Survey — estimated UK job
+    vacancies by industry and by size of business). These are ECONOMY-WIDE OFFICIAL ESTIMATES, not this
+    platform's own postings: never present them as a check on, or correction of, the platform's own
+    numbers unless the user asks for a comparison — and then say the two measure different populations.
+    ALWAYS name the publisher when repeating a figure.
+
+    Args:
+        dimension: "total" (all vacancies), "industry" (by SIC 2007 industry) or "size_band" (by business size).
+        publisher: optional registered source key (default: every registered publisher).
+        industry_code: optional SIC 2007 section letter (e.g. "J") — with dimension "industry".
+        size_band: optional ONS size band code ("1-9", "10-49", "50-249", "250-2499", "2500+").
+        period: "latest" (newest period only); "year_ago" or "previous_quarter" (the newest period PLUS the
+            comparison period, so a caller can see the change). Ignored when date_from/date_to is given.
+        date_from / date_to: optional date range over period start/end.
+
+    Returns:
+        {
+          "statistics": [{"series": {title, dimension, dimension_type, unit, unit_scale, seasonal_adjustment,
+                                     period_type, coverage_note, definition_note, source: {publisher, programme,
+                                     dataset_code, series_code, source_url, methodology_url, designation, licence,
+                                     licence_confirmed, attribution_text}},
+                          "observations": [{period_label, period_start, period_end, value, value_status, released_on}]}],
+          "sources_checked": [...], "sources_unavailable": [...],   # unavailable = a human marked the source rejected for use
+          "latest_period_label": str | None, "total_matching": number of series returned, "as_of": ISO time,
+          "usable": False only if EVERY candidate source is unavailable
+        }
+        `value` is as published, in the series' `unit` (ONS levels: thousands of vacancies — see unit_scale).
+        An empty `statistics` with a source in `sources_checked` means "checked, nothing collected yet" —
+        never "does not exist". Nothing is estimated, interpolated or filled.
+    """
+    from datetime import datetime, timezone
+
+    import statistics_storage
+    from source_licences import is_source_usable
+    from trusted_stats.registry import TRUSTED_PUBLISHERS
+
+    if dimension not in _STATISTIC_DIMENSIONS:
+        raise ValueError(f"dimension must be one of {_STATISTIC_DIMENSIONS}, got {dimension!r}")
+    if period not in _STATISTIC_PERIODS:
+        raise ValueError(f"period must be one of {_STATISTIC_PERIODS}, got {period!r}")
+    if publisher is not None and publisher not in TRUSTED_PUBLISHERS:
+        raise ValueError(f"publisher must be one of {sorted(TRUSTED_PUBLISHERS)}, got {publisher!r}")
+
+    candidates = [publisher] if publisher else sorted(TRUSTED_PUBLISHERS)
+    usable = [s for s in candidates if is_source_usable(s)]
+    unavailable = [s for s in candidates if s not in usable]
+    base = {"sources_checked": candidates, "sources_unavailable": unavailable,
+            "as_of": datetime.now(timezone.utc).isoformat()}
+    if not usable:
+        return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": False}
+
+    if date_from or date_to:
+        rows = statistics_storage.fetch_observations(sources=usable, dimension_type=dimension, industry_code=industry_code,
+                                                     size_band=size_band, date_from=date_from, date_to=date_to)
+    else:
+        latest = statistics_storage.latest_period_start(sources=usable, dimension_type=dimension)
+        if latest is None:
+            return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": True}
+        periods = [latest]
+        if period == "year_ago":
+            periods.append(_add_months(latest, -12))
+        elif period == "previous_quarter":
+            periods.append(_add_months(latest, -3))
+        rows = statistics_storage.fetch_observations(sources=usable, dimension_type=dimension, industry_code=industry_code,
+                                                     size_band=size_band, periods=periods)
+
+    by_series: dict[str, dict] = {}
+    for r in rows:
+        s, o = r["series"], r["observation"]
+        entry = by_series.setdefault(s["id"], {
+            "series": {
+                "title": s["title"], "dimension": s["dimensions"], "dimension_type": s["dimension_type"], "unit": s["unit"],
+                "unit_scale": s["unit_scale"], "seasonal_adjustment": s["seasonal_adjustment"], "period_type": s["period_type"],
+                "coverage_note": s["coverage_note"], "definition_note": s["definition_note"], "source": named_source(s),
+            },
+            "observations": [],
+        })
+        entry["observations"].append({
+            "period_label": o["period_label"], "period_start": o["period_start"].isoformat(), "period_end": o["period_end"].isoformat(),
+            "value": o["value"], "value_status": o["value_status"], "released_on": o["released_on"].isoformat(),
+        })
+    statistics = list(by_series.values())
+    newest = max((o for e in statistics for o in e["observations"]), key=lambda o: o["period_start"], default=None)
+    return {**base, "statistics": statistics, "latest_period_label": newest["period_label"] if newest else None,
+            "total_matching": len(statistics), "usable": True}

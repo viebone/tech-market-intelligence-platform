@@ -27,6 +27,7 @@ from market_query import (
     query_market_benchmark_data,
     query_market_data,
     query_requirements_data,
+    query_trusted_statistics_data,
 )
 
 # Which scope each tool requires. get_taxonomy needs none (see taxonomy.py)
@@ -47,6 +48,11 @@ TOOL_SCOPES: dict[str, str] = {
     # get_market_benchmark's own resolution. Reuses jobs.read — same
     # conceptual grant as every other job-postings-derived tool.
     "get_job_function_breakdown": "jobs.read",
+    # Added 2026-09-25 (changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md; decided EXPOSED in
+    # backend/specs/trusted-statistics/api.md's MCP Access Review, not deferred — a real consumer surface,
+    # Story 5, exists). Reuses jobs.read: the same conceptual grant ("job market data") from a different source.
+    # Not Premium-only: the Open Government Licence v3.0 permits commercial use.
+    "get_trusted_statistics": "jobs.read",
 }
 
 # Tools that additionally require the Premium plan, regardless of scope.
@@ -290,3 +296,68 @@ def get_job_function_breakdown() -> dict:
         "Product Manager/Engineer",
         total_matching=result["total_matching"],
     )
+
+
+def get_trusted_statistics(
+    dimension: str = "total",
+    publisher: str | None = None,
+    industry_code: str | None = None,
+    size_band: str | None = None,
+    period: str = "latest",
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """
+    OFFICIAL statistics from a trusted publisher — today the Office for National Statistics' Vacancy
+    Survey: estimated job vacancies across the WHOLE UK economy, by industry (SIC 2007) and by size of
+    business, with change over time. These are economy-wide official estimates from a business survey — NOT
+    this platform's own job postings. Whenever you repeat a figure, NAME THE PUBLISHER and the period, and
+    describe it as an official estimate for the whole UK economy. Values are in the unit each series states
+    (ONS levels: thousands of vacancies). The latest figure is often provisional (value_status).
+
+    Never present these figures as a check on, or a correction of, this platform's own postings numbers
+    (get_job_demand and the others) unless the user asks for a comparison — and then say the two measure
+    different populations (a national survey of vacancies vs. postings at a chosen set of employers).
+
+    Use get_taxonomy's `statistic_dimensions` for the valid industry_code / size_band / publisher values.
+    dimension: "total" | "industry" | "size_band". period: "latest" | "year_ago" | "previous_quarter" (the
+    latest period plus the comparison period). An empty result means nothing has been collected yet — not
+    that the statistic does not exist.
+    """
+    from datetime import date
+
+    try:
+        result = query_trusted_statistics_data(
+            dimension=dimension, publisher=publisher, industry_code=industry_code, size_band=size_band, period=period,
+            date_from=date.fromisoformat(date_from) if date_from else None,
+            date_to=date.fromisoformat(date_to) if date_to else None,
+        )
+    except ValueError as exc:
+        return no_data(f"That request wasn't valid: {exc}")
+    if not result["usable"]:
+        return no_data("This data source isn't currently available.")
+    publishers = sorted({s["series"]["source"]["publisher"] + " — " + s["series"]["source"]["programme"]
+                         + " (" + s["series"]["source"]["licence"] + ")" for s in result["statistics"]})
+    coverage = next((s["series"]["coverage_note"] for s in result["statistics"]), None)
+    source_text = (
+        "; ".join(publishers) + ". An official estimate for the whole UK economy — not this platform's own job postings."
+        if publishers else
+        "Trusted external statistics (" + ", ".join(result["sources_checked"]) + ") — checked, nothing collected yet."
+    )
+    envelope = build_envelope(
+        {"statistics": result["statistics"], "coverage_note": coverage},
+        unit=("thousand vacancies (three-month rolling average); each series states its own unit and unit_scale"),
+        scope=_scope_description({"dimension": dimension, "publisher": publisher, "industry_code": industry_code,
+                                  "size_band": size_band, "period": period}),
+        time_window={"from": date_from, "to": date_to,
+                     "label": (f"{result['latest_period_label']} (three-month rolling average)" if result["latest_period_label"]
+                               else "no data collected yet")},
+        source=source_text,
+        total_matching=result["total_matching"],
+        sources_checked=result["sources_checked"],
+    )
+    # attribution travels inside the payload so an AI that quotes a figure verbatim carries the required notice
+    envelope["meta"]["attribution"] = sorted({s["series"]["source"]["attribution_text"] for s in result["statistics"]})
+    envelope["meta"]["licence_unconfirmed"] = sorted({s["series"]["source"]["publisher"] for s in result["statistics"]
+                                                      if not s["series"]["source"]["licence_confirmed"]})
+    return envelope

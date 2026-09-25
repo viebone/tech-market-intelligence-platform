@@ -57,6 +57,17 @@ STORY_CATALOGUE = (
             "What jobs aren't Design, Product Management, or Engineering?",
         ],
     },
+    {
+        "id": "uk-vacancies-official",
+        "display_name": "UK vacancies (official data)",
+        "question": "What does official UK data say about job vacancies by industry and company size?",
+        "example_phrasings": [
+            "How many job vacancies are there in the UK?",
+            "What does the ONS say about vacancies?",
+            "Which industries have the most vacancies?",
+            "How does this compare with official figures?",
+        ],
+    },
 )
 
 # Employment risk story window — trailing 12 months, revised 2026-09-11 from
@@ -946,6 +957,230 @@ def build_job_function_story() -> dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Story 5 — "UK vacancies (official data)" (added 2026-09-25 —
+# changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md; design/market-health/data-stories.md — Story 5;
+# backend/specs/market-health/api.md — Story 5). The first story from TRUSTED EXTERNAL STATISTICS
+# (backend/specs/trusted-statistics/api.md): the ONS Vacancy Survey. No LLM.
+#
+# Reads statistics ONLY through market_query.query_trusted_statistics_data (never the tables) and, for
+# the comparison block only, statistics_crosscheck.industry_mix(). Gated on is_source_usable per source.
+# A cross-check is CONTEXT, NOT PROOF: the comparison payload has no difference / score field at all.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_UK_VACANCIES_SOURCE = "ons_vacancy_survey"
+_ONS_SIZE_ORDER = ("1-9", "10-49", "50-249", "250-2499", "2500+")
+_NOT_COLLECTED = "We haven't collected the official UK figures yet."
+_NOT_AVAILABLE = "This data source isn't currently available."
+
+
+_MONTH_WORDS = {"Jan": "January", "Feb": "February", "Mar": "March", "Apr": "April", "May": "May", "Jun": "June",
+                "Jul": "July", "Aug": "August", "Sep": "September", "Oct": "October", "Nov": "November", "Dec": "December"}
+
+
+def _period_end_words(label: str) -> str:
+    """'Jun-Aug 2026' -> 'August 2026' (the month a three-month period ends). Falls back to the raw label."""
+    import re
+    m = re.match(r"^[A-Za-z]{3}-\s*([A-Za-z]{3})\s+(\d{4})$", label.strip())
+    if not m:
+        return label
+    month = _MONTH_WORDS.get(m.group(1).title())
+    return f"{month} {m.group(2)}" if month else label
+
+
+def _date_in_words(iso: str) -> str:
+    """'2026-09-25...' -> '25 Sep 2026' — visible copy never carries a raw ISO date (visual-design.md — Units)."""
+    d = datetime.fromisoformat(iso[:10])
+    return f"{d.day} {d.strftime('%b %Y')}"
+
+
+# Visible copy states the survey's scope in plain words. The publisher's own footnote wording (SIC codes, "QMI") stays in
+# `limitations` / the Reasoning Panel and in the stored series' coverage_note — never in the story's visible qualifiers.
+_UK_SCOPE_PLAIN = ("It leaves out farming, forestry and fishing, households employing staff, and employment agencies. "
+                   "The survey covers Great Britain, which is scaled up to the whole UK.")
+
+
+def _uk_attribution(source: dict, obs: dict) -> dict[str, Any]:
+    """The visible attribution object every section carrying an ONS figure includes (spec rule 4)."""
+    return {
+        "publisher": source["publisher"], "programme": source["programme"], "text": source["attribution_text"],
+        "source_url": source["source_url"], "licence": source["licence"], "licence_confirmed": source["licence_confirmed"],
+        "period_label": obs["period_label"], "value_status": obs["value_status"], "released_on": obs["released_on"],
+    }
+
+
+def _uk_empty_story(message: str, query_time: datetime, ids_titles: list[tuple[str, str]]) -> dict[str, Any]:
+    sections = []
+    for sid, title in ids_titles:
+        s = _section(sid, title, {}, "", ready=False)     # qualifier stays empty: the message IS the line (no duplicate)
+        s["message"] = message
+        sections.append(s)
+    return {
+        "story_id": "uk-vacancies-official", "question": STORY_CATALOGUE[4]["question"], "as_of": query_time.isoformat(),
+        "sections": sections,
+        "provenance": {"sources": [_UK_VACANCIES_SOURCE], "model_used": False, "query_time": query_time.isoformat()},
+        "limitations": [message],
+    }
+
+
+_UK_SECTION_TITLES = [
+    ("uk-vacancies-total", "UK job vacancies"),
+    ("uk-vacancies-by-industry", "Vacancies by industry"),
+    ("uk-vacancies-by-size", "Vacancies by size of business"),
+    ("uk-industry-shift", "Which industries are changing"),
+    ("industry-crosscheck", "Where our roles sit against the UK market"),
+]
+
+
+def build_uk_vacancies_story() -> dict[str, Any]:
+    from market_query import query_trusted_statistics_data
+    from source_licences import is_source_usable
+
+    query_time = datetime.now().astimezone()
+
+    if not is_source_usable(_UK_VACANCIES_SOURCE):
+        return _uk_empty_story(_NOT_AVAILABLE, query_time, _UK_SECTION_TITLES)
+
+    total_q = query_trusted_statistics_data(dimension="total", publisher=_UK_VACANCIES_SOURCE, period="previous_quarter")
+    if not total_q["statistics"]:
+        return _uk_empty_story(_NOT_COLLECTED, query_time, _UK_SECTION_TITLES)
+
+    tot = total_q["statistics"][0]
+    tot_obs = sorted(tot["observations"], key=lambda o: o["period_start"], reverse=True)
+    now_obs = tot_obs[0]
+    prev_obs = tot_obs[1] if len(tot_obs) > 1 else None
+    scale = tot["series"]["unit_scale"]
+    source = tot["series"]["source"]
+    attribution = _uk_attribution(source, now_obs)
+    total_value = now_obs["value"]                       # thousands, as published
+
+    # 1 ─ total + change since the previous NON-OVERLAPPING three months (derived here from stored levels, never stored)
+    total_content = {
+        "attribution": attribution, "total": round(total_value * scale), "unit": "estimated job vacancies",
+        "period_label": now_obs["period_label"], "value_status": now_obs["value_status"],
+        "previous_period_label": prev_obs["period_label"] if prev_obs else None,
+        "previous_total": round(prev_obs["value"] * scale) if prev_obs else None,
+        "change": round((total_value - prev_obs["value"]) * scale) if prev_obs else None,
+        "change_pct": round(100.0 * (total_value - prev_obs["value"]) / prev_obs["value"], 1) if prev_obs and prev_obs["value"] else None,
+        "coverage_note": tot["series"]["coverage_note"],
+    }
+
+    # 2 ─ by industry, latest, top 10 of the SIC sections
+    ind_q = query_trusted_statistics_data(dimension="industry", publisher=_UK_VACANCIES_SOURCE, period="year_ago")
+    sections_now: list[dict[str, Any]] = []
+    shift_rows: list[dict[str, Any]] = []
+    for st in ind_q["statistics"]:
+        dim = st["series"]["dimension"]["industry"]
+        if dim["system"] != "SIC2007_section":
+            continue                                          # the G-S aggregate is not a section
+        by_start = {o["period_start"]: o for o in st["observations"]}
+        cur = by_start.get(now_obs["period_start"])
+        if not cur:
+            continue
+        sections_now.append({"code": dim["code"], "label": dim["label"], "value": cur["value"], "unit": st["series"]["unit"]})
+        prior = next((o for o in st["observations"] if o["period_start"] != cur["period_start"]), None)
+        if prior:
+            shift_rows.append({"code": dim["code"], "label": dim["label"], "current": cur["value"], "prior": prior["value"],
+                               "delta": round(cur["value"] - prior["value"], 1), "unit": st["series"]["unit"],
+                               "prior_period_label": prior["period_label"]})
+    sections_now.sort(key=lambda r: r["value"], reverse=True)
+    by_industry_content = {"attribution": attribution, "rows": sections_now[:10], "shown": min(10, len(sections_now)), "of": len(sections_now)}
+
+    # 3 ─ by size of business, FIXED size order (the order is the meaning), shares of the all-vacancies total
+    size_q = query_trusted_statistics_data(dimension="size_band", publisher=_UK_VACANCIES_SOURCE)
+    size_rows: list[dict[str, Any]] = []
+    for st in size_q["statistics"]:
+        dim = st["series"]["dimension"]["size_band"]
+        cur = next((o for o in st["observations"] if o["period_start"] == now_obs["period_start"]), None)
+        if cur:
+            size_rows.append({"code": dim["code"], "label": dim["label"], "value": cur["value"],
+                              "share_pct": round(100.0 * cur["value"] / total_value, 1) if total_value else None})
+    size_rows.sort(key=lambda r: _ONS_SIZE_ORDER.index(r["code"]) if r["code"] in _ONS_SIZE_ORDER else 99)
+    size_adjustment = next((s["series"]["seasonal_adjustment"] for s in size_q["statistics"]), "unknown")
+
+    # 4 ─ year-on-year by industry (two same-length periods a year apart, as the publisher defines them)
+    shift_rows.sort(key=lambda r: r["current"], reverse=True)
+    shift_rows = shift_rows[:8]
+    shift_content = {
+        "attribution": attribution, "current_period_label": now_obs["period_label"],
+        "prior_period_label": shift_rows[0]["prior_period_label"] if shift_rows else None, "rows": shift_rows,
+    }
+
+    # 5 ─ cross-check: two separately-sourced series of SHARES, no difference, industry only
+    from statistics_crosscheck import industry_mix
+    mix = industry_mix()
+    plat, ons = mix["platform"], mix["ons"]
+    cross_ready = bool(plat["postings"]) and ons.get("collected") and bool(ons.get("shares_pct")) and len(plat["shares_pct"]) > 0
+    cross_content: dict[str, Any] = {}
+    cross_qualifier = ""
+    if cross_ready:
+        cross_qualifier = ("These aren't expected to match. The official figures estimate vacancies across the whole UK economy from a "
+                           "business survey; we track hiring at a chosen set of employers, most of them technology and finance "
+                           "companies. This shows how our view leans — not whether either one is right.")
+        codes = [c for c, _s in sorted(ons["shares_pct"].items(), key=lambda kv: kv[1], reverse=True)[:5]]
+        for c, s in sorted(plat["shares_pct"].items(), key=lambda kv: kv[1], reverse=True):
+            if s is not None and s >= 5 and c not in codes:
+                codes.append(c)
+        codes = codes[:8]
+        from trusted_stats.sic import SIC_2007_SECTIONS
+        rows = [{"code": c, "label": SIC_2007_SECTIONS.get(c, c), "primary_share_pct": plat["shares_pct"].get(c, 0.0),
+                 "secondary_share_pct": ons["shares_pct"].get(c)} for c in codes]
+        if plat["unplaced_count"]:
+            rows.append({"code": None, "label": "Not placed in an industry group",
+                         "primary_share_pct": plat["unplaced_share_pct"], "secondary_share_pct": None})
+        cross_content = {
+            "attribution": attribution, "primary_name": "Roles we track", "secondary_name": "UK vacancies (ONS)",
+            "legend": (f"Solid bar: roles we track — share of {plat['postings']:,} roles with a recorded UK location, as of {_date_in_words(plat['as_of'])}. "
+                       f"Lighter bar: UK vacancies — share of all vacancies, official estimate for the three months to {_period_end_words(ons['period_label'])}."),
+            "platform_total": plat["postings"], "platform_as_of": plat["as_of"], "unplaced_count": plat["unplaced_count"],
+            "unplaced_share_pct": plat["unplaced_share_pct"], "stored_roles_total": plat["total_postings"],
+            "location_unknown_count": plat["country_unknown_count"], "crosswalk_version": plat["crosswalk_version"], "rows": rows,
+        }
+        cross_qualifier += (f" This covers the {plat['postings']:,} of {plat['total_postings']:,} roles we hold that have a UK location "
+                            f"recorded; {plat['country_unknown_count']:,} have no location recorded and can't be placed. "
+                            f"{plat['unplaced_count']:,} of the UK roles are at employers whose industry we couldn't place in a group.")
+
+    adjustment_note = ("Most industry figures are seasonally adjusted (a few are published unadjusted); the official notes describe the "
+                       "size figures as seasonally adjusted too, although the published table doesn't say so."
+                       if size_adjustment == "seasonally_adjusted" else
+                       "Most industry figures are seasonally adjusted (a few are published unadjusted); the publisher doesn't say "
+                       "whether the size figures are.")
+    excluded = tot["series"]["coverage_note"]
+
+    sections = [
+        _section("uk-vacancies-total", "UK job vacancies", total_content,
+                 "An estimate from a monthly survey of businesses; the latest figure is provisional and may be revised. " + _UK_SCOPE_PLAIN),
+        _section("uk-vacancies-by-industry", "Vacancies by industry", by_industry_content,
+                 f"Industry groups follow the official UK classification; the {max(len(sections_now) - 10, 0)} smaller groups are not shown.",
+                 ready=bool(sections_now)),
+        _section("uk-vacancies-by-size", "Vacancies by size of business", {"attribution": attribution, "rows": size_rows},
+                 "Business size means the number of people the business employs, not how big the vacancy is. " + adjustment_note,
+                 ready=bool(size_rows)),
+        _section("uk-industry-shift", "Which industries are changing", shift_content,
+                 "Both periods are official estimates; the newer one may be revised.", ready=bool(shift_rows)),
+        _section("industry-crosscheck", "Where our roles sit against the UK market", cross_content, cross_qualifier,
+                 ready=bool(cross_ready)),
+    ]
+    if not cross_ready:
+        sections[-1]["message"] = ("We don't hold enough UK-based roles to compare yet." if ons.get("collected") else _NOT_COLLECTED)
+
+    return {
+        "story_id": "uk-vacancies-official",
+        "question": STORY_CATALOGUE[4]["question"],
+        "as_of": query_time.isoformat(),
+        "sections": sections,
+        "provenance": {"sources": [_UK_VACANCIES_SOURCE, "raw_postings"], "model_used": False, "query_time": query_time.isoformat()},
+        "limitations": [
+            excluded,
+            "The latest figures are provisional and may be revised.",
+            "The comparison is not expected to match — different populations.",
+            adjustment_note,
+        ],
+        # Rendered visibly beside the framing line, always — never only in the Reasoning Panel (OGL attribution condition).
+        "attribution_text": source["attribution_text"],
+    }
+
+
 def get_story(story_id: str) -> dict[str, Any]:
     if story_id == "market-data-briefing":
         return build_market_data_briefing()
@@ -955,6 +1190,8 @@ def get_story(story_id: str) -> dict[str, Any]:
         return build_market_benchmark_story()
     if story_id == "beyond-tracked-roles":
         return build_job_function_story()
+    if story_id == "uk-vacancies-official":
+        return build_uk_vacancies_story()
     raise KeyError(story_id)
 
 

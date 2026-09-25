@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ series.series_code }} {{ observation.period_label }} — Pipeline Visibility{% endblock %}
+{% block content %}
+<a class="btn-ghost" href="/admin/statistics">← Back to Trusted Statistics</a>
+<h1>{{ series.title }}</h1>
+
+<div class="card">
+  <h2>Figure</h2>
+  <div class="field-row"><div class="field-label">Value</div><div class="field-value">{{ '%g' % observation.value }} {{ series.unit }}
+    <span class="badge {{ 'neutral' if observation.value_status != 'final' else 'success' }}">{{ observation.value_status }}</span></div></div>
+  <div class="field-row"><div class="field-label">Period</div><div class="field-value">{{ observation.period_label }} ({{ observation.period_start }} – {{ observation.period_end }}) — {{ series.period_type }}</div></div>
+  <div class="field-row"><div class="field-label">Released on</div><div class="field-value">{{ observation.released_on }}</div></div>
+  <div class="field-row"><div class="field-label">Raw cell</div><div class="field-value"><code>{{ observation.raw_cell }}</code></div></div>
+  <div class="field-row"><div class="field-label">Observation ID</div><div class="field-value">{{ observation.id }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Version history for this period</h2>
+  {% if history|length > 1 %}
+  <table class="data-table">
+    <thead><tr><th>Released on</th><th>Value ({{ series.unit }})</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td>{{ h.released_on }}</td>
+        <td>{{ '%g' % h.value }}</td>
+        <td><span class="badge {{ 'neutral' if h.value_status != 'final' else 'success' }}">{{ h.value_status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">Never revised — one version stored.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>What this series is</h2>
+  <div class="field-row"><div class="field-label">Publisher</div><div class="field-value">{{ series.publisher }} — {{ series.programme }}</div></div>
+  <div class="field-row"><div class="field-label">Dataset / series code</div><div class="field-value">{{ series.dataset_code }} / {{ series.series_code }}</div></div>
+  <div class="field-row"><div class="field-label">Measure / unit</div><div class="field-value">{{ series.measure }} — {{ series.unit }} (×{{ series.unit_scale }} for a plain count)</div></div>
+  <div class="field-row"><div class="field-label">Seasonal adjustment</div><div class="field-value">{{ series.seasonal_adjustment }}</div></div>
+  <div class="field-row"><div class="field-label">Dimensions</div><div class="field-value"><code>{{ dimensions_json }}</code></div></div>
+  <div class="field-row"><div class="field-label">Designation</div><div class="field-value">{{ series.designation }}</div></div>
+  <div class="field-row"><div class="field-label">What it counts</div><div class="field-value">{{ series.definition_note or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">What it leaves out</div><div class="field-value">{{ series.coverage_note or '—' }}</div></div>
+  <div class="field-row"><div class="field-label">Methodology</div><div class="field-value"><a href="{{ series.methodology_url }}" target="_blank" rel="noopener">{{ series.methodology_url }}</a></div></div>
+  <div class="field-row"><div class="field-label">Dataset page</div><div class="field-value"><a href="{{ series.source_page_url }}" target="_blank" rel="noopener">{{ series.source_page_url }}</a></div></div>
+</div>
+
+<div class="card">
+  <h2>Licence and attribution</h2>
+  <div class="field-row"><div class="field-label">Licence</div><div class="field-value">{{ series.licence }}
+    {% if series.licence_confirmed %}<span class="badge success">Confirmed</span>{% else %}<span class="badge neutral">Not yet confirmed</span>{% endif %}
+  </div></div>
+  <div class="field-row"><div class="field-label">Attribution to show</div><div class="field-value">{{ series.attribution_text }}</div></div>
+</div>
+
+<div class="card">
+  <h2>The release it came from and how it was checked</h2>
+  {% if release %}
+  <div class="field-row"><div class="field-label">Release</div><div class="field-value">{{ release.dataset_code }} — {{ release.release_date }} ({{ release.status }})</div></div>
+  <div class="field-row"><div class="field-label">File</div><div class="field-value"><a href="{{ release.file_url }}" target="_blank" rel="noopener">{{ release.file_name }}</a></div></div>
+  <div class="field-row"><div class="field-label">Content hash</div><div class="field-value"><code>{{ release.content_hash or '—' }}</code></div></div>
+  <div class="field-row"><div class="field-label">Figures in the release</div><div class="field-value">{{ release.rows_parsed }} parsed — {{ release.observations_new }} new, {{ release.observations_revised }} revised, {{ release.observations_unchanged }} unchanged</div></div>
+  <div class="field-row"><div class="field-label">Fetched at</div><div class="field-value">{{ release.fetched_at }}</div></div>
+  <div class="field-row"><div class="field-label">Validation</div><div class="field-value">{{ release.validation_summary or 'All checks passed (anchors, contiguous periods, sum of parts, plausibility, cross-file agreement).' }}</div></div>
+  {% else %}
+  <div class="empty-state">Release details unavailable.</div>
+  {% endif %}
+</div>
+{% endblock %}

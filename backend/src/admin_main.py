@@ -41,6 +41,7 @@ import market_stories
 import raw_postings
 import requirements
 import scraping_storage
+import statistics_storage
 from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
 from source_licences import SOURCE_LICENCES, is_commercial_mode, overall_status
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
@@ -579,6 +580,81 @@ def scrape_runs(request: Request):
     return templates.TemplateResponse(
         request, "scrape_runs.html",
         {"active_page": "scrape_runs", "runs": scraping_storage.list_scrape_runs()},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trusted Statistics + Statistics Sources — added 2026-09-25,
+# changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md, backend/specs/
+# pipeline-visibility/api.md. Read-only over statistic_series / statistic_releases /
+# statistic_observations (backend/specs/trusted-statistics/api.md owns and writes all of it).
+# Every row names its publisher and unit — the operator view names the source exactly as any
+# user-facing surface must.
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/statistics", dependencies=[Depends(require_admin_session)])
+def statistics_list(
+    request: Request,
+    source: str | None = None,
+    dataset_code: str | None = None,
+    dimension_type: str | None = None,
+    series_code: str | None = None,
+    vintages: str = "latest",
+    sort: str = "period_end",
+    dir: str = "desc",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    from trusted_stats.registry import TRUSTED_PUBLISHERS
+
+    vintages = "all" if vintages == "all" else "latest"
+    filters = {"source": source, "dataset_code": dataset_code, "dimension_type": dimension_type, "series_code": series_code}
+    rows, total = statistics_storage.list_statistics(**filters, vintages=vintages, sort=sort, direction=dir, page=page, page_size=page_size)
+
+    active_filters = _clean_query({**filters, **({"vintages": "all"} if vintages == "all" else {})})
+    page_base_query = urlencode({**active_filters, "sort": sort, "dir": dir})
+    active_filter_chips = [
+        {"label": f"{key.replace('_', ' ')}: {value}",
+         "remove_href": "/admin/statistics?" + urlencode({k: v for k, v in active_filters.items() if k != key})}
+        for key, value in active_filters.items()
+    ]
+    sort_links = {}
+    for column in ("period_end", "series_code", "value", "released_on"):
+        next_dir = ("asc" if dir == "desc" else "desc") if sort == column else "desc"
+        sort_links[column] = "/admin/statistics?" + urlencode({**active_filters, "sort": column, "dir": next_dir})
+
+    return templates.TemplateResponse(
+        request, "statistics.html",
+        {
+            "active_page": "statistics", "rows": rows, "total": total, "page": page, "page_size": page_size,
+            "total_pages": max(1, math.ceil(total / page_size)), "sort": sort, "dir": dir, "filters": filters,
+            "vintages": vintages, "active_filter_chips": active_filter_chips, "page_base_query": page_base_query,
+            "sort_links": sort_links,
+            "filter_options": {
+                "sources": sorted(set(TRUSTED_PUBLISHERS) | set(statistics_storage.sources_with_data())),
+                "datasets": sorted({d for p in TRUSTED_PUBLISHERS.values() for d in p.datasets}),
+                "dimension_types": ["total", "industry", "size_band"],
+            },
+        },
+    )
+
+
+@app.get("/admin/statistics-sources", dependencies=[Depends(require_admin_session)])
+def statistics_sources(request: Request):
+    return templates.TemplateResponse(
+        request, "statistics_sources.html",
+        {"active_page": "statistics_sources", "sources": statistics_storage.list_statistics_sources()},
+    )
+
+
+@app.get("/admin/statistics/{observation_id:path}", dependencies=[Depends(require_admin_session)])
+def statistic_detail(request: Request, observation_id: str):
+    detail = statistics_storage.get_statistic(observation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="No statistic with that id")
+    return templates.TemplateResponse(
+        request, "statistic_detail.html",
+        {"active_page": "statistics", **detail, "dimensions_json": json.dumps(detail["series"]["dimensions"], ensure_ascii=False)},
     )
 
 

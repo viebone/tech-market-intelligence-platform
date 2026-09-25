@@ -164,7 +164,7 @@ def _enforce_and_call(tool_name: str, fn: Callable[..., dict], kwargs: dict[str,
 
 
 def create_mcp_server():
-    """Builds the FastMCP instance and registers all six tools plus
+    """Builds the FastMCP instance and registers all seven data tools plus
     get_taxonomy. Called once, from asgi_app() below."""
     from mcp.server.fastmcp import FastMCP  # imported here, not at module top,
 
@@ -276,6 +276,30 @@ def create_mcp_server():
         if it were one. Requires the 'jobs.read' scope. Available on every
         plan."""
         return _enforce_and_call("get_job_function_breakdown", tools.get_job_function_breakdown, {})
+
+    @mcp_server.tool()
+    def get_trusted_statistics(
+        dimension: str = "total",
+        publisher: str | None = None,
+        industry_code: str | None = None,
+        size_band: str | None = None,
+        period: str = "latest",
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict:
+        """OFFICIAL statistics from a trusted publisher — today the Office for
+        National Statistics' Vacancy Survey: estimated job vacancies across the
+        WHOLE UK economy, by industry and by size of business. NOT this
+        platform's own postings — always name the publisher and period when
+        repeating a figure, and never present it as a check on
+        get_job_demand's numbers unless asked (and then say they measure
+        different populations). See get_taxonomy's statistic_dimensions for
+        valid parameter values. Requires the 'jobs.read' scope. Available on
+        every plan."""
+        return _enforce_and_call("get_trusted_statistics", tools.get_trusted_statistics, dict(
+            dimension=dimension, publisher=publisher, industry_code=industry_code, size_band=size_band,
+            period=period, date_from=date_from, date_to=date_to,
+        ))
 
     return mcp_server
 
