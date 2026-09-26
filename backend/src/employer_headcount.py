@@ -121,6 +121,11 @@ UNKNOWN_HEADCOUNT: dict[str, str] = {
     "lever": ("The ATS company itself, now a sub-brand of Employ Inc. No Lever-only figure found; the "
               "parent group's 850 employees (Aug 2022) is stale and covers Jobvite/JazzHR too. "
               "Left without a band rather than guessed (research/2026-09-25-panel-headcount-research.md, table A)."),
+    # Personio-hosted employers, added 2026-09-26 (changes/2026-09-26-personio-adapter.md) — headcount not
+    # yet researched; left without a band rather than guessed. Research pass is a separate, later step.
+    "personio": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
+    "stark": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
+    "capmo": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
 }
 
 COMPANY_HEADCOUNT: dict[str, EmployerHeadcount] = {

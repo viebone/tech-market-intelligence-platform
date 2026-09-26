@@ -21,7 +21,7 @@ entry here — adding an industry tag without deciding its mapping is not possib
 
 from __future__ import annotations
 
-CROSSWALK_VERSION = "2026-09-25.1"
+CROSSWALK_VERSION = "2026-09-26.1"
 
 OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # J — Information and communication: software, AI, developer/cloud platforms, media, social, search, security
@@ -41,6 +41,9 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     "Consumer Reviews/Marketplace": None, "EdTech": None, "Fintech Software": None,
     "Food Delivery/Marketplace": None, "HR Tech": None, "HR Tech/Payroll": None, "Healthtech": None,
     "Marketplace": None, "Property Marketplace/Tech": None, "Travel/Marketplace": None, "Travel/Tech": None,
+    # Added 2026-09-26 with the Personio adapter — each tag spans software AND non-software activity
+    # (a defence-tech firm may build drones = manufacturing, or software; construction tech may be SaaS or a builder).
+    "Construction Tech": None, "Defence Tech": None,
 }
 
 

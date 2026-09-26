@@ -88,6 +88,8 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "lemonade": "Insurtech", "pleo": "Fintech", "mollie": "Fintech",
     "deepl": "AI", "paddle": "Fintech Software", "synthesia": "AI",
     "thought-machine": "Fintech Software", "zego": "Insurtech",
+    # Personio — first Personio-hosted employers, added 2026-09-26 (changes/2026-09-26-personio-adapter.md)
+    "personio": "HR Tech", "stark": "Defence Tech", "capmo": "Construction Tech",
 }
 
 
@@ -140,6 +142,8 @@ COMPANY_REGION: dict[str, str] = {
     "spotify": "SE", "mollie": "NL",
     "gymshark": "UK", "moonpig": "UK", "paddle": "UK", "synthesia": "UK",
     "thought-machine": "UK", "zego": "UK",
+    # Personio-hosted employers, added 2026-09-26 — all headquartered in Germany (Munich).
+    "personio": "DE", "stark": "DE", "capmo": "DE",
 }
 
 # employer_size_band — RETIRED as a hand-assigned label 2026-09-25

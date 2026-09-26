@@ -9,6 +9,7 @@ from sources.ashby import AshbyAdapter
 from sources.base import FetchedPosting, SourceAdapter, SourceFetchError
 from sources.greenhouse import GreenhouseAdapter
 from sources.lever import LeverAdapter
+from sources.personio import PersonioAdapter
 from sources.workable import WorkableAdapter
 
 ALL_SOURCE_ADAPTERS: list[SourceAdapter] = [
@@ -16,6 +17,7 @@ ALL_SOURCE_ADAPTERS: list[SourceAdapter] = [
     LeverAdapter(),
     AshbyAdapter(),
     WorkableAdapter(),
+    PersonioAdapter(),
 ]
 
 __all__ = ["ALL_SOURCE_ADAPTERS", "FetchedPosting", "SourceAdapter", "SourceFetchError"]

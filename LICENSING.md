@@ -13,13 +13,13 @@ licences, a commercial API with its own Terms of Service. Nothing here is guesse
 below is either read directly off the source's own licence/terms page, or explicitly marked as
 not yet confirmed. Kept current whenever a source is added or its terms are checked/re-checked.
 
-Last reviewed: 2026-09-24 (trusted external statistics — ONS — added below).
+Last reviewed: 2026-09-26 (Workable and Personio rows added; earlier: 2026-09-24, trusted external statistics — ONS — added below).
 
 ---
 
 ## 1. Per-source licence status
 
-**All eight real sources below are registered in code** (`backend/src/source_licences.py`'s
+**Every real source below is registered in code** (`backend/src/source_licences.py`'s
 `SOURCE_LICENCES`), not just documented here — enforced by
 `backend/tests/test_source_licences.py`, which fails the build the moment any adapter anywhere
 in this codebase (job postings, employment events, or scraped) has no matching entry, or an
@@ -43,13 +43,15 @@ anywhere, matching the real registry, not assumed.
 | **Greenhouse** | Public, unauthenticated API (`sources/greenhouse.py`) | Full raw job-posting response kept verbatim (title, description HTML, location, department); parsed country/city/salary where present | No formal data-reuse licence published — docs describe the intended use as the hiring company building its own careers page; third-party read access neither addressed nor prohibited | ✅ Yes — read directly off `docs.greenhouse.io`, 2026-09-16 (confirms the *documentation was checked*, not that a formal licence exists — none does) | **Licensed** | ✅ Yes — nothing found restricting it |
 | **Lever** | Public, unauthenticated API (`sources/lever.py`) | Full raw job-posting response kept verbatim; parsed country/city/salary where present | No formal data-reuse licence published — but Lever's own docs explicitly state: *"all job postings in the published state are publicly viewable. These jobs may be scraped by third parties."* | ✅ Yes — read directly off Lever's own `postings-api` docs, 2026-09-16 | **Licensed** | ✅ Yes |
 | **Ashby** | Public, unauthenticated API (`sources/ashby.py`) | Full raw job-posting response kept verbatim (compensation data often present); parsed country/city/salary where present | No formal data-reuse licence published — docs describe the intended use as the hiring company building its own careers page; third-party read access neither addressed nor prohibited | ✅ Yes — read directly off `developers.ashbyhq.com`, 2026-09-16 | **Licensed** | ✅ Yes — nothing found restricting it |
+| **Workable** | Public, unauthenticated widget API (`sources/workable.py`) | Full raw job-posting response kept verbatim; parsed country/city where present. No structured salary field | No formal data-reuse licence published — Workable's own help docs describe the intended use as a company (or a third party on its behalf) building a careers page from it; third-party reads neither addressed nor prohibited | ✅ Yes — Workable help centre, 2026-09-19 (docs read; no formal licence exists) | **Licensed** | ✅ Yes — nothing found restricting it |
+| **Personio** | Public, unauthenticated XML feed (`sources/personio.py`) | Full raw job-posting (XML converted to a dict) kept verbatim — department, offices, seniority, schedule, keywords, job descriptions; city = first office. No structured country or salary field | No formal data-reuse licence published — the employer switches the feed on for its own website; Personio's support FAQ states no credentials are needed and recommends syncing at most hourly. Third-party reads neither addressed nor prohibited. Its API Security & Use Policy governs the *authenticated* partner API, not this feed | ✅ Yes — Personio support FAQ "XML job integration", read directly 2026-09-26 (docs read; no formal licence exists) | **Licensed** | ✅ Yes — nothing found restricting it |
 
 ### Trusted external statistics — now registered in `source_licences.py` (2026-09-25)
 
 Kept as its own table because it is the first source of the trusted-statistics category. **It is registered in code as of
 2026-09-25** (`SOURCE_LICENCES["ons_vacancy_survey"]`, added in the same change as its adapter, so `test_source_licences.py` —
 which fails the build on a licence with no adapter — passes; that test now counts trusted-statistics adapters as a fourth category).
-The table at the top of this section therefore has **nine** registered sources, not eight; this row is the ninth.
+The ONS row below is registered in code in addition to the sources in the table at the top of this section.
 
 | Source | Access | What we take | Licence | Confirmed? | Status when registered | Commercial use |
 |---|---|---|---|---|---|---|

@@ -203,6 +203,23 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
         permits_commercial_use=True,
         data_summary="Per-posting: title, company, full raw job-object response kept verbatim; parsed country/city where present. No structured salary field on this endpoint.",
     ),
+    # personio: added 2026-09-26 (changes/2026-09-26-personio-adapter.md), per Personio's
+    # own support FAQ "Frequently asked questions on XML job integration" (read directly
+    # 2026-09-26): the XML feed needs "no credentials", the customer enables it themselves
+    # and may use it on multiple websites; Personio recommends syncing at most hourly. Their
+    # API Security & Use Policy governs the *authenticated* partner API and does not cover
+    # this public feed. Nothing found restricting third-party reads — but nothing granting
+    # them either, and no formal data-reuse licence exists: recorded honestly as such,
+    # `confirmed=True` meaning "the docs were read", exactly as for greenhouse/ashby/workable.
+    "personio": SourceLicence(
+        source="personio",
+        licence="No formal data-reuse licence published. Public, unauthenticated XML feed that each employer switches on for itself to publish its jobs on its own website; Personio's docs state no credentials are needed and recommend syncing at most hourly. Third-party read access is neither addressed nor prohibited.",
+        attribution_text="Job posting data originally published by the hiring company via its Personio-hosted job board",
+        licence_url="https://support.personio.de/hc/en-us/articles/29375445597725-Frequently-asked-questions-on-XML-job-integration",
+        confirmed=True,
+        permits_commercial_use=True,
+        data_summary="Per-posting: title, company, full raw job-object (converted from XML) kept verbatim — department, offices, seniority, schedule, employment type, keywords, job descriptions (HTML). No structured country or salary field; city is the first published office.",
+    ),
 }
 
 def get_licence(source: str) -> SourceLicence:

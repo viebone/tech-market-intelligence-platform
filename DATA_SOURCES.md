@@ -9,7 +9,7 @@ at runtime. To change something, edit the file this points to.
 feeds, research and articles later — all normalised into one internal model. This document
 keeps that growing surface reviewable in one place.
 
-Last reviewed: 2026-09-24 (§2, the §3b category note, new §3c, §7 and §8 updated for the new **trusted external statistics** source type).
+Last reviewed: 2026-09-26 (Personio adapter: §2, §3, §4, §7 — earlier: 2026-09-24 (§2, the §3b category note, new §3c, §7 and §8 updated for the new **trusted external statistics** source type)).
 
 ---
 
@@ -49,7 +49,7 @@ market-health API + chat + data stories
 
 | Type | Status | What it produces | Where it lands | Notes |
 |---|---|---|---|---|
-| **Job postings** | ✅ active | One `raw_postings` row per open role | `raw_postings` → classification → requirements | The only type live today. Three adapters (§3). |
+| **Job postings** | ✅ active | One `raw_postings` row per open role | `raw_postings` → classification → requirements | The only type live today. Five adapters (§3). |
 | **Company career pages / ATS portals** | 🔲 planned | Same as job postings — a new *adapter*, not a new type | `raw_postings` | For companies not on a supported ATS (custom career sites, legacy ATS). Mechanism is scraping, not a public API — needs a per-site adapter or a generic HTML/JSON-LD adapter. Same `FetchedPosting` output. Can now build on the generic scraping infrastructure in §3b, once it exists. |
 | **Employment events** (renamed from "Layoff events" 2026-09-11 — scope broadened to match) | 🟡 code shipped, 2/3 adapters not yet functional | An `employment_events` row (company, event date, event type, direction, jobs affected, source) — layoffs **and** closures, restructuring, bankruptcy, offshoring, expansion, hiring announcements | Table `employment_events` — *not* `raw_postings`, *not* classified | Feeds the broadened `Layoff Signal` (IA) and the trend chart's "Employment events strip". Data model, endpoint, chat tool, and three adapters implemented — see §3a below. `/change-request`: `changes/2026-09-11-employment-event-ingestion.md`. |
 | **Market benchmark datasets (scraped, no API)** | 🟡 code shipped 2026-09-16, not yet run against real data | A `market_observations` row (entity, employment type, location, period, rank, vacancy count/share, salary percentiles) + a `skill_associations` row (role↔skill co-occurrence, weighted) — aggregate market intelligence, not a posting or an event, source-agnostic like `employment_events` (a future second benchmark source is a new `source` value, not a new table) | New tables `market_observations`, `skill_associations` — *not* `raw_postings`, *not* `employment_events` | First source: **IT Jobs Watch** (itjobswatch.co.uk) — declined API/paid access for this project, explicitly granted scraping permission instead (CC-licensed content, conditional on politeness — robots.txt, low rate, identification, caching, attribution). Deliberately modeled as a *category* of source ("market datasets"), parallel to job postings, not a member of them — see `research/2026-09-16-itjobswatch-data-model-analysis.md`. Ingestion only so far; nothing surfaces this data yet. See §3b below and `backend/specs/scraped-data-sources/api.md`. `/change-request`: `changes/2026-09-16-polite-scraping-adapters.md`. |
@@ -63,7 +63,7 @@ source routing by cost/quality; paid data licensing.
 
 ## 3. Job-posting adapters (active)
 
-All four are **public, unauthenticated GET** endpoints — no credentials, no API keys. Each
+All five are **public, unauthenticated GET** endpoints — no credentials, no API keys. Each
 adapter fetches a company's *entire* published board (none supports server-side filtering to
 "tech roles only" consistently), and classification's `other` bucket does the relevance
 filtering downstream.
@@ -74,6 +74,7 @@ filtering downstream.
 | Lever | `lever` | `api.lever.co/v0/postings/{site}?mode=json` | Every published job, paginated (`skip`/`limit=100`) | `backend/src/sources/lever.py` |
 | Ashby | `ashby` | `api.ashbyhq.com/posting-api/job-board/{jobBoardName}?includeCompensation=true` | Every published job; `includeCompensation` on so pay lands in `raw_response` | `backend/src/sources/ashby.py` |
 | Workable | `workable` | `apply.workable.com/api/v1/widget/accounts/{account}` | Every published job, one call, no pagination. **Multi-location jobs are duplicated per location in the raw response** — deduped to one row per distinct `shortcode` (first location kept), same "one row per distinct job" semantics Ashby already applies to its own `secondaryLocations`. Added 2026-09-19 (`EMPLOYER_PANEL.md`) — the first ATS adapter built since the original three, unlocking Starling and any future Workable-hosted employer. No structured salary field on this endpoint. | `backend/src/sources/workable.py` |
+| Personio | `personio` | `{company}.jobs.personio.de/xml` | Every published job, one XML document, no pagination. **Not JSON** — each `<position>` is converted to a dict for `raw_response`. Credential-free per Personio's own FAQ (the employer switches the feed on for its own website; docs recommend syncing at most hourly). **No country and no salary field** — only free-text `<office>` cities, so `country` stays NULL, never inferred. Job text is in whatever language it was published in (English and German seen). An unknown/disabled slug answers `307 → personio.com`, surfaced as a per-company `SourceFetchError`, never parsed as an empty board. Added 2026-09-26 (`changes/2026-09-26-personio-adapter.md`). | `backend/src/sources/personio.py` |
 
 Shared machinery (`backend/src/sources/base.py`):
 - `SourceAdapter` protocol — `name`, `companies`, `fetch_company(company) -> list[FetchedPosting]`
@@ -342,7 +343,7 @@ release. That is a normal, expected state — not a defect and never faked.
 
 ## 4. Tracked companies
 
-**82 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**85 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -450,6 +451,9 @@ Two files must stay in sync (until §6 lands):
 | synthesia | ashby | AI | ✅ (49 roles) |
 | thought-machine | ashby | Fintech Software | ✅ (real board token is hyphenated; 41 roles) |
 | zego | ashby | Insurtech | ✅ (44 roles) |
+| personio | personio | HR Tech | ✅ (first Personio board — Personio's own; 1 role; added 2026-09-26, `changes/2026-09-26-personio-adapter.md`) |
+| stark | personio | Defence Tech | ✅ (STARK defence technology; 131 roles, English postings, Munich/Berlin/Stockholm) |
+| capmo | personio | Construction Tech | ✅ (construction-site software; 8 roles, German-language titles — classification sample-check pending) |
 
 > "returns 0" = the board resolves (HTTP 200) but currently lists no roles matching what the
 > adapter reads. Not an error; worth a periodic look to confirm the slug is still right.
@@ -502,7 +506,7 @@ Everything tunable, and where it lives. Grouped by area.
 ### Ingestion & sources
 | Lever | Value | File |
 |---|---|---|
-| Tracked companies | 82, per adapter | `backend/src/sources/{greenhouse,lever,ashby}.py` — `COMPANIES` |
+| Tracked companies | 85, per adapter | `backend/src/sources/{greenhouse,lever,ashby,workable,personio}.py` — `COMPANIES` |
 | Company → industry | static dict | `backend/src/industries.py` — `COMPANY_INDUSTRY` |
 | Trusted-statistics publishers (trust-bar sign-off, check interval `min_check_interval_hours`, `release_settle_days`) | registry | `backend/src/trusted_stats/registry.py` — `TRUSTED_PUBLISHERS` |
 | Our industry tag → SIC 2007 section (cross-check) | versioned dict + completeness test | `backend/src/trusted_stats/crosswalks.py` |

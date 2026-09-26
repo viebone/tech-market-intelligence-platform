@@ -198,6 +198,9 @@ def _extract_description(source: str, raw_response: dict) -> str:
         raw = raw_response.get("descriptionPlain", "") or raw_response.get("descriptionBodyPlain", "")
     elif source == "ashby":
         raw = raw_response.get("descriptionPlain", "")
+    elif source == "personio":
+        # The XML feed splits a description into named sections; join their HTML bodies.
+        raw = " ".join(jd.get("value", "") for jd in raw_response.get("jobDescriptions", []))
     else:
         raw = ""
     cleaned = _TAG_RE.sub(" ", html.unescape(raw or "")).strip()

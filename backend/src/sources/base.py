@@ -131,7 +131,7 @@ class SourceAdapter(Protocol):
     classification.py are all source-agnostic).
     """
 
-    name: str              # "greenhouse" | "lever" | "ashby" | "workable"
+    name: str              # "greenhouse" | "lever" | "ashby" | "workable" | "personio"
     companies: list[str]   # curated list of board tokens / sites / job-board names
 
     def fetch_company(self, company: str) -> list[FetchedPosting]:
