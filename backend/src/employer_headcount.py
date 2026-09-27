@@ -126,6 +126,16 @@ UNKNOWN_HEADCOUNT: dict[str, str] = {
     "personio": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
     "stark": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
     "capmo": "Not yet researched (added with the Personio adapter, 2026-09-26). No band until a cited figure exists.",
+    # US + EU panel, batch 2 — added 2026-09-27 (changes/2026-09-27-us-eu-panel-batch-2.md).
+    # Headcount not yet researched for any of the 35; left without a band rather than guessed,
+    # same discipline as batch 1 (`employer_size_band left untagged for the 26`, 2026-09-23).
+    **{c: "Not yet researched (added with the US + EU panel batch 2, 2026-09-27). No band until a cited figure exists." for c in (
+        "bitpanda", "collibra", "ledgy", "scandit", "raisin", "solarisbank", "forto", "lunar",
+        "perk", "cabify", "oura", "supercell", "qonto", "backmarket", "contentsquare", "swile",
+        "mirakl", "blablacar", "ledger", "sorare", "tines", "workhuman", "satispay",
+        "nord-security", "catawiki", "miro", "docplanner", "brainly", "swordhealth", "feedzai",
+        "lovable", "elliptic", "gocardless", "oaknorth", "farfetch",
+    )},
 }
 
 COMPANY_HEADCOUNT: dict[str, EmployerHeadcount] = {

@@ -76,6 +76,9 @@ COMPANIES: list[str] = [
     # 2026-09-23 by a real HTTP 200 with real open roles; company name confirmed
     # in the job descriptions themselves.
     "spotify", "moonpig",
+    # US + EU panel, batch 2 (added 2026-09-27, EMPLOYER_PANEL.md) — verified
+    # 2026-09-27 by a real HTTP 200 with real open roles matching the company.
+    "contentsquare", "swile", "blablacar", "farfetch",
 ]
 
 

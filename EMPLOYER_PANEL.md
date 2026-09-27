@@ -419,7 +419,54 @@ follow-up. `employer_region` (HQ country) is tagged for all 26.
 | Thought Machine | ashby (`thought-machine`) | UK | Fintech Software | 41 |
 | Zego | ashby (`zego`) | UK | Insurtech | 44 |
 
-### Held for later batches — verified, not yet added (110 companies)
+### Batch 2 — added 2026-09-27 (35 companies, 1,284 postings, live-verified at fetch time)
+
+Extends coverage into 9 countries batch 1 had none in (AT, BE, CH, IE, IT, LT, PL, PT) and
+deepens DE/DK/ES/FI/FR/NL/SE/UK. Every row below was live-refetched and content-checked at
+add time, not trusted from the table's older probe counts — caught one real error (TravelPerk's
+actual Ashby token is `perk`, not `travelperk`). Change request:
+`changes/2026-09-23-us-eu-employer-panel-expansion.md` (Step 10),
+`research/2026-09-27-us-eu-panel-batch-2.md`.
+
+| Company | Platform (`token`) | HQ | Sector | Roles |
+|---|---|---|---|---|
+| Bitpanda | greenhouse (`bitpanda`) | AT | Crypto | 27 |
+| Collibra | greenhouse (`collibra`) | BE | Software | 31 |
+| Ledgy | greenhouse (`ledgy`) | CH | Software | 16 |
+| Scandit | greenhouse (`scandit`) | CH | Software | 9 |
+| Raisin | greenhouse (`raisin`) | DE | Fintech | 35 |
+| Solaris | greenhouse (`solarisbank`) | DE | Fintech | 25 |
+| Forto | ashby (`forto`) | DE | Logistics | 6 |
+| Lunar | ashby (`lunar`) | DK | Fintech | 15 |
+| TravelPerk | ashby (`perk`) | ES | Travel Tech | 127 |
+| Cabify | greenhouse (`cabify`) | ES | Mobility | 68 |
+| Oura | greenhouse (`oura`) | FI | Health Wearables | 92 |
+| Supercell | ashby (`supercell`) | FI | Gaming | 38 |
+| Qonto | ashby (`qonto`) | FR | Fintech | 38 |
+| Back Market | ashby (`backmarket`) | FR | Marketplace | 34 |
+| Contentsquare | lever (`contentsquare`) | FR | Analytics Software | 34 |
+| Swile | lever (`swile`) | FR | Fintech | 30 |
+| Mirakl | greenhouse (`mirakl`) | FR | Marketplace Software | 17 |
+| BlaBlaCar | lever (`blablacar`) | FR | Mobility | 14 |
+| Ledger | ashby (`ledger`) | FR | Crypto | 7 |
+| Sorare | ashby (`sorare`) | FR | Gaming/Crypto | 4 |
+| Tines | greenhouse (`tines`) | IE | Security Software | 25 |
+| Workhuman | ashby (`workhuman`) | IE | HR Tech | 8 |
+| Satispay | ashby (`satispay`) | IT | Fintech | 90 |
+| Nord Security | ashby (`nord-security`) | LT | Security | 130 |
+| Catawiki | greenhouse (`catawiki`) | NL | Marketplace | 46 |
+| Miro | ashby (`miro`) | NL | Software | 28 |
+| Docplanner | ashby (`docplanner`) | PL | Healthtech | 24 |
+| Brainly | ashby (`brainly`) | PL | EdTech | 1 |
+| Sword Health | greenhouse (`swordhealth`) | PT | Healthtech | 40 |
+| Feedzai | greenhouse (`feedzai`) | PT | Fintech/AI | 32 |
+| Lovable | ashby (`lovable`) | SE | AI Software | 79 |
+| Elliptic | ashby (`elliptic`) | UK | Crypto Analytics | 27 |
+| GoCardless | greenhouse (`gocardless`) | UK | Fintech | 28 |
+| OakNorth | ashby (`oaknorth`) | UK | Fintech | 16 |
+| Farfetch | lever (`farfetch`) | UK | E-commerce | 43 |
+
+### Held for later batches — verified, not yet added (75 companies)
 
 Ordered by country, then role count. Release in small groups, checking the classification
 backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
@@ -431,54 +478,19 @@ Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
 
 | Company | HQ | Sector | Platform (`token`) | Roles |
 |---|---|---|---|---|
-| Bitpanda | AT | Crypto | greenhouse (`bitpanda`) | 24 |
-| Collibra | BE | Software | greenhouse (`collibra`) | 34 |
-| Ledgy | CH | Software | greenhouse (`ledgy`) | 16 |
-| Scandit | CH | Software | greenhouse (`scandit`) | 15 |
 | HelloFresh | DE | Food | greenhouse (`hellofresh`) | 440 |
 | Celonis | DE | Software | greenhouse (`celonis`) | 262 |
-| Raisin | DE | Fintech | greenhouse (`raisin`) | 34 |
-| Solaris | DE | Fintech | greenhouse (`solarisbank`) | 27 |
-| Forto | DE | Logistics | ashby (`forto`) | 7 |
-| Lunar | DK | Fintech | ashby (`lunar`) | 15 |
-| TravelPerk | ES | Travel Tech | ashby (`perk`) | 129 |
-| Cabify | ES | Mobility | greenhouse (`cabify`) | 67 |
 | Wolt | FI | Delivery | greenhouse (`wolt`) | 221 |
-| Oura | FI | Health Wearables | greenhouse (`oura`) | 97 |
-| Supercell | FI | Gaming | ashby (`supercell`) | 38 |
 | Doctolib | FR | Healthtech | ashby (`doctolib`) | 150 |
 | Pigment | FR | Software | lever (`pigment`) | 136 |
 | Alan | FR | Insurtech/Health | ashby (`alan`) | 119 |
-| Qonto | FR | Fintech | ashby (`qonto`) | 45 |
-| Back Market | FR | Marketplace | ashby (`backmarket`) | 33 |
-| Contentsquare | FR | Analytics Software | lever (`contentsquare`) | 30 |
-| Swile | FR | Fintech | lever (`swile`) | 29 |
-| Mirakl | FR | Marketplace Software | greenhouse (`mirakl`) | 16 |
-| BlaBlaCar | FR | Mobility | lever (`blablacar`) | 13 |
-| Ledger | FR | Crypto | ashby (`ledger`) | 7 |
-| Sorare | FR | Gaming/Crypto | ashby (`sorare`) | 4 |
 | Intercom | IE | Software | greenhouse (`intercom`) | 116 |
-| Tines | IE | Security Software | greenhouse (`tines`) | 24 |
 | Flipdish | IE | Restaurant Tech | greenhouse (`flipdish`) | 15 |
-| Workhuman | IE | HR Tech | ashby (`workhuman`) | 8 |
-| Satispay | IT | Fintech | ashby (`satispay`) | 84 |
-| Nord Security | LT | Security | ashby (`nord-security`) | 128 |
 | Adyen | NL | Fintech | greenhouse (`adyen`) | 217 |
-| Catawiki | NL | Marketplace | greenhouse (`catawiki`) | 47 |
-| Miro | NL | Software | ashby (`miro`) | 28 |
-| Docplanner | PL | Healthtech | ashby (`docplanner`) | 20 |
-| Brainly | PL | EdTech | ashby (`brainly`) | 1 |
-| Sword Health | PT | Healthtech | greenhouse (`swordhealth`) | 35 |
-| Feedzai | PT | Fintech/AI | greenhouse (`feedzai`) | 31 |
-| Lovable | SE | AI Software | ashby (`lovable`) | 79 |
 | SumUp | UK | Fintech | greenhouse (`sumup`) | 365 |
 | Wayve | UK | Autonomous | ashby (`wayve`) | 193 |
 | Graphcore | UK | Semiconductors/AI | greenhouse (`graphcore`) | 171 |
 | Tide | UK | Fintech | greenhouse (`tide`) | 84 |
-| Farfetch | UK | E-commerce | lever (`farfetch`) | 46 |
-| Elliptic | UK | Crypto Analytics | ashby (`elliptic`) | 32 |
-| GoCardless | UK | Fintech | greenhouse (`gocardless`) | 27 |
-| OakNorth | UK | Fintech | ashby (`oaknorth`) | 15 |
 | Stability AI | UK | AI | greenhouse (`stabilityai`) | 6 |
 | Improbable | UK | Gaming | ashby (`improbable`) | 5 |
 | PolyAI | UK | AI | greenhouse (`polyai`) | 3 |

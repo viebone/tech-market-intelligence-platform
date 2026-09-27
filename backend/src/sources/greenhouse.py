@@ -66,6 +66,16 @@ COMPANIES: list[str] = [
     "duolingo", "gusto", "carta", "khanacademy", "doximity", "glossier",
     "peloton", "n26", "getyourguide", "contentful", "trustpilot", "typeform",
     "algolia", "gymshark",
+    # US + EU panel, batch 2 (added 2026-09-27, EMPLOYER_PANEL.md) — each
+    # verified 2026-09-27 by a real HTTP 200 with real open roles matching
+    # the company (title/content-inspected, not just a 200). Extends the
+    # panel into 9 countries with no prior coverage (AT, BE, CH, IE, IT, LT,
+    # PL, PT + rounds out DE/DK/ES/FI/FR/NL/SE/UK). Board tokens differ from
+    # the plain company slug for solarisbank (Solaris) and swordhealth
+    # (Sword Health); every other token is the plain slug.
+    "bitpanda", "collibra", "ledgy", "scandit", "raisin", "solarisbank",
+    "cabify", "oura", "mirakl", "tines", "catawiki", "swordhealth",
+    "feedzai", "gocardless",
 ]
 
 

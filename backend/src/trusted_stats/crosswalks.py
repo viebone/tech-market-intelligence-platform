@@ -21,7 +21,7 @@ entry here — adding an industry tag without deciding its mapping is not possib
 
 from __future__ import annotations
 
-CROSSWALK_VERSION = "2026-09-26.1"
+CROSSWALK_VERSION = "2026-09-27.1"
 
 OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # J — Information and communication: software, AI, developer/cloud platforms, media, social, search, security
@@ -30,10 +30,18 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     "Media/Streaming": "J", "Media/Streaming Tools": "J", "Productivity Software": "J", "SaaS": "J",
     "SaaS (Incident Management)": "J", "SaaS/CRM": "J", "Search Software": "J", "Security Software": "J",
     "Social Media": "J", "Social/Communications": "J", "Web/Dev Tools": "J",
+    # Added 2026-09-27 with the US + EU panel batch 2 — pure software products/platforms,
+    # same reasoning as the existing J entries above.
+    "AI Software": "J", "Analytics Software": "J", "Gaming": "J", "Marketplace Software": "J",
+    "Security": "J", "Software": "J",
     # K — Financial and insurance activities
     "Fintech": "K", "Fintech (Banking-as-a-Service)": "K", "Fintech/AI": "K", "Insurtech": "K",
+    # Added 2026-09-27 — crypto exchanges/custody are financial-services activity, same section as Fintech.
+    "Crypto": "K",
     # G — Wholesale and retail trade
     "Retail/Consumer": "G", "Retail/E-commerce": "G", "Retail/Tech (Grocery/Robotics)": "G",
+    # Added 2026-09-27 — Farfetch's own tag string, distinct from "Retail/E-commerce" above but same section.
+    "E-commerce": "G",
     # P — Education (an education nonprofit only; the mixed EdTech tag is None)
     "Nonprofit/EdTech": "P",
     # None — genuinely ambiguous or mixed; reported as "not placed", never forced
@@ -44,6 +52,15 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # Added 2026-09-26 with the Personio adapter — each tag spans software AND non-software activity
     # (a defence-tech firm may build drones = manufacturing, or software; construction tech may be SaaS or a builder).
     "Construction Tech": None, "Defence Tech": None,
+    # Added 2026-09-27 with the US + EU panel batch 2 — each genuinely mixes activities: Crypto
+    # Analytics is a compliance-software vendor serving crypto/finance, not itself a financial
+    # institution; Gaming/Crypto spans two of the sections above with no single fit; Health
+    # Wearables mixes hardware, software and a health service (same reasoning as Healthtech);
+    # Logistics and Mobility mix a software platform with the actual transport/freight operation
+    # (same reasoning as Automotive Marketplace); Travel Tech mixes software with travel services
+    # (same reasoning as Travel/Tech).
+    "Crypto Analytics": None, "Gaming/Crypto": None, "Health Wearables": None, "Logistics": None,
+    "Mobility": None, "Travel Tech": None,
 }
 
 

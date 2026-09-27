@@ -90,6 +90,19 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "thought-machine": "Fintech Software", "zego": "Insurtech",
     # Personio — first Personio-hosted employers, added 2026-09-26 (changes/2026-09-26-personio-adapter.md)
     "personio": "HR Tech", "stark": "Defence Tech", "capmo": "Construction Tech",
+    # US + EU panel, batch 2 — added 2026-09-27 (EMPLOYER_PANEL.md)
+    "bitpanda": "Crypto", "collibra": "Software", "ledgy": "Software",
+    "scandit": "Software", "raisin": "Fintech", "solarisbank": "Fintech",
+    "forto": "Logistics", "lunar": "Fintech", "perk": "Travel Tech",
+    "cabify": "Mobility", "oura": "Health Wearables", "supercell": "Gaming",
+    "qonto": "Fintech", "backmarket": "Marketplace", "contentsquare": "Analytics Software",
+    "swile": "Fintech", "mirakl": "Marketplace Software", "blablacar": "Mobility",
+    "ledger": "Crypto", "sorare": "Gaming/Crypto", "tines": "Security Software",
+    "workhuman": "HR Tech", "satispay": "Fintech", "nord-security": "Security",
+    "catawiki": "Marketplace", "miro": "Software", "docplanner": "Healthtech",
+    "brainly": "EdTech", "swordhealth": "Healthtech", "feedzai": "Fintech/AI",
+    "lovable": "AI Software", "elliptic": "Crypto Analytics", "gocardless": "Fintech",
+    "oaknorth": "Fintech", "farfetch": "E-commerce",
 }
 
 
@@ -144,6 +157,17 @@ COMPANY_REGION: dict[str, str] = {
     "thought-machine": "UK", "zego": "UK",
     # Personio-hosted employers, added 2026-09-26 — all headquartered in Germany (Munich).
     "personio": "DE", "stark": "DE", "capmo": "DE",
+    # US + EU panel, batch 2 — added 2026-09-27 (EMPLOYER_PANEL.md). HQ
+    # country, ISO-2 for EU members (UK keeps the existing "UK" spelling).
+    "bitpanda": "AT", "collibra": "BE", "ledgy": "CH", "scandit": "CH",
+    "raisin": "DE", "solarisbank": "DE", "forto": "DE", "lunar": "DK",
+    "perk": "ES", "cabify": "ES", "oura": "FI", "supercell": "FI",
+    "qonto": "FR", "backmarket": "FR", "contentsquare": "FR", "swile": "FR",
+    "mirakl": "FR", "blablacar": "FR", "ledger": "FR", "sorare": "FR",
+    "tines": "IE", "workhuman": "IE", "satispay": "IT", "nord-security": "LT",
+    "catawiki": "NL", "miro": "NL", "docplanner": "PL", "brainly": "PL",
+    "swordhealth": "PT", "feedzai": "PT", "lovable": "SE",
+    "elliptic": "UK", "gocardless": "UK", "oaknorth": "UK", "farfetch": "UK",
 }
 
 # employer_size_band — RETIRED as a hand-assigned label 2026-09-25

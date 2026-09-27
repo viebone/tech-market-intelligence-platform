@@ -60,6 +60,13 @@ COMPANIES: list[str] = [
     # in the job descriptions themselves.
     "substack", "vanta", "lemonade", "pleo", "mollie", "deepl", "paddle",
     "synthesia", "thought-machine", "zego",
+    # US + EU panel, batch 2 (added 2026-09-27, EMPLOYER_PANEL.md) — verified
+    # 2026-09-27 by a real HTTP 200 with real open roles matching the
+    # company. "perk" is TravelPerk's real board token (not "travelperk" —
+    # a wrong first guess caught by this same verification pass).
+    "forto", "lunar", "perk", "supercell", "qonto", "backmarket", "ledger",
+    "sorare", "workhuman", "satispay", "nord-security", "miro", "docplanner",
+    "brainly", "lovable", "elliptic", "oaknorth",
 ]
 
 
