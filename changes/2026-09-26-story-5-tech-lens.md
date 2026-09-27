@@ -4,7 +4,7 @@ date: 2026-09-26
 trigger-type: stakeholder-request
 change-type: ux-change, api-change
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Story 5 gains a "Tech and communications" block
@@ -139,9 +139,12 @@ make today). **No new ingestion, no new table, no new source.**
       been checked in one).
 - [x] Step 8 (**DONE 2026-09-27**): Update `OVERVIEW.md`; `ACCESS.md` if Step 3's decision changes it; `CLAUDE.md` spec-chain
       status line for Story 5.
-- [ ] Step 9: Commit **only this change's files** (the working tree holds unrelated uncommitted Personio /
-      headcount work); deploy only on the operator's explicit go, batched with other real changes (a
-      docs-only push redeploys every service and drops live MCP sessions).
+- [x] Step 9 (**DONE 2026-09-27**): Commit **only this change's files** — committed as `53a264a`
+      (17 files: the change/research pair, all 8 backend spec/impl/test files, all 3 frontend spec/impl
+      files, and OVERVIEW.md/CLAUDE.md/ACCESS.md — via `git hash-object`+`update-index` surgical staging
+      on shared files, verified line-by-line that only this change's own hunks were staged before
+      committing). Not deployed — deploy only on the operator's explicit go, batched with other real
+      changes (a docs-only push redeploys every service and drops live MCP sessions).
 
 ## Out of scope — separate change requests if wanted
 - Ingesting the VACS02 `job openings rate` sheet (vacancies per 100 jobs — would say whether tech hiring
