@@ -4,7 +4,7 @@ experience: market-health
 directive: low
 status: implemented
 created: 2026-06-13
-updated: 2026-09-11
+updated: 2026-09-27
 ---
 
 # Market Health — Frontend Architecture Spec
@@ -190,7 +190,8 @@ Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`; restru
 - **Category Share Bar is fully data-driven.** Render one segment per row in
   `inventory.role_breakdown`, in the order the API returns (descending by count). Map each
   `role_category` to its existing accent colour by name (`design/visual-design.md`'s Accent
-  palette — Designer/indigo-500, Product Manager/purple-500, Engineer/emerald-500); never
+  palette — Designer/indigo-500, Product Manager/fuchsia-600, Engineer/emerald-600, revised
+  2026-09-26 by `changes/2026-09-26-role-palette-accessibility.md`); never
   assign colour by position or invent a colour for an unrecognised category — fall back to a
   neutral gray-600 segment rather than guessing a hue, and still label it by name.
 - **Shortcut cards are fully data-driven.** Render exactly one Shortcut Card per entry in
@@ -489,14 +490,21 @@ standard every story must meet". In frontend terms:
 - framing line first, then 3–6 `StoryBlock`s, nothing else at the top level;
 - every `StoryBlock` child is a `RankedBarList` / `StoryFigure` / `Meter` / share bar / trend /
   a real Nivo chart (added 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`, "Charting
-  library" below) — never a bare `<p>`;
+  library" below) / one of the six components in "New chart components" (added 2026-09-27) —
+  never a bare `<p>`;
 - **≥2 distinct** of those form components across the story;
+- **no form repeats within a story except `RankedBarList`** (added 2026-09-27), which may repeat
+  at most twice, never with an adjacent `StoryBlock`;
 - **≤1** `StoryFigure` in the whole story;
+- every chart other than `StatTilePair` renders a `ShowAsTable` disclosure with the same numbers
+  the chart plots (added 2026-09-27 — Chart accessibility standard);
 - no block renders the welcome's *current-snapshot* figures — total postings, company count,
   collection start, current role-category split (a *year-on-year shift* in the same dimension
   is allowed; it answers a different question);
 - `npm run build` + `tsc` clean; eyeball against the running welcome to confirm no duplication
-  and consistent rhythm.
+  and consistent rhythm; for a chart new to this pass, also check in a real browser — a
+  server-side render or a clean build alone doesn't confirm layout, keyboard focus, or contrast
+  on real pixels (this file's own Story 5 implementation note, above, found exactly that gap).
 
 ### Year-on-year comparison component (added 2026-09-10 — `changes/2026-09-10-story-yoy-breakdowns.md`; revised 2026-09-22 — `changes/2026-09-22-nivo-charting-library.md`)
 
@@ -540,6 +548,74 @@ a 2-way partition of a meaningful population; forcing a donut there would misrep
 number actually means. `Meter` itself is unchanged and still real, live code (Story 3 remains
 its only consumer).
 
+### New chart components (added 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`)
+
+Six new components + one shared accessibility primitive, replacing several Ranked-bar-list and
+grouped-bar-chart blocks across Stories 1, 3, 4, 5 so a story stops repeating one chart form more
+than the no-repeat rule allows (`design/market-health/data-stories.md` — Visual standard;
+`design/visual-design.md` — the seven new form specs added in that same change). **Story 2 is
+untouched, per the stakeholder's own direction — nothing here touches `WorldRiskMap` or
+`EmploymentRiskStoryMessage`.**
+
+**No new npm dependency.** Every component below is hand-rolled (divs/SVG) — the same call
+already made for `WorldRiskMap` and `TechCommsTrendChart` (block 4a, above). None of the
+installed Nivo packages (`@nivo/bar`, `@nivo/pie`, `@nivo/theming`, `@nivo/core`) has a
+stacked-share, ordered-column, box-and-whisker, treemap, or diverging-bar form, and adding a new
+package for one block each would cost real, measured bundle weight (Charting library, above) for
+shapes plain SVG/CSS already draws cheaply — the same reasoning the experience spec's own
+recommendation for the Range chart already gave.
+
+| Component | Story block | Responsibility | Location |
+|---|---|---|---|
+| `StackedShareBar` | S1 block 6 (role mix) | Two 100% stacked horizontal bars ("This year" / "A year ago"), 3 segments in the fixed order Design → Engineering → Product Management (`design/visual-design.md` — Chart accessibility standard, rule 6 — keeps the palette's one CVD-warning pair, indigo/fuchsia, apart). `comparisonAvailable === false` renders **no bars at all** — only the muted "comparison starts…" line — per the experience spec's explicit decision that a current-only bar here would repeat the Welcome's own Category Share Bar. | `frontend/src/features/market-health/stories/StackedShareBar.tsx` |
+| `OrderedColumns` | S1 block 7 (seniority); S5 block 4 (business size, replacing its `RankedBarList`) | Generic ordered-scale column chart: one column per `rows[]` entry, **in the order given — never re-sorted by value** (the order is the meaning). An optional `compareValue` per row draws a second, narrower gray-500 column beside the primary indigo-500 one (the year-ago comparison; absent = current-only state). Below 480px width, switches to ordered horizontal bars (top → bottom, same order) so long step labels never rotate or collide (Reflow & zoom rule). | `frontend/src/features/market-health/stories/OrderedColumns.tsx` |
+| `StatTilePair` | S1 block 8 (IC vs. management) | Two neutral tiles side by side (`grid grid-cols-2 gap-3`, stacking below 360px), each a label/value/change-line. `changeAvailable === false` renders the muted "comparison starts…" line in place of the delta. **Not a chart** — no plot, so no `ShowAsTable` (same carve-out `StoryFigure` already has under the dataviz method: "a bare stat tile with no plot" skips the table view). | `frontend/src/features/market-health/stories/StatTilePair.tsx` |
+| `RangeChart` | S3 block 4 (typical pay by role, replacing its `RankedBarList`) | Hand-drawn SVG, one row per role: a 2px whisker (P10–P90), a rounded band (P25–P75), a median dot — **hollow** when `row.smallSample` (server-computed from the 30-sample threshold, `backend/specs/market-health/api.md`). Rows arrive pre-ordered by median descending; the component never re-sorts. Row label shows the role name + `n = {sampleSize}`, "small sample" appended when flagged. A role with no percentile figures renders the median dot alone with the caption "range not reported" — never an interpolated range. | `frontend/src/features/market-health/stories/RangeChart.tsx` |
+| `Treemap` | S4 block 2 (function breakdown, replacing its `RankedBarList`) | Hand-rolled, single-level **slice-and-dice** layout (alternating horizontal/vertical splits, tiles pre-sorted by size descending) — **not** a full squarified algorithm. At this story's real scale (currently under 15 tiles), slice-and-dice gives legible tile aspect ratios with far less layout code than a true squarify pass, and nothing here needs the finer packing that buys. One solid `indigo-400` fill per named tile, `gray-900` label text inside (contrast measured — see `design/visual-design.md`'s Chart accessibility standard). The server-computed "smaller functions" aggregate tile renders hollow with a **dashed** border; any `unknown` tile renders hollow with a **solid** border — never the same treatment, so a reader can tell "genuinely unknown" from "grouped for space" at a glance even before reading either label. | `frontend/src/features/market-health/stories/Treemap.tsx` |
+| `DivergingChangeBars` | S5 block 5 ("Which industries are changing", replacing its `YearOnYearGroupedBars mode="level"` — see "Superseded", below) | One indigo-500 bar per row, either side of a labelled zero line, ordered by signed change (server-side, largest rise first — the component never re-sorts). Each bar ends in its signed change with the unit spelled out and a ▲ / ▼ / – glyph (colour never carries direction alone — same bar, same hue, in both directions). | `frontend/src/features/market-health/stories/DivergingChangeBars.tsx` |
+| `ShowAsTable` *(new, shared primitive)* | Every component above except `StatTilePair` | A collapsed-by-default `<button>` (`text-xs`, ≥24px hit area — label "Show as table") that reveals a `<table caption={caption}>` built from `{ caption: string, columns: string[], rows: (string \| number)[][] }` — the exact numbers the chart already plots, never a separate client-side computation. Generic across every chart that uses it; each caller supplies its own caption/columns/rows, already formatted with units. | `frontend/src/features/market-health/stories/ShowAsTable.tsx` |
+
+**Accessibility (every component above).** Each follows `design/visual-design.md`'s Chart
+accessibility standard as a whole — 12px-minimum text in `gray-400` or lighter, a legend line for
+any colour/glyph/shape used, a `role="img"` `aria-label` stating what the chart shows, one
+keyboard tab stop with arrow-key stepping between marks where the form has an ordered sequence of
+them (`RangeChart`, `OrderedColumns`, `DivergingChangeBars`, `Treemap`'s size-descending tab
+order) and a visible `outline-2 outline-indigo-400` focus ring, and `ShowAsTable` per above. This
+spec does not re-derive those rules per component — `design/visual-design.md` is the source of
+truth for the exact wording, thresholds, and colours; this file only names which component
+carries which block.
+
+**Lazy-loading.** None of the six needs `React.lazy` — same reasoning `TechCommsTrendChart` and
+`WorldRiskMap` already established in this file: no Nivo import, no other heavy dependency, so
+there is nothing whose loading is worth deferring. If a real `npm run build` at implementation
+shows one of them (most plausibly `Treemap`, given its layout code) adding real weight, lazy-load
+only that one and measure the actual gzip delta — the same "check a real build, don't assume"
+discipline this file already holds Nivo-based components to. Don't lazy-load pre-emptively either.
+
+**Superseded: `YearOnYearGroupedBars` loses its last two callers.** Before this change it had
+exactly two call sites: Story 1's blocks 6–8 (`mode="share"`, the default) and Story 5's block 5
+(`mode="level"`, added 2026-09-25). This change replaces **all four** of those call sites
+(`StackedShareBar`/`OrderedColumns`/`StatTilePair` for Story 1; `DivergingChangeBars` for Story
+5) — confirmed by grep against the real files (`DataStoryMessage.tsx`, `UkVacanciesStoryMessage.tsx`)
+before writing this note, not assumed. **`YearOnYearGroupedBars.tsx` becomes real dead code once
+this change is implemented** — `/implement-frontend` must re-run the same import trace
+(`changes/2026-09-16-frontend-organization.md`'s own precedent: "confirmed by tracing every
+import across the real app, not guessed") immediately before deleting it, in case a change
+landed since this spec was written that added a new caller. If it is still unused, delete the
+file and its `YearOnYearContent`/`LevelYoYRow` type exports in the same pass, and confirm with
+`tsc --noEmit` + `npm run build` before and after, per that same precedent.
+
+**Retrofitting existing charts — explicitly out of scope.** `SharePieChart`, `SkillDemandChart`,
+and `WorldRiskMap` predate the Chart accessibility standard and don't yet have a `ShowAsTable`
+disclosure or the rest of the rule set. Retrofitting them is **not** part of this change:
+`WorldRiskMap` because Story 2 is untouched per the stakeholder's own direction; the other two
+because they're a real, separately-sized piece of work this change never costed, and folding it
+in here would blur what actually shipped for chart *variety* versus a product-wide accessibility
+pass. Recorded here so the gap is visible, not silently assumed covered. The one shared-component
+fix this change **does** make is `StoryBlock`'s `qualifier` text colour (flagged separately,
+Story 5 session's note above, and this change's own execution plan) — unavoidable, since every
+story depends on that one component.
+
 ### Story 2: employment risk across the market (added 2026-09-11 — `changes/2026-09-11-employment-events-independent-scope.md`)
 
 | Component | Responsibility | Location |
@@ -558,23 +634,44 @@ second catalogue entry.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `MarketBenchmarkStoryMessage` | Renders `POST /api/market-health/stories/market-benchmark`'s resolved sections: framing line (+ visible attribution text, rendered directly — not only in the Reasoning Panel) → `RankedBarList` (demand by role) → Hero Figure + Meter (total tracked vacancies + salary-data coverage) → `RankedBarList` (pay by role, currency-formatted) → `RankedBarList` (top skills, summed across roles). One movement, no year-on-year block (each tracked role has exactly one observed period so far). | `frontend/src/features/market-health/stories/MarketBenchmarkStoryMessage.tsx` |
+| `MarketBenchmarkStoryMessage` | Renders `POST /api/market-health/stories/market-benchmark`'s resolved sections: framing line (+ visible attribution text, rendered directly — not only in the Reasoning Panel) → `RankedBarList` (demand by role) → Hero Figure + Meter (total tracked vacancies + salary-data coverage) → **`RangeChart`** *(revised 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`, was `RankedBarList` of `salary_median` alone)* (pay by role, whisker/band/dot) → `RankedBarList` (top skills, summed across roles). One movement, no year-on-year block (each tracked role has exactly one observed period so far). | `frontend/src/features/market-health/stories/MarketBenchmarkStoryMessage.tsx` |
 
 `DataStoryMessage` gains a third branch: `story.story_id === "market-benchmark"` delegates to
 `MarketBenchmarkStoryMessage` — same thin-router pattern Story 2 established, no other file
-changes. Reuses `RankedBarList`/`StoryBlock`/`Meter` — no new shared component needed, unlike
-Story 2's `WorldRiskMap` (this story's data has no geography dimension).
+changes. Reuses `RankedBarList`/`StoryBlock`/`Meter` and, since 2026-09-27, `RangeChart` (New
+chart components, above) — the only new *shared* component this story pulls in, unlike Story 2's
+`WorldRiskMap` (this story's data has no geography dimension).
+
+**Pay block wiring (added 2026-09-27).** `roles[]` from `query_market_benchmark_data` now carries
+`salary_p10`/`salary_p25`/`salary_p75`/`salary_p90`/`salary_unit`/`employment_type`
+(`backend/specs/market-health/api.md` — Story 3, "Pay block gains the full percentile spread")
+alongside the existing `salary_median`/`salary_sample_size`. `MarketBenchmarkStoryMessage` maps
+each role straight through to `RangeChart`'s row shape. Computing `smallSample` client-side
+(`sampleSize < 30`) is **not** done — the server sends the flag already computed
+(`Business Logic`, above) so the threshold lives in exactly one place; and passes the how-to-read
+wording verbatim from
+`meta.definitions["benchmark.salary.percentiles"]`/the story's own copy of it (same shared
+`data_definitions.py` source the MCP tool reads) rather than hard-coding the sentence in this
+component.
 
 ### Story 4: beyond Design, Product & Engineering (added 2026-09-21 — `changes/2026-09-21-job-function-story.md`)
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `JobFunctionStoryMessage` | Renders `POST /api/market-health/stories/beyond-tracked-roles`'s resolved sections: framing line → `RankedBarList` (Job Function breakdown of `other`-classified postings) → `SharePieChart` *(revised 2026-09-22, was `Meter`)* (outside vs. inside the 3 tracked categories, with the real counts/percentage as a plain caption) → `RankedBarList` (real, un-normalized titles within the single largest function, heading built dynamically from the response's own `job_function` value). One movement, no year-on-year block (Job Function is brand new — no prior-year window exists yet). | `frontend/src/features/market-health/stories/JobFunctionStoryMessage.tsx` |
+| `JobFunctionStoryMessage` | Renders `POST /api/market-health/stories/beyond-tracked-roles`'s resolved sections: framing line → **`Treemap`** *(revised 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`, was `RankedBarList`)* (Job Function breakdown of `other`-classified postings, one tile per function) → `SharePieChart` *(revised 2026-09-22, was `Meter`)* (outside vs. inside the 3 tracked categories, with the real counts/percentage as a plain caption) → `RankedBarList` (real, un-normalized titles within the single largest function, heading built dynamically from the response's own `job_function` value). One movement, no year-on-year block (Job Function is brand new — no prior-year window exists yet). | `frontend/src/features/market-health/stories/JobFunctionStoryMessage.tsx` |
 
 `DataStoryMessage` gains a fourth branch: `story.story_id === "beyond-tracked-roles"` delegates
 to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses `RankedBarList`/
-`StoryBlock`/`Meter` — no new shared component needed. `tsc --noEmit` and `npm run build` both
-clean.
+`StoryBlock`/`Meter` and, since 2026-09-27, `Treemap` (New chart components, above). `tsc --noEmit`
+and `npm run build` both clean as of the last implementation pass; re-verify after the treemap
+swap.
+
+**Function breakdown wiring (added 2026-09-27).** `query_job_function_data`'s `functions[]` rows
+map straight to `Treemap`'s tile shape (`name`, `count`, `share`); the backend spec's 3%-of-total
+merge into a "{N} smaller functions" tile is server-computed (`backend/specs/market-health/api.md`
+— Story 4), so this component never re-buckets tiles itself — it only distinguishes the
+already-flagged aggregate tile (dashed hollow) from an `unknown` tile (solid hollow) by a field
+the response already carries, never by re-deriving which is which from the name string.
 
 ### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`; **block 4a spec added 2026-09-27 — `changes/2026-09-26-story-5-tech-lens.md`, not yet implemented**)
 
@@ -609,7 +706,7 @@ movement** and a platform-vs-publisher comparison.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), `RankedBarList` in **size order** (by business size, share) → *(Movement 2)* `YearOnYearGroupedBars` (levels mode) → *(Movement 3)* `SourceComparisonBars`. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
+| `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), **`OrderedColumns`** *(revised 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`, was `RankedBarList` in size order)* (by business size, in fixed size order) → *(Movement 2)* `TechCommsTrendChart` (block 4a, above) then **`DivergingChangeBars`** *(revised 2026-09-27, was `YearOnYearGroupedBars mode="level"` — see "Superseded", above)* (which industries are changing) → *(Movement 3)* `SourceComparisonBars`. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
 | `SourceAttribution` *(new, generic)* | Renders a story's visible attribution line (`text-xs text-gray-400`) from the section payload's `attribution` object — publisher, attribution text, and a period/provisional note. **Never hard-codes a publisher or licence string**; a story built from any future trusted source reuses it. If `licence_confirmed === false` it also renders the visible "usage terms not yet confirmed" caveat (`data-legibility` Provenance) — unused for ONS today, required for the first surface of any unconfirmed publisher. | `frontend/src/features/market-health/stories/SourceAttribution.tsx` |
 | `SourceComparisonBars` *(new)* | Nivo grouped horizontal bar chart for the **two-series comparison** (`design/visual-design.md`): rows `{ label, primary?: number, secondary?: number }`, `primaryName` / `secondaryName` for the legend and tooltip, both values are shares (%). A row missing one side renders only the existing bar plus its inline caption (never a zero bar). Legend line always shown above the chart, built from names, denominators and dates supplied by the API — not composed client-side. Tooltip names each series with its own source and figure, **never a difference or "over/under-represented"**. Lazy-loaded (`React.lazy` + `Suspense`, same `h-40 animate-pulse bg-gray-800` fallback), themed via the shared `nivoTheme.ts`; primary `indigo-500`, secondary `gray-600`. | `frontend/src/features/market-health/stories/SourceComparisonBars.tsx` |
 
@@ -716,18 +813,22 @@ its own `StoryBlock` with `heading="Tech and communications vacancies since 2001
 `MovementLabel` reads "How it's shifting" is unchanged (the movement label already introduces this
 block correctly, since 4a is the first block of Movement 2 per the experience spec).
 
-**Modification to an existing component (small, additive):** `YearOnYearGroupedBars` gains a
-`mode: "share" | "level"` prop (default `"share"`, so every current caller is unchanged). In
-`"level"` mode it takes `formatValue` (thousands), draws no percentage, and shows the delta as
-"▲ +6 thousand" / "▼ −12 thousand" / "– no change" (glyph + sign, never colour alone); the
-legend line and both period labels come from the section payload. Nothing else about the
-component changes — the no-prior-window fallback still renders `RankedBarList`.
+**`YearOnYearGroupedBars`'s `mode: "share" | "level"` prop — added 2026-09-25, superseded
+2026-09-27.** Built for this block ("Which industries are changing") to draw a thousands-based
+delta instead of a percentage-point one. **`changes/2026-09-26-data-story-chart-variety.md`**
+replaces this block's chart with `DivergingChangeBars` (New chart components, above) — a single
+bar showing the change directly reads better than two levels a reader has to subtract. History
+kept here, not erased, per this project's own "mark removed, don't erase" convention (see the
+Chart event marker note, above) — `mode="level"` has no remaining caller once this change lands
+(confirmed by the same grep the "Superseded" note above describes), so `/implement-frontend`
+removes that mode along with the whole component (`YearOnYearGroupedBars.tsx` deletion, above),
+rather than keeping a mode with no caller.
 
 `DataStoryMessage` gains a fifth branch: `story.story_id === "uk-vacancies-official"` delegates
-to `UkVacanciesStoryMessage` — same thin-router pattern as Stories 2-4; no other existing file
-changes beyond the `YearOnYearGroupedBars` prop above. `RankedBarList` must render the array in
-the order given (size order for block 4 is meaningful) — verify at implementation that it does
-not re-sort; if it does, add a `preserveOrder` prop rather than a new component.
+to `UkVacanciesStoryMessage` — same thin-router pattern as Stories 2-4. `OrderedColumns` (not
+`RankedBarList`, since 2026-09-27) must render `rows[]` in the order given (size order for block
+4 is meaningful, never sorted by value) — this is the component's own contract (New chart
+components, above), not a caveat to verify against a general-purpose list component.
 
 **API contract addition:** no new route — `POST /api/market-health/stories/{story_id}` with
 `story_id = "uk-vacancies-official"`. The catalogue metadata (`GET /api/market-health/stories`)
@@ -764,16 +865,26 @@ the standard above, in **two labelled movements**:
 5. **where the roles are** — `geographic-coverage` → `RankedBarList`, normalised-location caveat.
 
 **Movement 2 — how it's shifting (year on year)** — a short intro line naming the windows,
-then:
-6. **how the role mix is shifting** — `role-mix-shift` → `YearOnYearGroupedBars`;
-7. **how seniority is shifting** — `seniority-shift` → `YearOnYearGroupedBars`;
-8. **IC vs. management** — `track-shift` → `YearOnYearGroupedBars`.
+then, **revised 2026-09-27** (`changes/2026-09-26-data-story-chart-variety.md` — these three
+blocks were the exact repetition the change exists to fix, all three rendering the same
+`YearOnYearGroupedBars` grouped-bar form; each now uses the component matching its own question,
+per "New chart components" and "Superseded", above):
+6. **how the role mix is shifting** — `role-mix-shift` → `StackedShareBar`. `comparisonAvailable:
+   false` (sections 6–8's shared "no prior window yet" flag) renders **no bars**, only the
+   "comparison starts…" line — because a current-only bar here would repeat the Welcome's own
+   Category Share Bar (`design/market-health/data-stories.md`'s explicit decision).
+7. **how seniority is shifting** — `seniority-shift` → `OrderedColumns`, columns left → right
+   junior → senior. `comparisonAvailable: false` renders the current-year columns alone (no
+   comparison column) + the same muted line beneath.
+8. **IC vs. management** — `track-shift` → `StatTilePair`. `comparisonAvailable: false` renders
+   each tile's change line as the muted "comparison starts…" text instead of a delta.
 
 At launch and through the platform's first year, sections 6–8 arrive with
-`comparison_available: false` — `YearOnYearGroupedBars` shows each current window + the
-"comparison starts …" line. Distinct form components: `RankedBarList`, `SharePieChart`,
-`SkillDemandChart`, `YearOnYearGroupedBars` → four, well past the ≥2 minimum. Shows none of the
-welcome's *current* figures. Provenance in the Reasoning Panel.
+`comparison_available: false` — each block's own current-only state (above) renders instead of a
+misleading single-series comparison. Distinct form components: `RankedBarList`, `SharePieChart`,
+`SkillDemandChart`, `StackedShareBar`, `OrderedColumns`, `StatTilePair` → **six**, well past the
+≥2 minimum, and — per the no-repeat rule — no form here repeats. Shows none of the welcome's
+*current* figures. Provenance in the Reasoning Panel.
 
 ### Catalogue and response state
 

@@ -700,6 +700,7 @@ def build_market_benchmark_story() -> dict[str, Any]:
     first real consumer of this table's data, exercising the rule
     scraped-data-sources/api.md's Business Logic already specified.
     """
+    from data_definitions import DEFINITIONS
     from scraping.itjobswatch import ROLE_SLUGS
     from source_licences import get_licence, is_source_usable
 
@@ -728,7 +729,8 @@ def build_market_benchmark_story() -> dict[str, Any]:
         observation_rows = _rows_as_dicts(conn.execute(
             """
             SELECT DISTINCT ON (entity_name)
-                entity_name, vacancy_count, salary_median, salary_sample_size
+                entity_name, vacancy_count, salary_median, salary_sample_size,
+                salary_p10, salary_p25, salary_p75, salary_p90, salary_unit, employment_type
             FROM market_observations
             WHERE source = %s
             ORDER BY entity_name, period_end DESC
@@ -754,15 +756,29 @@ def build_market_benchmark_story() -> dict[str, Any]:
         {"entity_name": r["entity_name"], "vacancy_count": r["vacancy_count"]}
         for r in observation_rows if r["vacancy_count"] is not None
     ]
+    def _num(v):
+        # NUMERIC -> Decimal from psycopg; JSONResponse's plain json.dumps
+        # doesn't know how to serialize Decimal (confirmed via a real
+        # TestClient call against production data, not assumed) -- cast to
+        # float, same as every other numeric fact in this module. None stays
+        # None -- never coerced to 0.0 (a role with no percentile on record
+        # is "not reported", not zero).
+        return float(v) if v is not None else None
+
     pay_rows = [
         {
-            # salary_median is NUMERIC -> Decimal from psycopg; JSONResponse's
-            # plain json.dumps doesn't know how to serialize Decimal (confirmed
-            # via a real TestClient call against production data, not assumed)
-            # -- cast to float here, same as every other numeric fact in this
-            # module already comes back as a plain int/float.
-            "entity_name": r["entity_name"], "salary_median": float(r["salary_median"]),
+            "entity_name": r["entity_name"], "salary_median": _num(r["salary_median"]),
             "salary_sample_size": r["salary_sample_size"],
+            # Percentiles/unit/employment_type -- added 2026-09-27
+            # (changes/2026-09-26-data-story-chart-variety.md), for the Range
+            # chart (design/market-health/data-stories.md -- Story 3).
+            "salary_p10": _num(r["salary_p10"]), "salary_p25": _num(r["salary_p25"]),
+            "salary_p75": _num(r["salary_p75"]), "salary_p90": _num(r["salary_p90"]),
+            "salary_unit": r["salary_unit"], "employment_type": r["employment_type"],
+            # The 30-sample floor decided in the experience spec's "Small-sample
+            # threshold" -- flagged here, once, rather than left for the
+            # frontend to re-derive from a raw number.
+            "small_sample": r["salary_sample_size"] is not None and r["salary_sample_size"] < 30,
         }
         for r in observation_rows if r["salary_median"] is not None
     ]
@@ -800,9 +816,20 @@ def build_market_benchmark_story() -> dict[str, Any]:
         _section(
             "market-benchmark-pay",
             "Typical pay by role",
-            {"roles": pay_rows},
-            "Median annual salary only — the real spread (10th-90th percentile) is wider than "
-            "this single figure per role suggests.",
+            {
+                "roles": pay_rows,
+                # Shared plain-language wording (data_definitions.py) — the SAME text
+                # get_market_benchmark's meta.definitions carries, so a person reading this
+                # story and an external AI describing salary_p10..salary_p90 use identical
+                # words (added 2026-09-27, changes/2026-09-26-data-story-chart-variety.md).
+                "definitions": (
+                    {"benchmark.salary.percentiles": DEFINITIONS["benchmark.salary.percentiles"]}
+                    if pay_rows else {}
+                ),
+            },
+            "Sample size is stated per role; a role below 30 salaries is marked as a small "
+            "sample, and a role with no percentile range on record shows its median only, "
+            "captioned \"range not reported\" — never estimated or interpolated.",
             ready=bool(pay_rows),
         ),
         _section(
@@ -904,14 +931,20 @@ def build_job_function_story() -> dict[str, Any]:
     )
     other_share = (other_count / total_count * 100) if total_count else 0.0
 
+    # Treemap tiles — added 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md), replacing
+    # this block's Ranked bar list. Shares/kind computed once, shared with query_job_function_data
+    # (market_query.py) via _job_function_tiles rather than reimplemented here.
+    from market_query import _job_function_tiles
+    function_tiles = _job_function_tiles(function_rows)
+
     sections = [
         _section(
             "beyond-tracked-roles-breakdown",
             "What the wider hiring picture looks like",
-            {"functions": function_rows},
+            {"functions": function_tiles},
             f"Based on {other_with_job_function} of {other_count} postings outside Design, "
             f"Product, and Engineering that have a function assigned so far." + reprocessing_note,
-            ready=bool(function_rows),
+            ready=bool(function_tiles),
         ),
         _section(
             "beyond-tracked-roles-scale",

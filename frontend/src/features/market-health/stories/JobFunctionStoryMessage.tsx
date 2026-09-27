@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
+import { Treemap, type TreemapTile } from "./Treemap";
 import type { DataStoryResult } from "./DataStoryMessage";
 
 // Lazy-loaded, same pattern as changes/2026-09-22-nivo-charting-library.md.
@@ -54,9 +55,18 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
   const scaleSection = section(story, "beyond-tracked-roles-scale");
   const titlesSection = section(story, "beyond-tracked-roles-top-titles");
 
-  const functionRows: RankedBarRow[] = listFrom(breakdownSection, "functions")
-    .map((row) => ({ label: str(row.job_function), value: num(row.posting_count) }))
-    .filter((row) => row.label !== "");
+  // Revised 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md) — was a RankedBarList.
+  // `share`/`kind` are server-computed (market_query._job_function_tiles); this component never
+  // re-buckets a tile itself, only distinguishes the already-flagged aggregate from `unknown`.
+  const functionTiles: TreemapTile[] = listFrom(breakdownSection, "functions")
+    .map((row) => ({
+      key: str(row.job_function),
+      name: str(row.job_function),
+      count: num(row.posting_count),
+      share: num(row.share),
+      kind: (row.kind === "aggregate" || row.kind === "unknown" ? row.kind : "named") as TreemapTile["kind"],
+    }))
+    .filter((t) => t.name !== "");
 
   const scaleContent = scaleSection?.content ?? {};
   const otherCount = num(scaleContent.other_count);
@@ -72,7 +82,7 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
     <article className="space-y-5" aria-label={story.question}>
       <div>
         <h2 className="text-lg font-semibold text-gray-100">Beyond Design, Product &amp; Engineering</h2>
-        <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-gray-400">Updated {new Date(story.as_of).toLocaleString()}</p>
       </div>
 
       {/* Framing line — states this is the picture beyond the 3 tracked categories,
@@ -86,9 +96,12 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
       <StoryBlock
         heading="What the wider hiring picture looks like"
         subtitle="Postings outside Design, Product Management, and Engineering, by function."
-        {...blockProps(breakdownSection, functionRows.length > 0)}
+        {...blockProps(breakdownSection, functionTiles.length > 0)}
       >
-        <RankedBarList rows={functionRows} limit={11} />
+        <Treemap
+          tiles={functionTiles}
+          tableCaption="Postings outside Design, Product Management, and Engineering, by function."
+        />
       </StoryBlock>
 
       <StoryBlock
@@ -104,7 +117,7 @@ export function JobFunctionStoryMessage({ story }: { story: DataStoryResult }) {
             ]}
           />
         </Suspense>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs text-gray-400">
           {otherCount.toLocaleString()} of {totalCount.toLocaleString()} classified postings
           ({otherShare.toFixed(1)}%). The trend chart and "What we know about the market" only
           ever show the tracked slice.

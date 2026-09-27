@@ -45,6 +45,15 @@ now render as real comparison charts instead of plain ranked lists or a bare per
 "What we know about the market"'s skills-demand, year-on-year, and pay-transparency blocks;
 "Employment risk"'s contraction-vs-expansion split; "Beyond Design, Product Management &
 Engineering"'s share of all hiring — same underlying data, easier to read at a glance.
+_(New, 2026-09-27.)_ Across all four of these stories, several more numbers now show up in
+whichever picture actually fits the question, rather than a ranked list repeated three or four
+times in a row: how the role mix, seniority, and individual-contributor-vs-management split are
+shifting each get their own distinct shape; typical pay by role now shows the real range of
+advertised salaries, not just one average figure; what the tracked companies hire for beyond
+Design, Product Management, and Engineering is now sized visually by how much of the wider
+picture each area actually is; and which industries are gaining or losing UK vacancies is now a
+plain up-or-down comparison. Every chart also now has a "Show as table" option for the exact
+numbers, works from the keyboard, and reads correctly with a screen reader.
 
 **Tell us how it's going.** _(New, 2026-09-23.)_ "Give Feedback" sits at the bottom of the task
 list, always available — click it to rate overall satisfaction (1–5) and optionally say more, in

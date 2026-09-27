@@ -4,7 +4,8 @@ import { StoryBlock } from "./StoryBlock";
 import { StoryFigure } from "./StoryFigure";
 import { SourceAttribution, isSourceAttribution, type SourceAttributionData } from "./SourceAttribution";
 import { TechCommsTrendChart, type TrendPoint } from "./TechCommsTrendChart";
-import type { LevelYoYRow } from "./YearOnYearGroupedBars";
+import { OrderedColumns, type OrderedColumnRow } from "./OrderedColumns";
+import { DivergingChangeBars, type DivergingRow } from "./DivergingChangeBars";
 import type { ComparisonRow } from "./SourceComparisonBars";
 import type { DataStoryResult, DataStorySection } from "./DataStoryMessage";
 
@@ -22,9 +23,9 @@ import type { DataStoryResult, DataStorySection } from "./DataStoryMessage";
 //    between the platform's figures and ONS's (the comparison payload carries none, on purpose).
 //  - No implementation words in visible copy (no dataset codes, SIC, adapter, series).
 
-const YearOnYearGroupedBars = lazy(() =>
-  import("./YearOnYearGroupedBars").then((m) => ({ default: m.YearOnYearGroupedBars })),
-);
+// YearOnYearGroupedBars's lazy import (this block's own use of it, mode="level") was removed
+// here 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md) — "Which industries are
+// changing" now uses DivergingChangeBars, which needs no Nivo import to defer.
 const SourceComparisonBars = lazy(() =>
   import("./SourceComparisonBars").then((m) => ({ default: m.SourceComparisonBars })),
 );
@@ -74,9 +75,11 @@ function seriesPoint(value: unknown): { value: number; index: number; status: "f
   return { value: num(r.value), index: num(r.index), status: status === "provisional" || status === "revised" ? status : "final" };
 }
 
-/** The eyebrow label that opens each labelled movement of a story. */
+/** The eyebrow label that opens each labelled movement of a story. Was 10px/gray-500; corrected
+ * 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md, design/visual-design.md's "Story
+ * eyebrow") — 3.04:1 on gray-800, under the 4.5:1 text minimum. */
 function MovementLabel({ children }: { children: string }) {
-  return <p className="text-[10px] font-medium uppercase tracking-widest text-gray-500">{children}</p>;
+  return <p className="text-xs font-medium uppercase tracking-widest text-gray-400">{children}</p>;
 }
 
 const MONTHS: Record<string, string> = {
@@ -139,7 +142,9 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
     .filter((r) => r.label !== "");
 
   // Fixed size order from the API — the order IS the meaning, so it is never re-sorted here.
-  const sizeRows: RankedBarRow[] = listFrom(sizeSection, "rows")
+  // Revised 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md) — was a RankedBarList
+  // "in size order"; OrderedColumns makes that order structural rather than a caveat.
+  const sizeRows: OrderedColumnRow[] = listFrom(sizeSection, "rows")
     .map((r) => {
       const share = num(r.share_pct);
       return {
@@ -150,7 +155,10 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
     })
     .filter((r) => r.label !== "");
 
-  const shiftRows: LevelYoYRow[] = listFrom(shiftSection, "rows")
+  // Revised 2026-09-27 — was rendered via YearOnYearGroupedBars mode="level"; DivergingChangeBars
+  // replaces it (design/market-health/data-stories.md — Story 5, block 5). Same row shape
+  // (label/current/prior/delta), so the mapping itself is unchanged.
+  const shiftRows: DivergingRow[] = listFrom(shiftSection, "rows")
     .map((r) => ({
       label: shortIndustry(str(r.label)),
       current: num(r.current),
@@ -203,7 +211,7 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
     <article className="space-y-5" aria-label={story.question}>
       <div>
         <h2 className="text-lg font-semibold text-gray-100">UK vacancies (official data)</h2>
-        <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-gray-400">Updated {new Date(story.as_of).toLocaleString()}</p>
       </div>
 
       {/* Framing line, then the publisher's name and exact attribution — on the page itself. */}
@@ -211,7 +219,7 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
       {attribution ? (
         <SourceAttribution attribution={attribution} />
       ) : story.attribution_text ? (
-        <p className="text-xs text-gray-500">{story.attribution_text}</p>
+        <p className="text-xs text-gray-400">{story.attribution_text}</p>
       ) : null}
 
       <MovementLabel>The UK market right now</MovementLabel>
@@ -237,7 +245,10 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
         subtitle="Share of all vacancies, by how many people the employing business has."
         {...blockProps(sizeSection, sizeRows.length > 0)}
       >
-        <RankedBarList rows={sizeRows} limit={5} />
+        <OrderedColumns
+          rows={sizeRows}
+          tableCaption="Share of all vacancies, by how many people the employing business has."
+        />
       </StoryBlock>
 
       <MovementLabel>How it's shifting</MovementLabel>
@@ -247,6 +258,10 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
         subtitle={str(techContent.subtitle)}
         {...blockProps(techSection, techPoints.length > 0)}
       >
+        {/* StoryBlock's own qualifier slot was text-gray-500 until changes/2026-09-26-data-story-chart-variety.md
+            fixed it (now text-gray-400, matching the Chart accessibility standard) — this block used to render
+            its qualifier manually to work around that; now that the shared fix has landed, it uses the normal
+            blockProps path like every other block, above. */}
         <TechCommsTrendChart
           points={techPoints}
           groupLabel={techGroupLabel}
@@ -262,15 +277,16 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
 
       <StoryBlock
         heading="Which industries are changing"
-        subtitle={`Estimated vacancies by industry, in thousands: ${periodLabel ? `three months to ${periodEndShort(periodLabel)}` : "the latest three months"} compared with the same three months a year earlier.`}
+        subtitle={`Change in estimated vacancies by industry, in thousands: ${periodLabel ? `three months to ${periodEndShort(periodLabel)}` : "the latest three months"} vs. the same three months a year earlier.`}
         {...blockProps(shiftSection, shiftRows.length > 0)}
       >
-        <Suspense fallback={CHART_LOADING_FALLBACK}>
-          <YearOnYearGroupedBars
-            mode="level"
-            content={{ currentPeriodLabel: periodLabel, priorPeriodLabel, rows: shiftRows }}
-          />
-        </Suspense>
+        <DivergingChangeBars
+          rows={shiftRows}
+          unit="thousand"
+          tableCaption="Change in estimated vacancies by industry, in thousands, this year vs. a year earlier."
+          currentPeriodLabel={periodLabel || "This period"}
+          priorPeriodLabel={priorPeriodLabel || "A year earlier"}
+        />
         <p className="mt-2 text-sm text-gray-400">
           A drop can mean slower hiring or roles being filled faster — this shows the change, not the reason.
         </p>
@@ -284,7 +300,7 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
         {...blockProps(crossSection, crossRows.length > 0)}
       >
         {/* The legend is composed by the API (names, denominators, dates) — shown above the chart. */}
-        {str(crossContent.legend) ? <p className="mb-2 text-xs text-gray-500">{str(crossContent.legend)}</p> : null}
+        {str(crossContent.legend) ? <p className="mb-2 text-xs text-gray-400">{str(crossContent.legend)}</p> : null}
         <Suspense fallback={CHART_LOADING_FALLBACK}>
           <SourceComparisonBars
             rows={crossRows}

@@ -11,6 +11,11 @@ import type { ReactNode } from "react";
 // changes/2026-09-11-data-legibility-market-health.md — subtitle states what's
 // being measured and its unit; qualifier states how much to trust it. The two
 // are never merged into one line (see Data Legibility, visual-design.md).
+//
+// `qualifier` text colour corrected 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md)
+// — was text-gray-500, which measures 3.04:1 on this component's gray-800 surface, under the
+// 4.5:1 the Chart accessibility standard requires for text. text-gray-400 (5.78:1) is the new
+// floor for every story's small text. Shared by every story, so this one fix applies everywhere.
 
 export function StoryBlock({
   heading,
@@ -44,7 +49,7 @@ export function StoryBlock({
           children
         )}
       </div>
-      {qualifier ? <p className="mt-2 text-xs text-gray-500">{qualifier}</p> : null}
+      {qualifier ? <p className="mt-2 text-xs text-gray-400">{qualifier}</p> : null}
     </section>
   );
 }

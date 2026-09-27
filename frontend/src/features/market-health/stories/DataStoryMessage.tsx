@@ -1,8 +1,11 @@
 import { lazy, Suspense } from "react";
 import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
-import type { YearOnYearContent } from "./YearOnYearGroupedBars";
+import type { YearOnYearContent, YoYRow } from "./YearOnYearGroupedBars";
 import type { SkillDemandRow } from "./SkillDemandChart";
+import { StackedShareBar, type ShareSegment } from "./StackedShareBar";
+import { OrderedColumns, type OrderedColumnRow } from "./OrderedColumns";
+import { StatTilePair, type StatTile } from "./StatTilePair";
 import { EmploymentRiskStoryMessage } from "./EmploymentRiskStoryMessage";
 import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
@@ -14,9 +17,13 @@ import { StoryFeedbackReaction } from "../../feedback/StoryFeedbackReaction";
 // bundle grew from 130KB to 218KB gzipped before this fix, and Vite started warning about a
 // >500KB chunk). Loaded only when a story that actually renders one of these blocks is
 // opened, not bundled into every visitor's initial page load.
-const YearOnYearGroupedBars = lazy(() =>
-  import("./YearOnYearGroupedBars").then((m) => ({ default: m.YearOnYearGroupedBars })),
-);
+//
+// YearOnYearGroupedBars's lazy import (Story 1's own use of it) was removed here 2026-09-27
+// (changes/2026-09-26-data-story-chart-variety.md) — its three call sites in this file
+// (role-mix-shift/seniority-shift/track-shift) now use StackedShareBar/OrderedColumns/
+// StatTilePair instead, none of which need Nivo. `import type { YearOnYearContent, YoYRow }`
+// above is still used to type-parse the raw section content before reshaping it for those
+// components.
 const SkillDemandChart = lazy(() =>
   import("./SkillDemandChart").then((m) => ({ default: m.SkillDemandChart })),
 );
@@ -98,10 +105,12 @@ function blockProps(sec: DataStorySection | undefined, hasData: boolean) {
   };
 }
 
-/** The eyebrow label that opens each movement of a two-movement story. */
+/** The eyebrow label that opens each movement of a two-movement story. Was 10px/gray-500; on
+ * gray-800 that measured 3.04:1, under the 4.5:1 text minimum — corrected 2026-09-27
+ * (changes/2026-09-26-data-story-chart-variety.md, design/visual-design.md's "Story eyebrow"). */
 function MovementLabel({ children }: { children: string }) {
   return (
-    <p className="text-[10px] font-medium uppercase tracking-widest text-gray-500">{children}</p>
+    <p className="text-xs font-medium uppercase tracking-widest text-gray-400">{children}</p>
   );
 }
 
@@ -114,21 +123,91 @@ function yoyContent(sec: DataStorySection | undefined): YearOnYearContent | unde
 
 // Display-only relabel (2026-09-22 — changes/2026-09-22-role-category-display-relabel.md):
 // "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
-// job-classification.md's own internal "occupation family" reasoning. YearOnYearGroupedBars
-// is generic (reused for role_category/level/track shifts alike), so this is applied only at
-// the role-mix-shift call site below, not inside the shared component — level/track values
-// must never pass through this map.
+// job-classification.md's own internal "occupation family" reasoning. Applied only at the
+// role-mix-shift call site below — level/track values must never pass through this map.
 const ROLE_CATEGORY_LABEL: Record<string, string> = {
   Designer: "Design",
   "Product Manager": "Product Management",
   Engineer: "Engineering",
 };
 
-function relabelRoleCategoryRows(content: YearOnYearContent): YearOnYearContent {
+// Fixed segment order — Design -> Engineering -> Product Management, added 2026-09-27
+// (changes/2026-09-26-data-story-chart-variety.md) — so an emerald element always sits
+// between the palette's one CVD-warning pair, indigo (Designer) and fuchsia (Product
+// Manager) (design/visual-design.md — Chart accessibility standard, rule 6). Colours are
+// this file's own small copy of the Accent palette, same convention already duplicated in
+// WelcomeMessage.tsx/JobOpeningsChart.tsx rather than a shared import.
+const ROLE_MIX_ORDER = ["Designer", "Engineer", "Product Manager"] as const;
+const ROLE_ACCENT: Record<string, string> = {
+  Designer: "#6366f1", // indigo-500
+  Engineer: "#059669", // emerald-600
+  "Product Manager": "#c026d3", // fuchsia-600
+};
+
+function roleMixSegments(
+  content: YearOnYearContent | undefined,
+): { current: ShareSegment[]; prior: ShareSegment[] | null } | undefined {
+  if (!content || content.rows.length === 0) return undefined;
+  const byValue = new Map(content.rows.map((r) => [r.value, r]));
+  const hasComparison = content.comparison_available && content.rows.some((r) => r.prior_share !== null);
+  const build = (pick: (row: YoYRow | undefined) => number): ShareSegment[] =>
+    ROLE_MIX_ORDER.map((key) => ({
+      key,
+      label: ROLE_CATEGORY_LABEL[key] ?? key,
+      color: ROLE_ACCENT[key],
+      value: pick(byValue.get(key)),
+    }));
   return {
-    ...content,
-    rows: content.rows.map((row) => ({ ...row, value: ROLE_CATEGORY_LABEL[row.value] ?? row.value })),
+    current: build((row) => (row ? row.current_share * 100 : 0)),
+    prior: hasComparison ? build((row) => (row?.prior_share != null ? row.prior_share * 100 : 0)) : null,
   };
+}
+
+// The generic year-on-year endpoint (_yoy_rows, backend) sorts every dimension's rows by
+// current-window count descending — right for a ranking, wrong for an ORDERED scale. Reordered
+// here, client-side, into the documented ladder (design/market-health/job-classification.md —
+// Level) — same "caller reorders/relabels before the component sees it" convention as the role
+// category display relabel above. Added 2026-09-27, found while wiring OrderedColumns: the
+// backend has no ordered-ladder constant to reuse (classification.LEVEL_LADDER is a Python
+// set, unordered), so this order is this file's own responsibility, same as the role colours.
+const LEVEL_LADDER_ORDER = [
+  "entry", "junior", "mid", "senior", "lead", "principal", "director", "vp", "executive",
+] as const;
+
+function orderedLevelRows(content: YearOnYearContent | undefined): OrderedColumnRow[] {
+  if (!content) return [];
+  const byValue = new Map(content.rows.map((r) => [r.value, r]));
+  const hasComparison = content.comparison_available && content.rows.some((r) => r.prior_share !== null);
+  return LEVEL_LADDER_ORDER
+    .map((level) => byValue.get(level))
+    .filter((row): row is YoYRow => row !== undefined)
+    .map((row) => ({
+      label: row.value.charAt(0).toUpperCase() + row.value.slice(1),
+      value: Math.round(row.current_share * 1000) / 10,
+      compareValue: hasComparison && row.prior_share != null ? Math.round(row.prior_share * 1000) / 10 : undefined,
+    }));
+}
+
+function trackDelta(pp: number): StatTile["delta"] {
+  const magnitude = Math.abs(pp).toFixed(1).replace(/\.0$/, "");
+  if (pp > 0) return { text: `▲ +${magnitude} pp vs. a year ago`, direction: "up" };
+  if (pp < 0) return { text: `▼ ${magnitude} pp vs. a year ago`, direction: "down" };
+  return { text: "– no change vs. a year ago", direction: "flat" };
+}
+
+function trackTiles(content: YearOnYearContent | undefined): [StatTile, StatTile] | undefined {
+  if (!content || content.rows.length === 0) return undefined;
+  const byValue = new Map(content.rows.map((r) => [r.value, r]));
+  const hasComparison = content.comparison_available && content.rows.some((r) => r.prior_share !== null);
+  const tile = (key: string, label: string): StatTile => {
+    const row = byValue.get(key);
+    return {
+      label,
+      value: row ? `${Math.round(row.current_share * 100)}%` : "0%",
+      delta: hasComparison && row?.delta_pp != null ? trackDelta(row.delta_pp) : null,
+    };
+  };
+  return [tile("ic", "Individual-contributor roles"), tile("management", "Management roles")];
 }
 
 // A thin router as the catalogue grows past one entry (added 2026-09-11) —
@@ -202,7 +281,7 @@ function renderStory(story: DataStoryResult) {
     <article className="space-y-5" aria-label={story.question}>
       <div>
         <h2 className="text-lg font-semibold text-gray-100">What we know about the market</h2>
-        <p className="mt-1 text-xs text-gray-500">Updated {new Date(story.as_of).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-gray-400">Updated {new Date(story.as_of).toLocaleString()}</p>
       </div>
 
       <MovementLabel>The market right now</MovementLabel>
@@ -257,28 +336,63 @@ function renderStory(story: DataStoryResult) {
 
       <MovementLabel>How it&rsquo;s shifting — year on year</MovementLabel>
 
-      {([
-        [roleMixShift, "How the role mix is shifting", "Share of postings by role category, this year vs. the year before.", true],
-        [seniorityShift, "How seniority is shifting", "Share of postings by seniority level, this year vs. the year before.", false],
-        [trackShift, "IC vs. management", "Share of postings by track, this year vs. the year before.", false],
-      ] as const).map(([sec, heading, subtitle, isRoleCategory]) => {
-        const rawContent = yoyContent(sec);
-        const content = rawContent && isRoleCategory ? relabelRoleCategoryRows(rawContent) : rawContent;
+      {/* Revised 2026-09-27 (changes/2026-09-26-data-story-chart-variety.md) — these three
+          blocks were the exact repetition this change exists to fix, all three rendering the
+          same grouped-bar YearOnYearGroupedBars. Each now uses the form matching its own
+          question (design/market-health/data-stories.md — Story 1, Movement 2). */}
+      {(() => {
+        const roleMix = roleMixSegments(yoyContent(roleMixShift));
         return (
           <StoryBlock
-            key={heading}
-            heading={heading}
-            subtitle={subtitle}
-            {...blockProps(sec, !!content && content.rows.length > 0)}
+            heading="How the role mix is shifting"
+            subtitle="Share of postings by role category, this year vs. the year before."
+            {...blockProps(roleMixShift, !!roleMix)}
           >
-            {content ? (
-              <Suspense fallback={CHART_LOADING_FALLBACK}>
-                <YearOnYearGroupedBars content={content} />
-              </Suspense>
+            {roleMix ? (
+              <StackedShareBar
+                currentLabel="This year"
+                priorLabel="A year ago"
+                current={roleMix.current}
+                prior={roleMix.prior}
+                tableCaption="Share of postings by role category, this year vs. the year before."
+              />
             ) : null}
           </StoryBlock>
         );
-      })}
+      })()}
+
+      {(() => {
+        const seniorityRows = orderedLevelRows(yoyContent(seniorityShift));
+        return (
+          <StoryBlock
+            heading="How seniority is shifting"
+            subtitle="Share of postings by seniority level, this year vs. the year before."
+            {...blockProps(seniorityShift, seniorityRows.length > 0)}
+          >
+            {seniorityRows.length > 0 ? (
+              <OrderedColumns
+                rows={seniorityRows}
+                tableCaption="Share of postings by seniority level, this year vs. the year before."
+                currentLegendLabel="Now"
+                compareLegendLabel="A year ago"
+              />
+            ) : null}
+          </StoryBlock>
+        );
+      })()}
+
+      {(() => {
+        const tiles = trackTiles(yoyContent(trackShift));
+        return (
+          <StoryBlock
+            heading="IC vs. management"
+            subtitle="Share of postings by track, this year vs. the year before."
+            {...blockProps(trackShift, !!tiles)}
+          >
+            {tiles ? <StatTilePair tiles={tiles} /> : null}
+          </StoryBlock>
+        );
+      })()}
     </article>
   );
 }

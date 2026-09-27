@@ -431,19 +431,32 @@ specified for "any future function that reads this data back out").
 **Parameters**: `entity_name` (optional list — filter to specific tracked roles; omit for
 every currently-observed role).
 **Response**: same envelope shape; `data.roles` carries `{entity_name, vacancy_count,
-salary_median, salary_sample_size}` per tracked role, `data.skills` carries the top 10
-`{skill_name, job_count}` summed across the (filtered) roles; `meta.source` states the licence
-and attribution explicitly (`"IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an
-independent third-party benchmark, not this platform's own job-postings data"`) since an
-external AI may quote a figure from this tool verbatim with no framing of its own (Part 2's
-binding contract, `design/mcp-access/experience.md`); `meta.total_matching` is the count of
-currently-observed roles (out of the full tracked-role set), so a caller can tell a genuine
-coverage gap from a zero-result answer. **Docstring explicitly instructs the calling AI never
-to compare this tool's output against `get_job_demand`/`get_salary_stats`/`get_skill_demand`**
-— same "different populations, not directly comparable" discipline `get_employment_risk`
-already states for its own independence from the job-postings tools, applied here for the same
-underlying reason this platform's own spec has never built that comparison itself
-(`scraped-data-sources/api.md` — "What this doesn't decide").
+salary_median, salary_sample_size, salary_p10, salary_p25, salary_p75, salary_p90, salary_unit,
+employment_type}` per tracked role (**percentiles + `salary_unit` + `employment_type` added
+2026-09-27**, `changes/2026-09-26-data-story-chart-variety.md`, additive — every existing field is
+unchanged, so this is not a breaking change for an existing caller). A role with `salary_median`
+but no percentile figures on record carries `salary_p10`…`salary_p90` as `null` — never
+estimated or interpolated. `data.skills` carries the top 10 `{skill_name, job_count}` summed
+across the (filtered) roles; `meta.source` states the licence and attribution explicitly
+(`"IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an independent third-party benchmark, not
+this platform's own job-postings data"`) since an external AI may quote a figure from this tool
+verbatim with no framing of its own (Part 2's binding contract,
+`design/mcp-access/experience.md`); `meta.total_matching` is the count of currently-observed
+roles (out of the full tracked-role set), so a caller can tell a genuine coverage gap from a
+zero-result answer. **`meta.definitions.["benchmark.salary.percentiles"]` (added 2026-09-27)**
+carries the same plain-language percentile definition the "Typical pay by role" story block
+shows in its how-to-read line, read from `backend/src/data_definitions.py` — the one shared
+wording source, so a calling AI describing `salary_p10`/`salary_p90` to its own user says the
+same thing the story itself says (`design/visual-design.md` — Chart definition pattern;
+`backend/specs/market-health/api.md` — Story 3, "Pay block gains the full percentile spread").
+**Docstring explicitly instructs the calling AI never to compare this tool's output against
+`get_job_demand`/`get_salary_stats`/`get_skill_demand`** — same "different populations, not
+directly comparable" discipline `get_employment_risk` already states for its own independence
+from the job-postings tools, applied here for the same underlying reason this platform's own spec
+has never built that comparison itself (`scraped-data-sources/api.md` — "What this doesn't
+decide"). **No MCP Access Review action needed** — additive fields on an already-exposed tool,
+same scope and plan-tier gating as before (Rule 12; recorded in `market-health/api.md`'s own note
+on this change).
 
 ### `get_job_function_breakdown`
 **Added 2026-09-21** (`changes/2026-09-21-job-function-story.md`) — reverses the "deferred"

@@ -389,6 +389,51 @@ every visitor already gets. Revisit the NC clause specifically if a paid consume
 ever built on top of this data (flagged, not solved, here — see the change request's Decision
 Log).
 
+**Pay block gains the full percentile spread (added 2026-09-27 —
+`changes/2026-09-26-data-story-chart-variety.md`).** Story 3's "Typical pay by role" block moves
+from a Ranked bar list of `salary_median` alone to a Range chart
+(`design/market-health/data-stories.md` — Story 3;
+`design/visual-design.md` — Range chart) showing the real spread. `build_market_benchmark_story()`'s
+`market-benchmark-pay` section now selects `salary_p10`, `salary_p25`, `salary_median`,
+`salary_p75`, `salary_p90`, `salary_sample_size`, `salary_unit`, and `employment_type` per role
+(all already columns on `market_observations` — no schema change; `scraped-data-sources/api.md`'s
+Data Model). Every currently-observed role in the `itjobswatch` adapter has `employment_type =
+"permanent"` (`scraping/itjobswatch.py`), but the query still selects and passes it through, and
+the section is only ever built from rows sharing one `employment_type` — per
+`scraped-data-sources/api.md`'s "Permanent vs. contract — never silently blended" rule, so a
+future adapter row with a different `employment_type` can never enter this block silently. A role
+with `salary_median` but no `salary_p10`/`salary_p90` on record renders with a value but no
+whisker, captioned "range not reported" — never invented or interpolated.
+
+**Small-sample flag.** A role whose `salary_sample_size` is below **30** carries
+`"small_sample": true` in its row so the frontend can draw the hollow median dot the chart form
+specifies. 30 was decided in the experience spec as the standard floor for a stable percentile
+estimate, in the absence of a real sample-size distribution to fit a threshold to (this story
+reads a third party's aggregate, not raw salaries). **Open verification** — `/implement-backend`
+must check the real, observed `salary_sample_size` values for the currently-tracked roles against
+this cutoff (e.g. are they all comfortably above or below 30?) and flag back to
+`design/market-health/data-stories.md` if 30 turns out to be clearly the wrong cut for this data.
+
+**Shared definition source (`backend/src/data_definitions.py`).** The percentile wording shown
+in the story's how-to-read line ("Each bar spans the middle 80% of advertised salaries for that
+role; the shaded band is the middle 50%; the dot is the median.") is written **once**, as
+`DEFINITIONS["benchmark.salary.percentiles"]` in a new, plain-constants module
+`backend/src/data_definitions.py` (`dict[str, str]`, no imports, no DB access) — agreed as the
+one shared mechanism for every data point whose wording must match between a story and an MCP
+tool's response (`design/visual-design.md` — Chart definition pattern; the same mechanism the
+Story 5 session's `changes/2026-09-26-story-5-tech-lens.md` uses for its own key). Both
+`build_market_benchmark_story()` (this section's own text) and `get_market_benchmark` (MCP spec,
+below) read that key rather than each stating the wording independently. **Whichever
+`/implement-backend` runs first across the two change requests creates the file**; the other adds
+its own key. A test asserts every key in `DEFINITIONS` is referenced by at least one story or
+tool, and every reference resolves to a real key — an unused or missing key fails the build.
+
+**MCP Access Review (Rule 12) — recorded here, not deferred.** This is an additive change to an
+existing, already-exposed capability, not a new one: `get_market_benchmark` already returns
+`salary_median`/`salary_sample_size` under the `jobs.read` scope, on every plan tier. Adding the
+percentile fields and `meta.definitions` needs no new exposure decision — see the MCP spec's own
+entry, below, for the exact response shape.
+
 **Story 4 (`changes/2026-09-21-job-function-story.md`).** "Beyond Design, Product &
 Engineering" is a data story built entirely from `classifications.job_function`
 (`job-classification.md` — Job Function, added the same day), scoped to `role_category =

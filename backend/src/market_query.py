@@ -709,14 +709,28 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
 
     Returns:
         A dict with:
-        - roles: [{entity_name, vacancy_count, salary_median, salary_sample_size}],
-          most recent observation per role
+        - roles: [{entity_name, vacancy_count, salary_median, salary_sample_size,
+          salary_p10, salary_p25, salary_p75, salary_p90, salary_unit,
+          employment_type, small_sample}], most recent observation per role.
+          **Percentile/unit/employment_type/small_sample added 2026-09-27**
+          (changes/2026-09-26-data-story-chart-variety.md) — additive, every
+          existing field unchanged. small_sample = salary_sample_size < 30
+          (see backend/specs/market-health/api.md's threshold decision), computed
+          here so every caller (this story, chat, MCP) reads the same flag rather
+          than each re-deriving it. A role with salary_median but no percentile
+          figures on record carries salary_p10..salary_p90 as None — never
+          estimated or interpolated.
         - skills: [{skill_name, job_count}], top 10 by job_count summed across
           the (filtered) roles' skill associations
         - tracked_role_count, observed_role_count: coverage — how many roles
           this platform tracks on IT Jobs Watch vs. how many currently have
           an observation
         - total_matching: observed_role_count (the real denominator)
+        - definitions: {key: text} from data_definitions.py — always includes
+          "benchmark.salary.percentiles" when at least one role has
+          salary_median (added 2026-09-27), the shared wording a human reader
+          and get_market_benchmark's meta.definitions both show. Empty dict
+          when no role has salary data yet.
         - usable: False if this source is not currently cleared for use
           (source_licences.is_source_usable) — roles/skills are empty in
           that case, never a stale render of previously-fetched rows
@@ -730,6 +744,7 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
         return {
             "roles": [], "skills": [], "tracked_role_count": tracked_role_count,
             "observed_role_count": 0, "total_matching": 0, "usable": False,
+            "definitions": {},
         }
 
     entity_names = _as_list(entity_name)
@@ -744,7 +759,8 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
         observation_rows = conn.execute(
             f"""
             SELECT DISTINCT ON (entity_name)
-                entity_name, vacancy_count, salary_median, salary_sample_size
+                entity_name, vacancy_count, salary_median, salary_sample_size,
+                salary_p10, salary_p25, salary_p75, salary_p90, salary_unit, employment_type
             FROM market_observations
             WHERE {where_sql}
             ORDER BY entity_name, period_end DESC
@@ -769,19 +785,45 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
             skill_params,
         ).fetchall()
 
+    def _num(v):
+        # NUMERIC -> Decimal from psycopg; cast to float so this is
+        # JSON-serializable by the plain envelope path (same real bug
+        # already found and fixed for the consumer web story, Story 3 —
+        # backend/specs/market-health/api.md). None stays None — never
+        # coerced to 0.0 (that would misrepresent "not reported" as a value).
+        return float(v) if v is not None else None
+
     roles = [
         {
             "entity_name": r[0], "vacancy_count": r[1],
-            # NUMERIC -> Decimal from psycopg; cast to float so this is
-            # JSON-serializable by the plain envelope path (same real bug
-            # already found and fixed for the consumer web story, Story 3 —
-            # backend/specs/market-health/api.md).
-            "salary_median": float(r[2]) if r[2] is not None else None,
+            "salary_median": _num(r[2]),
             "salary_sample_size": r[3],
+            # Percentiles/unit/employment_type — added 2026-09-27
+            # (changes/2026-09-26-data-story-chart-variety.md). A role with no
+            # percentile figures on record carries these as None, never an
+            # invented range (backend/specs/scraped-data-sources/api.md).
+            "salary_p10": _num(r[4]),
+            "salary_p25": _num(r[5]),
+            "salary_p75": _num(r[6]),
+            "salary_p90": _num(r[7]),
+            "salary_unit": r[8],
+            "employment_type": r[9],
+            # The 30-sample floor decided in design/market-health/data-stories.md
+            # — Story 3, "Small-sample threshold". A role with no sample size at
+            # all (None) is not flagged small — it's a different honesty state
+            # (no salary data reported at all), handled by "range not reported".
+            "small_sample": r[3] is not None and r[3] < 30,
         }
         for r in observation_rows
     ]
     skills = [{"skill_name": r[0], "job_count": r[1]} for r in skill_rows]
+
+    from data_definitions import DEFINITIONS
+    definitions = (
+        {"benchmark.salary.percentiles": DEFINITIONS["benchmark.salary.percentiles"]}
+        if any(r["salary_median"] is not None for r in roles)
+        else {}
+    )
 
     return {
         "roles": roles,
@@ -790,7 +832,46 @@ def query_market_benchmark_data(entity_name: list[str] | None = None) -> dict:
         "observed_role_count": len(roles),
         "total_matching": len(roles),
         "usable": True,
+        "definitions": definitions,
     }
+
+
+def _job_function_tiles(function_rows: list, small_share_threshold: float = 3.0) -> list[dict]:
+    """
+    Shapes raw {job_function, posting_count} rows into treemap-ready tiles with a computed
+    `share` and a `kind` ("named" | "aggregate" | "unknown") — added 2026-09-27
+    (changes/2026-09-26-data-story-chart-variety.md), for Story 4's function breakdown
+    (design/market-health/data-stories.md — Story 4's tail-handling decision:
+    design/visual-design.md — Treemap). A function under small_share_threshold% of the total
+    merges into one "aggregate" tile (naming which functions it holds); `unknown` NEVER merges
+    into it — it is always its own real tile, per this catalogue's existing "never hidden or
+    folded away" rule (job-classification.md's `unknown` discipline).
+    """
+    total = sum(r["posting_count"] for r in function_rows) or 1
+    named: list[dict] = []
+    small: list[dict] = []
+    unknown: dict | None = None
+    for r in function_rows:
+        share = round(r["posting_count"] / total * 100, 1)
+        if r["job_function"] == "unknown":
+            unknown = {"job_function": "unknown", "posting_count": r["posting_count"], "share": share, "kind": "unknown"}
+        elif share < small_share_threshold:
+            small.append(r)
+        else:
+            named.append({"job_function": r["job_function"], "posting_count": r["posting_count"], "share": share, "kind": "named"})
+    tiles = named
+    if small:
+        merged_count = sum(r["posting_count"] for r in small)
+        tiles.append({
+            "job_function": f"{len(small)} smaller function" + ("" if len(small) == 1 else "s"),
+            "posting_count": merged_count,
+            "share": round(merged_count / total * 100, 1),
+            "kind": "aggregate",
+            "merged": [r["job_function"] for r in small],
+        })
+    if unknown:
+        tiles.append(unknown)
+    return tiles
 
 
 def query_job_function_data() -> dict:
@@ -838,7 +919,7 @@ def query_job_function_data() -> dict:
         ).fetchall()
 
     return {
-        "functions": [{"job_function": r[0], "posting_count": r[1]} for r in function_rows],
+        "functions": _job_function_tiles([{"job_function": r[0], "posting_count": r[1]} for r in function_rows]),
         "other_count": other_count,
         "total_count": total_count,
         "not_yet_reprocessed": other_count - other_with_job_function,

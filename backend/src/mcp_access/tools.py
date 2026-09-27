@@ -246,24 +246,42 @@ def get_market_benchmark(entity_name: list[str] | None = None) -> dict:
 
     Covers only a hand-curated set of tracked roles (see tracked_role_count
     vs. observed_role_count in the response), not the full market.
+
+    Each role's salary figures — added 2026-09-27
+    (changes/2026-09-26-data-story-chart-variety.md) — now include the 10th,
+    25th, 75th and 90th percentile alongside the median, plus salary_unit and
+    employment_type: salary_p10..salary_p90 span the middle 80%/50% of
+    advertised salaries for that role (see meta.definitions for the exact
+    wording to use, the same text this platform's own "Independent market
+    benchmark" story shows a human reader). A role missing a percentile
+    figure carries it as null — never estimate or interpolate one. Permanent
+    and contract-rate figures are never blended — employment_type states
+    which a role's figures are.
     """
     result = query_market_benchmark_data(entity_name=entity_name)
     if not result["usable"]:
         return no_data("This data source isn't currently available.")
-    return build_envelope(
+    envelope = build_envelope(
         {
             "roles": result["roles"],
             "skills": result["skills"],
             "tracked_role_count": result["tracked_role_count"],
             "observed_role_count": result["observed_role_count"],
         },
-        unit="vacancy count and median annual salary per role; job_count summed across roles for skills",
+        unit="vacancy count and salary (median + 10th/25th/75th/90th percentile) per role; "
+        "job_count summed across roles for skills",
         scope=_scope_description({"entity_name": entity_name}),
         time_window={"from": None, "to": None, "label": "most recent observation per role"},
         source="IT Jobs Watch (itjobswatch.co.uk), CC BY-NC-SA 4.0 — an independent third-party "
         "benchmark, not this platform's own job-postings data",
         total_matching=result["total_matching"],
     )
+    # Shared plain-language wording (data_definitions.py) — the SAME text this platform's own
+    # "Independent market benchmark" story shows a human reader for the same figures, so a person
+    # and an external AI describing salary_p10..salary_p90 use identical words (added 2026-09-27,
+    # same mechanism get_trusted_statistics already uses).
+    envelope["meta"]["definitions"] = result.get("definitions", {})
+    return envelope
 
 
 def get_job_function_breakdown() -> dict:

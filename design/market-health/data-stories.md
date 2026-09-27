@@ -62,10 +62,21 @@ is `design/visual-design.md` — Data Story composition; this is the checklist a
       it's shifting") and may run to ~8.
 - [ ] **At least one chart**, and **≥2 distinct visual forms** across the story (3+
       preferred) — drawn from the vocabulary in `visual-design.md` (Ranked bar list, Hero
-      Figure, Stat Tile, Meter, Category Share Bar, Trend line, Year-on-year comparison, and
-      — added 2026-09-22, `changes/2026-09-22-nivo-charting-library.md` — a real Nivo chart
-      where a genuine multi-series comparison says more than a ranked list can). A story that
-      is five ranked bar lists in a row is under-composed.
+      Figure, Stat Tile, Meter, Category Share Bar, Time series, Year-on-year comparison,
+      Two-series comparison, World risk map, and — added 2026-09-26,
+      `changes/2026-09-26-data-story-chart-variety.md` — Stacked share bar, Ordered columns,
+      Diverging change bars, Range chart, Treemap, Stat Tile pair). A story that is five
+      ranked bar lists in a row is under-composed.
+- [ ] **No form repeats within a story except Ranked bar list** (added 2026-09-26), which may
+      repeat **at most twice, never adjacent**, and only where both instances are genuinely a
+      ranking question. Choose the form by the data's own job — `visual-design.md`'s "Choose
+      the form by the data's job" table — never for variety alone; a form that doesn't fit its
+      data is worse than a repeat.
+- [ ] **Every chart meets the Chart accessibility standard** (added 2026-09-26,
+      `design/visual-design.md`) — 12px minimum text, a legend for every colour/glyph/shape
+      used, a "Show as table" disclosure, a one-sentence text alternative for assistive
+      technology, and keyboard access. Not a finishing touch — a chart failing this is
+      incomplete, same as a chart with no qualifier.
 - [ ] **Chart-first** — the visual carries the point; heading and qualifier are labels.
 - [ ] **At most one Hero Figure.**
 - [ ] Consistent block anatomy, divider rhythm, palette (one muted hue for magnitude; only
@@ -210,33 +221,57 @@ Two labelled movements. Fixed order; values live; headings fixed.
 
 **Movement 2 — "How it's shifting" (year on year)**
 
-A short intro line names the two windows in plain words. Each block below is a **Year-on-year
-comparison** (`design/visual-design.md`) — subtitle: "Share of postings by {dimension}, this
-year vs. the year before" — with one "what this means" sentence and, once a comparison is
-available, a real grouped bar chart (`YearOnYearGroupedBars`, **revised 2026-09-22** —
-`changes/2026-09-22-nivo-charting-library.md` — replaces the original hand-rolled ghost-bar
-comparison) with an explicit legend naming the two bars (indigo = now, muted gray = a year
-ago — Data Legibility, `visual-design.md`). **At launch and for the product's first year all
-three are in the "no prior window yet" state** — current window only + "comparison starts
-{Month Year}", no legend needed (only one colour is on screen).
+A short intro line names the two windows in plain words. **Revised 2026-09-27**
+(`changes/2026-09-26-data-story-chart-variety.md`) — before this revision all three blocks were
+the same grouped-bar Year-on-year comparison, which was itself the pattern this change exists to
+fix (three copies of one chart form in one movement). Each block below now uses the chart form
+that fits its own question, per the no-repeat rule (Visual standard, above):
+
+| Block | Question shape | Form |
+|---|---|---|
+| 6. Role mix | 3 categories, a real part-to-whole split | **Stacked share bar** |
+| 7. Seniority | an ordered ladder, not a ranking | **Ordered columns** |
+| 8. IC vs. management | exactly two shares summing to 100% | **Stat Tile pair** — no chart needed |
+
+**At launch and for the product's first year (until ~August 2027) there is no year-earlier
+window.** Each block has its own current-only state, decided below — because block 6's dimension
+already appears in the Welcome, its current-only state is different from blocks 7 and 8's.
 
 6. **How the role mix is shifting** — subtitle: "Share of postings by role category, this year
-   vs. the year before." `role_category` shares over the **three tracked areas only** (Designer
-   / Product Manager / Engineer), matching the trend chart and the welcome's Category Share
-   Bar. `other` / `unknown` are coverage, not rows here, and their own trend is never a
-   signal. *Meaning:* which of the three areas is taking a bigger or smaller slice of new
-   roles.
+   vs. the year before." A **Stacked share bar** (`design/visual-design.md`): two 100% stacked
+   bars, "This year" over "A year ago", segments in the fixed order Design (indigo-500) →
+   Engineering (emerald-600) → Product Management (fuchsia-600) — the **three tracked areas
+   only**, matching the trend chart and the welcome's Category Share Bar. `other` / `unknown`
+   are coverage, not segments here, and their own trend is never a signal.
+   **Current-only state — decided here:** the current role split already appears in the
+   Welcome's own Category Share Bar, so drawing this block's "This year" bar alone, before a
+   year-ago bar exists, would repeat that figure — forbidden by "No current-snapshot duplication
+   of the welcome" (Visual standard, above). Until the year-ago window exists, this block shows
+   **no bars at all** — only the muted "Year-on-year comparison starts {Month Year}. Tracking
+   since {date}." line. Once the year-ago window exists, both bars render as specified above.
+   *Meaning:* which of the three areas is taking a bigger or smaller slice of new roles.
 7. **How seniority is shifting** — subtitle: "Share of postings by seniority level, this year
-   vs. the year before." `level` shares across the ladder. *Meaning:* whether the market is
-   opening more junior or more senior roles than a year ago.
+   vs. the year before." An **Ordered columns** chart (`design/visual-design.md`): one column
+   per level of the ladder, left to right junior → senior — the order is the meaning, never
+   sorted by value. This dimension does not appear in the Welcome, so — unlike block 6 — a real
+   chart can honestly show before the comparison exists. **Current-only state:** the current
+   year's columns alone (indigo-500, value on the cap), with the muted "Year-on-year comparison
+   starts {Month Year}. Tracking since {date}." line beneath in place of a second column set.
+   Once the year-ago window exists, a second, narrower gray-500 column appears beside each,
+   with the legend "Solid column: now. Lighter column: a year ago." *Meaning:* whether the
+   market is opening more junior or more senior roles than a year ago.
 8. **IC vs. management** — subtitle: "Share of postings by track, this year vs. the year
-   before." `track` shares (`ic` / `management`; `unknown` excluded). *Meaning:* whether more
-   of the new roles are for people who lead teams or do the work.
+   before." A **Stat Tile pair** (`design/visual-design.md`): two tiles, "Individual-contributor
+   roles" and "Management roles" (`track` values `ic` / `management`; `unknown` excluded), each
+   showing this year's share. **Current-only state** (the form's own default): each tile's
+   change line reads the muted "Comparison starts {Month Year}" instead of a delta. Once the
+   year-ago window exists, each tile's change line shows its real "▲ +N pp" / "▼ −N pp" / "–  no
+   change" versus a year ago. *Meaning:* whether more of the new roles are for people who lead
+   teams or do the work.
 
-Every block keeps its honesty qualifier (sample size, coverage caveat, both window dates for
-Movement 2). A block with too little data shows its "not enough data yet" line, not an empty
-chart. Which job boards the data came from is provenance — Reasoning Panel, not a visible
-block.
+Every block keeps its honesty qualifier (sample size, coverage caveat, both window dates once a
+comparison exists). Which job boards the data came from is provenance — Reasoning Panel, not a
+visible block.
 
 ### Data contract
 
@@ -265,11 +300,13 @@ external search, or unstated market assumptions to fill a value.
 - A section with too little data says **"Not enough data yet"** and explains what coverage is
   missing. It does not disappear silently and it does not borrow from external sources.
 - **A year-on-year shift block before the prior window exists** is a distinct state from "not
-  enough data yet": the current window *does* have data and *is* shown (as a plain share bar
-  / ranked list, no ghost bar, no delta column). Only the comparison is unavailable, and the
-  block says so plainly — "Year-on-year comparison starts {Month Year}. Tracking since {date}."
-  It reads as pending, not broken. This is the state at launch and for the product's first
-  year of operation.
+  enough data yet". **Revised 2026-09-27:** blocks 6–8 no longer share one chart form, so they no
+  longer share one current-only treatment either — each is specified block by block above (block
+  6: no chart, since a current-only version would repeat the Welcome; blocks 7–8: their current
+  year's data does show, since neither appears in the Welcome). Every block still says plainly
+  when the comparison starts — "Year-on-year comparison starts {Month Year}. Tracking since
+  {date}." — and reads as pending, not broken. This is the state at launch and for the product's
+  first year of operation.
 - A year-on-year block never estimates, interpolates, or zero-fills the prior-year window. If
   the prior window has data but is thin, the delta is shown with its sample size and a
   "small sample" caveat, not suppressed.
@@ -473,22 +510,49 @@ state Story 1 uses before its own YoY data existed).
    currently-observed roles that have a `salary_median` figure reported ("X of Y tracked
    roles have salary data reported"). Its own caption states the unit inline, no separate
    subtitle needed (Data Legibility, `visual-design.md`).
-4. **Typical pay by role** — subtitle: "Median annual salary (50th percentile), by role."
-   Ranked bar list, bar length = `salary_median`, formatted as currency. Qualifier states the
-   salary sample size per role and that the median alone understates the real spread — the
-   full 10th-90th percentile range is available in the platform's own stored data
-   (`backend/specs/scraped-data-sources/api.md`) but not charted here, to keep this block to
-   one visual form per the Visual standard checklist.
+4. **Typical pay by role** — subtitle: "Advertised salary range by role, most recent period."
+   **Revised 2026-09-27** (`changes/2026-09-26-data-story-chart-variety.md`) — a **Range chart**
+   (`design/visual-design.md`), one row per currently-observed role, ordered by median
+   descending: a whisker spanning the 10th to 90th percentile, a shaded band for the 25th to
+   75th, and a dot at the median; every row also states its `salary_sample_size`. This replaces
+   the earlier Ranked bar list of the median alone, which showed one point of a real spread the
+   platform already stores (`backend/specs/scraped-data-sources/api.md`) — bars from zero also
+   made pay differences look bigger than they are.
+   **How-to-read line** (Chart accessibility standard): "Each bar spans the middle 80% of
+   advertised salaries for that role; the shaded band is the middle 50%; the dot is the
+   median." Both this story and `get_market_benchmark`'s MCP response state this wording from
+   the same place (`backend/src/data_definitions.py`, key `benchmark.salary.percentiles` — the
+   shared-definition mechanism, `design/visual-design.md` — Chart definition pattern), so a
+   person reading the chart and an external AI quoting a figure use identical words.
+   **Small-sample threshold — decided here:** a role whose `salary_sample_size` is **below 30**
+   draws a hollow median dot and its row label gains "small sample"; the legend then adds
+   "Hollow dot: fewer than 30 salaries — indicative only." 30 is the smallest sample size
+   generally treated as giving a stable percentile estimate — adopted here because this story
+   reads a third party's aggregate rows, not raw salaries, so there is no distribution of this
+   platform's own to fit a threshold to. `/implement-backend` must check the real
+   `salary_sample_size` values against this cutoff and flag back here if the real data makes 30
+   clearly wrong for this data set (all roles far above or below it, or a natural break
+   elsewhere).
+   **Implementation approach — recommendation only, decided at the frontend spec step:** the
+   installed Nivo packages (`@nivo/bar`, `@nivo/pie`) have no box-and-whisker form; recommend a
+   hand-drawn SVG component, the same precedent as the World risk map, rather than adding a new
+   Nivo package for one chart.
+   Qualifier states the sample size (already on every row, above) and that a role with no
+   `salary_p10`/`salary_p90` on record shows its median dot alone with the caption "range not
+   reported" — never an invented or interpolated range.
 5. **Skills most associated with these roles** — subtitle: "Summed mention count across the
    tracked roles' vacancies, from IT Jobs Watch's own weighted skill data." Ranked bar list,
    top 10 skills by `job_count` summed across all currently-observed roles. Qualifier states
    this is summed across the hand-curated role set, not a market-wide skill ranking.
 
-This story leans on 2 distinct visual forms (Ranked bar list, Hero Figure + Meter) rather than
-3+ — a deliberate judgment call given the data's real shape (demand and pay are each
-fundamentally one dimension per role; forcing a trend line or map here would mean inventing a
-time series or geography this data doesn't actually have yet). Revisit once a second period of
-data exists and a real year-on-year block becomes honestly possible.
+**Revised 2026-09-27:** the story now uses 3 distinct visual forms — Ranked bar list (demand,
+skills), Hero Figure + Meter (coverage), and Range chart (pay) — up from 2, once the pay block's
+own real spread was worth charting. The Ranked bar list still repeats twice (demand, skills);
+allowed under the no-repeat rule because both are genuine ranking questions, and the coverage and
+pay blocks sit between them so the two repeats are never adjacent. A trend line or map still
+doesn't fit this data (demand and pay are each one dimension per role, not a time series or a
+geography) — revisit once a second observed period exists and a real year-on-year block becomes
+honestly possible.
 
 ### Data contract
 
@@ -572,11 +636,28 @@ before their own YoY/second-period data existed).
 1. **Framing line** — one sentence naming this as the picture beyond the 3 tracked categories,
    never a reconciliation or a fourth category.
 2. **What the wider hiring picture looks like** — subtitle: "Postings outside Design, Product
-   Management, and Engineering, by function." Ranked bar list, one row per Job Function
-   (`job-classification.md`'s closed set), bar length = posting count. Qualifier states how many
-   of the `other` population currently have a Job Function assigned vs. how many are still
-   awaiting reprocessing (see Honesty and empty states, below — a real, current lag, not
-   hidden).
+   Management, and Engineering, by function." **Revised 2026-09-27**
+   (`changes/2026-09-26-data-story-chart-variety.md`) — a **Treemap** (`design/visual-design.md`),
+   one tile per Job Function (`job-classification.md`'s closed set), tile area = posting count,
+   each tile labelled with its name, count and share. This replaces the Ranked bar list: with
+   around a dozen functions and some long names ("Sales & Business Development"), a
+   part-to-whole treemap shows how big a slice each one is at a glance, which a ranked list of
+   similar-length bars does not.
+   **How-to-read line** (Chart accessibility standard): "Tile size shows each function's share
+   of postings outside the 3 tracked categories."
+   **Tail handling — decided here:** a Job Function holding **less than 3%** of the
+   outside-the-3-categories total merges into one hollow-outlined, dashed-border aggregate tile
+   labelled "{N} smaller functions" (naming which ones in its tooltip and the table view).
+   **`unknown`** (a posting confidently outside the 3 tracked categories whose title doesn't
+   disclose its function) never merges into that aggregate — it is always its own real,
+   hollow-outlined (solid border) tile, per the existing rule that `unknown` is never hidden or
+   folded away. 3% was chosen so the aggregate only catches genuinely marginal functions, not one
+   that's simply smaller than Sales or an Engineering-adjacent function; `/implement-backend`
+   should confirm against the real function-count distribution and flag back here if 3% merges
+   more or fewer functions than intended.
+   Qualifier states how many of the `other` population currently have a Job Function assigned vs.
+   how many are still awaiting reprocessing (see Honesty and empty states, below — a real,
+   current lag, not hidden).
 3. **How much of all hiring this actually is** — subtitle: "All classified postings, split by
    whether they're inside or outside the 3 tracked categories." **Revised 2026-09-22**
    (`changes/2026-09-22-nivo-pie-charts.md`) — a real 2-slice donut (`SharePieChart`, the
@@ -589,9 +670,11 @@ before their own YoY/second-period data existed).
    list of real, un-normalized job titles within that one function, top 10. *Meaning:* gives
    real texture to a function label — what it actually contains, not just its name.
 
-This story leans on 2 distinct visual forms (Ranked bar list, Hero Figure + Meter), same
-deliberate judgment call as Story 3 — Job Function data is currently one dimension (a count per
-function), no time series or geography exists yet to justify a trend line or map.
+**Revised 2026-09-27:** the story now uses 3 distinct visual forms — Treemap (the function
+breakdown), 2-slice donut (scale), and Ranked bar list (top titles) — up from 2, once a
+part-to-whole form replaced the function breakdown's own Ranked bar list. Job Function data is
+still one dimension (a count per function), so no time series or geography exists yet to justify
+a trend line or map — same judgment call as Story 3.
 
 ### Data contract
 
@@ -700,11 +783,16 @@ compares with the roles we track**.
    length = vacancies. *Qualifier:* industry groups follow the official UK classification;
    the 8 smaller groups are not shown.
 4. **Vacancies by size of business** — subtitle: "Share of all vacancies, by how many people
-   the employing business has." **Ranked bar list in size order** (smallest business size to
-   largest — not sorted by value, because the order *is* the meaning), five rows (1–9, 10–49,
-   50–249, 250–2,499, 2,500 or more employees), bar length = share, the count in thousands
-   shown beside it. *Qualifier:* business size means the number of people the business employs,
-   not how big the vacancy is.
+   the employing business has." **Revised 2026-09-27**
+   (`changes/2026-09-26-data-story-chart-variety.md`) — an **Ordered columns** chart
+   (`design/visual-design.md`), five columns left to right from the smallest business size to
+   the largest (1–9, 10–49, 50–249, 250–2,499, 2,500 or more employees — never sorted by value,
+   because the order *is* the meaning), column height = share, the count in thousands labelled
+   beneath each column's share value. This replaces the Ranked bar list: a ranked list's own
+   form implies sorting by value, which this fixed order deliberately isn't, so a size-ordered
+   column chart says directly what the ranked-list version only said through a caveat.
+   *Qualifier:* business size means the number of people the business employs, not how big the
+   vacancy is.
 
 **Movement 2 — How it's shifting**
 
@@ -774,14 +862,22 @@ all industries. A reader goes from "how big is it" (blocks 2–4) → "how did i
    - **Loading:** a same-size placeholder shows while the chart loads; the sentence and qualifier
      do not wait on it. **Empty:** see "Honesty and empty states" — never an empty axis.
 
-5. **Which industries are changing** — a **year-on-year comparison**. Subtitle: "Estimated
-   vacancies by industry, in thousands: three months to Aug 2026 compared with the same three
-   months a year earlier." A legend line names the two bar colours ("Lighter bar: Jun–Aug 2025.
-   Solid bar: Jun–Aug 2026."). The 8 industries with the most vacancies now, each row carrying
-   its change in thousands with a ▲ / ▼ / – glyph (colour never carries direction alone). One
-   plain sentence beneath states what a shift means: "A drop can mean slower hiring or roles
-   being filled faster — this shows the change, not the reason." *Qualifier:* both periods are
-   official estimates; the newer one may be revised.
+5. **Which industries are changing** — **Revised 2026-09-27**
+   (`changes/2026-09-26-data-story-chart-variety.md`) — **Diverging change bars**
+   (`design/visual-design.md`), replacing the grouped-bar year-on-year comparison this block used
+   before: the real question here is "how much did it move," not "what were the two levels," so
+   the change itself carries the point instead of a reader subtracting two bars. Subtitle:
+   "Change in estimated vacancies by industry, in thousands: three months to Aug 2026 vs. the
+   same three months a year earlier." One indigo-500 bar per industry, either side of a labelled
+   zero line ("No change"), the 8 industries with the most vacancies now, ordered by the size of
+   the change (the largest rise at the top). Each bar ends in its signed change with a ▲ / ▼ / –
+   glyph and the unit spelled out ("▲ +6 thousand") — colour never carries direction alone.
+   Legend: "Right of the line: more vacancies than a year earlier. Left: fewer." Both period
+   labels are stated in words above the chart, as before. One plain sentence beneath states what
+   a shift means: "A drop can mean slower hiring or roles being filled faster — this shows the
+   change, not the reason." *Qualifier:* both periods are official estimates; the newer one may
+   be revised. The two source levels behind each bar's change are in the tooltip and the table,
+   never drawn as a second bar.
 
 **Movement 3 — How this compares with the roles we track**
 
@@ -799,14 +895,14 @@ all industries. A reader goes from "how big is it" (blocks 2–4) → "how did i
    the coverage gap: "{x} of {n} UK-based roles are at employers whose industry we couldn't place
    in a group."
 
-The story uses five distinct visual forms across its blocks (Hero Figure, ranked bar list,
-year-on-year comparison, two-series comparison, and the ordered ranked list), comfortably
-above the standard's minimum — and, from 2026-09-26, a sixth, the **trend line** in block 4a
-(the only block in the story that shows movement over many years rather than one or two
-periods). It never repeats the welcome's current-snapshot figures (the
-platform's own job count, company count, or current role split) — the only platform figure it
-shows is the industry *share* in block 6, which is a different question (how our sample leans
-against an outside reference).
+**Revised 2026-09-27:** the story now uses **six** distinct visual forms, each chosen for the
+shape of its own question, with no repeat: Hero Figure (block 2), Ranked bar list (block 3, the
+story's only ranking question), Ordered columns (block 4, an ordered scale), Time series (block
+4a, added 2026-09-26 — movement over 25 years), Diverging change bars (block 5, a one-year
+change), and Two-series comparison (block 6, two sources side by side). It never repeats the
+welcome's current-snapshot figures (the platform's own job count, company count, or current role
+split) — the only platform figure it shows is the industry *share* in block 6, which is a
+different question (how our sample leans against an outside reference).
 
 ### Data contract
 
