@@ -1,13 +1,21 @@
 ---
 id: visual-design
-version: 2.1
+version: 2.2
 status: active
 created: 2026-06-21
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # Visual Design — Tech Market Intelligence Platform
 
+> **v2.2 (2026-09-27)** — `changes/2026-09-27-treemap-legibility.md`. The Treemap's first shipped
+> version (all-one-fill indigo-400, 1px gap into an unset background) proved unreadable in
+> practice — adjacent similarly-sized tiles were indistinguishable. Revises Treemap only: a
+> validated 4-step sequential shade-by-volume ramp (indigo-600→400→300→200, dark-mode anchored
+> so brighter reads as "more") as a secondary cue alongside area, and a real 2px gray-800 gap
+> rendered on the treemap's own container rather than left to whatever sits behind it. No other
+> chart form changes.
+>
 > **v2.1 (2026-09-26)** — `changes/2026-09-26-data-story-chart-variety.md`. Adds the Data Story
 > chart forms that make stories varied without misrepresenting their data (Stacked share bar,
 > Ordered columns, Diverging change bars, Range chart, Treemap, Stat Tile pair, Time series), a
@@ -732,22 +740,46 @@ unit:      currency and period from the record ("£, per year"), in the subtitle
            and contract (day rate) are never on one axis.
 ```
 
-**Treemap** — parts of one whole across many categories:
+**Treemap** — parts of one whole across many categories. **Revised 2026-09-27**
+(`changes/2026-09-27-treemap-legibility.md`) — adds sequential shading by volume and fixes the
+gap, after the first shipped version (all-one-fill, 1px unset-background gap) proved unreadable
+in practice: adjacent similarly-sized tiles were indistinguishable at a glance.
 ```
 form:      squarified treemap, tile area ∝ count, largest top-left, container ≈ 2:1 and ≥ 240px
            tall. Used for ≈ 6–14 categories; beyond that or below, use a Ranked bar list.
-tile:      ONE fill, indigo-400 — area carries the magnitude, so colour carries nothing. 2px
-           gray-800 gap, 4px radius. Label INSIDE the tile in gray-900 (5.95:1): name (text-xs
-           font-semibold) then "1,240 · 18%" (text-xs). Never light text on indigo-500 (fails).
+tile:      sequential indigo shade by volume — a secondary cue reinforcing what area already
+           shows, never the only one. 4 discrete steps, binned by each named tile's RANK among
+           the story's own named tiles (quartile of position in the sorted list, not an absolute
+           share threshold — so the ramp works the same regardless of how concentrated or spread
+           the data is): indigo-600 (lowest quartile) → indigo-400 → indigo-300 → indigo-200
+           (highest quartile). Dark-mode sequential ramps anchor opposite light mode — bright
+           reads as "more" against a dark surface, dim recedes toward it — so brightness rises
+           with volume, not falls. indigo-500 is never used: measured 3.97:1 (gray-900 text) /
+           4.06:1 (gray-100 text) on this ramp, both under the 4.5:1 floor for 12px text — a dead
+           zone no text colour clears. indigo-700 is also never used: 1.86:1 against the gray-800
+           gap (below the ordinal ramp's light-end-of-scale 2:1 floor, i.e. it blends into the
+           gap), and only ΔL 0.054 from indigo-600 (below the 0.06 step-visibility floor, i.e.
+           indistinguishable from its neighbour). Validated: `node validate_palette.js
+           "#4f46e5,#818cf8,#a5b4fc,#c7d2fe" --ordinal --mode dark --surface "#1f2937"` — all
+           checks pass.
+gap:       2px gray-800, rendered as a real background colour on the treemap's own container —
+           never left to whatever sits behind it. (The original implementation padded 1px into
+           an unset ambient background, which on this product's near-black page surface read as
+           no gap at all — the defect this revision fixes.) 4px radius.
+text:      name (text-xs font-semibold) then "1,240 · 18%" (text-xs), INSIDE the tile. gray-900
+           on indigo-400/300/200 (5.95:1 or better); gray-100 on indigo-600 (5.71:1) — the one
+           flip point in the ramp, always at the dimmest, lowest-volume step.
 not-a-name: tiles that are not one named category are HOLLOW — no fill, 1px outline, gray-300 text:
            "Function not stated" (a real category, solid gray-400 outline) and "{N} smaller
            functions" (an aggregate of tiles too small to label, DASHED gray-400 outline). Never a
-           grey fill — beside indigo-400 it fails the normal-vision floor (ΔE 14.4 < 15). `unknown`
+           grey fill — beside the sequential ramp it fails the normal-vision floor at the range
+           this product measured (ΔE 14.4 < 15 against indigo-400). `unknown`
            is never folded into the aggregate tile.
 min tile:  a tile that cannot fit its name at 12px with 8px padding merges into the aggregate tile;
            the threshold is set in the experience spec; the merged members are all in the table.
-legend:    one line: "Tile size shows each {thing}'s share of {population}. Outlined tiles are not a
-           single named {thing}."
+legend:    one line, now that colour carries meaning too (Data Legibility, Rule 10): "Tile size
+           and shade both show each {thing}'s share of {population} — larger, brighter tiles hold
+           more. Outlined tiles are not a single named {thing}."
 focus:     arrow keys visit tiles in descending size; tooltip = name, count, share.
 ```
 

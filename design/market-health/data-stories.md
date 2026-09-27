@@ -643,8 +643,11 @@ before their own YoY/second-period data existed).
    around a dozen functions and some long names ("Sales & Business Development"), a
    part-to-whole treemap shows how big a slice each one is at a glance, which a ranked list of
    similar-length bars does not.
-   **How-to-read line** (Chart accessibility standard): "Tile size shows each function's share
-   of postings outside the 3 tracked categories."
+   **How-to-read line** (Chart accessibility standard). **Revised 2026-09-27**
+   (`changes/2026-09-27-treemap-legibility.md`, `design/visual-design.md` — Treemap): "Tile size
+   and shade both show each function's share of postings outside the 3 tracked categories —
+   larger, brighter tiles hold more." (Was tile-size-only; shade-by-volume added because the
+   first version's uniform fill made adjacent similarly-sized tiles hard to tell apart.)
    **Tail handling — decided here:** a Job Function holding **less than 3%** of the
    outside-the-3-categories total merges into one hollow-outlined, dashed-border aggregate tile
    labelled "{N} smaller functions" (naming which ones in its tooltip and the table view).
