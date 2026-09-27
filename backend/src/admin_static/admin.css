@@ -103,8 +103,8 @@ h2 { font-size: 14px; font-weight: 500; color: #f3f4f6; margin: 0 0 8px; }
 .bar-fill.success { background: #059669; }   /* emerald-600 — Rising / positive */
 .bar-fill.error { background: #dc2626; }      /* red-600 — Declining / negative — added 2026-09-11 for the Employment Events contraction/expansion split, same token badge.error already uses */
 .bar-fill.role-designer { background: #6366f1; }
-.bar-fill.role-product-manager { background: #a855f7; }
-.bar-fill.role-engineer { background: #10b981; }
+.bar-fill.role-product-manager { background: #c026d3; }  /* fuchsia-600 — was purple-500, revised 2026-09-26 (changes/2026-09-26-role-palette-accessibility.md) */
+.bar-fill.role-engineer { background: #059669; }          /* emerald-600 — was emerald-500 */
 
 /* Data table, design/visual-design.md v1.1 */
 

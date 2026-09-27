@@ -48,10 +48,13 @@ export interface WelcomeResult {
 // design/visual-design.md — Accent palette. Colour follows the entity (role category) by
 // name, never by position — an unrecognised category falls back to neutral gray rather than
 // guessing a hue. Same three hues the trend chart already uses for the same categories.
+// Revised 2026-09-26 (changes/2026-09-26-role-palette-accessibility.md): indigo-500 /
+// fuchsia-600 / emerald-600 — the previous purple-500 was indistinguishable from indigo-500
+// under protanopia.
 const ROLE_CATEGORY_COLOR: Record<string, string> = {
-  Designer: "#6366f1",
-  "Product Manager": "#a855f7",
-  Engineer: "#10b981",
+  Designer: "#6366f1", // indigo-500
+  "Product Manager": "#c026d3", // fuchsia-600
+  Engineer: "#059669", // emerald-600
 };
 const FALLBACK_SEGMENT_COLOR = "#4b5563"; // gray-600
 

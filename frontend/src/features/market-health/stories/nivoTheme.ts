@@ -50,9 +50,12 @@ export const nivoTheme: PartialTheme = {
 // keyed on the stored role_category value ("Designer"/"Product Manager"/"Engineer"),
 // never the display label — same "value drives colour/lookup, label only changes what
 // renders" rule changes/2026-09-22-role-category-display-relabel.md already established.
+// Revised 2026-09-26 (changes/2026-09-26-role-palette-accessibility.md) — was purple-500 /
+// emerald-500; measured with the dataviz validator, purple-500 was indistinguishable from
+// indigo-500 under protanopia. fuchsia-600 is only 3.12:1 on gray-800 — never go darker.
 export const ROLE_CATEGORY_CHART_COLOR: Record<string, string> = {
   Designer: "#6366f1", // indigo-500
-  "Product Manager": "#a855f7", // purple-500
-  Engineer: "#10b981", // emerald-500
+  "Product Manager": "#c026d3", // fuchsia-600
+  Engineer: "#059669", // emerald-600
 };
 export const FALLBACK_CHART_COLOR = "#6b7280"; // gray-500 — an unrecognised category, never guessed

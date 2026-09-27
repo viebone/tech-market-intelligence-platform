@@ -37,10 +37,12 @@ const GRANULARITIES: { value: Granularity; label: string }[] = [
 // "Design" / "Product Management" / "Engineering" reads as the occupation family, matching
 // job-classification.md's own internal "occupation family" reasoning — the underlying data
 // key and the stored role_category value are both unchanged, this is presentation only.
+// Colours: design/visual-design.md — Accent palette, revised 2026-09-26
+// (changes/2026-09-26-role-palette-accessibility.md): indigo-500 / fuchsia-600 / emerald-600.
 const SERIES = [
   { key: "designer"        as keyof OpeningDataPoint, label: "Design",             color: "#6366f1" },
-  { key: "product_manager" as keyof OpeningDataPoint, label: "Product Management", color: "#a855f7" },
-  { key: "engineer"        as keyof OpeningDataPoint, label: "Engineering",        color: "#10b981" },
+  { key: "product_manager" as keyof OpeningDataPoint, label: "Product Management", color: "#c026d3" },
+  { key: "engineer"        as keyof OpeningDataPoint, label: "Engineering",        color: "#059669" },
 ] as const;
 
 const PAD = { top: 20, right: 16, bottom: 52, left: 68 };

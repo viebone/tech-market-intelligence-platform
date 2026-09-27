@@ -182,7 +182,7 @@ over unchanged. This is the same visual language, applied to a different layout 
   (matching the existing Conversation title scale), each with a `text-xs` / `gray-400` label
   beneath it — the existing Label/Caption scale, not a new one.
   and coverage percentages use the three role-category accent colours from
-  `design/visual-design.md` (indigo/purple/emerald) only where the split is genuinely by Role
+  `design/visual-design.md` (indigo/fuchsia/emerald — revised 2026-09-26, `changes/2026-09-26-role-palette-accessibility.md`) only where the split is genuinely by Role
   Category; every other distribution (Level, Track, Specialization, Confidence, Taxonomy
   Version, Requirements Status) uses a single neutral series colour (`gray-300`) with the
   semantic colours (`emerald-600` / `amber-600` / `red-600`) reserved for status meaning
@@ -236,7 +236,7 @@ over unchanged. This is the same visual language, applied to a different layout 
 - Subtitle: total postings counted
 - Axis: bar length = posting count; category labels on the y-axis, count on the x-axis
 - Series colour: `gray-300` (neutral), except the Role Category chart which uses the three
-  accent tokens (indigo/purple/emerald) per category, and any `unknown` bar in any chart which
+  accent tokens (indigo/fuchsia/emerald) per category, and any `unknown` bar in any chart which
   uses `amber-600` to visually flag it as distinct from a real classified value
 - Hover: shows exact count and % of total for that bar
 - Loading state: skeleton pulse bars (`animate-pulse`, `gray-700`)
