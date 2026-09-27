@@ -1339,6 +1339,42 @@ def build_uk_vacancies_story() -> dict[str, Any]:
                             f"recorded; {plat['country_unknown_count']:,} have no location recorded and can't be placed. "
                             f"{plat['unplaced_count']:,} of the UK roles are at employers whose industry we couldn't place in a group.")
 
+    # 5b ─ cross-check by employer size — added 2026-09-27 (changes/2026-09-25-employer-size-standard-bands.md,
+    # Step 7/8). Same shape as the industry cross-check above; ONS_SIZE_BANDS gives fixed labels/order (never
+    # sorted by value — the size order is the meaning, same rule as block 4's column chart).
+    from statistics_crosscheck import size_mix
+    size_mix_result = size_mix()
+    size_plat, size_ons = size_mix_result["platform"], size_mix_result["ons"]
+    size_cross_ready = bool(size_plat["postings"]) and size_ons.get("collected") and bool(size_ons.get("shares_pct")) and len(size_plat["shares_pct"]) > 0
+    size_cross_content: dict[str, Any] = {}
+    size_cross_qualifier = ""
+    if size_cross_ready:
+        from employer_headcount import ONS_SIZE_BANDS
+        size_labels = {code: label for code, label, _lo, _hi in ONS_SIZE_BANDS}
+        size_cross_qualifier = ("These aren't expected to match. The official figures estimate vacancies across the whole UK economy from a "
+                                "business survey; we track hiring at a chosen set of employers, most of them technology and finance "
+                                "companies. This shows how our view leans — not whether either one is right. Most of our size figures are "
+                                "the employer's worldwide headcount, not the UK business alone — for a multinational, this is an "
+                                "approximation. A business owned by a larger group may be classed by ONS at its group's size, which can "
+                                "differ from the company's own headcount.")
+        size_rows_out = [{"code": c, "label": size_labels.get(c, c), "primary_share_pct": size_plat["shares_pct"].get(c, 0.0),
+                          "secondary_share_pct": size_ons["shares_pct"].get(c)} for c in _ONS_SIZE_ORDER]
+        if size_plat["unplaced_count"]:
+            size_rows_out.append({"code": None, "label": "Not placed in a size band",
+                                  "primary_share_pct": size_plat["unplaced_share_pct"], "secondary_share_pct": None})
+        size_cross_content = {
+            "attribution": attribution, "primary_name": "Roles we track", "secondary_name": "UK vacancies (ONS)",
+            "legend": (f"Solid bar: roles we track — share of {size_plat['postings']:,} roles with a recorded UK location, as of {_date_in_words(size_plat['as_of'])}. "
+                       f"Lighter bar: UK vacancies — share of all vacancies, official estimate for the three months to {_period_end_words(size_ons['period_label'])}."),
+            "platform_total": size_plat["postings"], "platform_as_of": size_plat["as_of"], "unplaced_count": size_plat["unplaced_count"],
+            "unplaced_share_pct": size_plat["unplaced_share_pct"], "stored_roles_total": size_plat["total_postings"],
+            "location_unknown_count": size_plat["country_unknown_count"], "rows": size_rows_out,
+        }
+        size_cross_qualifier += (f" This covers the {size_plat['postings']:,} of {size_plat['total_postings']:,} roles we hold that have a UK location "
+                                 f"recorded; {size_plat['country_unknown_count']:,} have no location recorded and can't be placed. "
+                                 f"{size_plat['unplaced_count']:,} of the UK roles are at employers whose size we couldn't place in a band. "
+                                 f"The survey covers Great Britain, weighted to the UK.")
+
     adjustment_note = ("Most industry figures are seasonally adjusted (a few are published unadjusted); the official notes describe the "
                        "size figures as seasonally adjusted too, although the published table doesn't say so."
                        if size_adjustment == "seasonally_adjusted" else
@@ -1364,9 +1400,13 @@ def build_uk_vacancies_story() -> dict[str, Any]:
                  "Both periods are official estimates; the newer one may be revised.", ready=bool(shift_rows)),
         _section("industry-crosscheck", "Where our roles sit against the UK market", cross_content, cross_qualifier,
                  ready=bool(cross_ready)),
+        _section("size-crosscheck", "Where our headcount profile sits against the UK market", size_cross_content, size_cross_qualifier,
+                 ready=bool(size_cross_ready)),
     ]
     if not cross_ready:
-        sections[-1]["message"] = ("We don't hold enough UK-based roles to compare yet." if ons.get("collected") else _NOT_COLLECTED)
+        sections[-2]["message"] = ("We don't hold enough UK-based roles to compare yet." if ons.get("collected") else _NOT_COLLECTED)
+    if not size_cross_ready:
+        sections[-1]["message"] = ("We don't hold enough UK-based roles to compare yet." if size_ons.get("collected") else _NOT_COLLECTED)
 
     from data_definitions import DEFINITIONS
 

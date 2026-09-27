@@ -466,9 +466,11 @@ Step 2d).
     business unit may be the **enterprise group**, so a company acquired by a larger group may sit in a
     bigger ONS band than its own headcount implies (unverified — Open Questions); (3) the count of
     roles not placed; (4) the survey covers Great Britain, weighted to the UK.
-  - The experience side (a size comparison next to the industry one in Story 5's third movement) is
-    its own step in the change request (Step 7), **after** the data exists — this spec does not change
-    Story 5 as currently specified.
+  - **Built and live 2026-09-27** (`changes/2026-09-25-employer-size-standard-bands.md`, Step 7/8):
+    `size_mix()` is wired into `market_stories.py::build_uk_vacancies_story()` as the
+    `size-crosscheck` section (block 7, `design/market-health/data-stories.md` — Story 5,
+    Movement 3), verified live against production. `industry_mix()`'s own sibling section
+    (`industry-crosscheck`, block 6) is unchanged.
 
 ### 7. Adding the next source (the recipe — full version in `backend/TRUSTED_STATISTICS.md`)
 1. Pass the trust bar; write the research file with the licence quotes.

@@ -781,7 +781,7 @@ def test_story5_sections_and_numbers_come_from_the_real_figures():
     json.dumps(story)                                               # serialisable as-is
     sec = {s["id"]: s for s in story["sections"]}
     assert list(sec) == ["uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-tech-and-communications",
-                         "uk-industry-shift", "industry-crosscheck"]
+                         "uk-industry-shift", "industry-crosscheck", "size-crosscheck"]
     assert all(s["status"] == "ready" for s in sec.values()), {k: v["status"] for k, v in sec.items()}
     t = sec["uk-vacancies-total"]["content"]
     assert (t["total"], t["previous_total"], t["change"], t["change_pct"]) == (702000, 710000, -8000, -1.1)     # ONS's own -8k, -1.1%
@@ -794,9 +794,22 @@ def test_story5_sections_and_numbers_come_from_the_real_figures():
     assert [r["share_pct"] for r in size] == [13.0, 14.1, 14.7, 24.1, 34.2]
     shift = sec["uk-industry-shift"]["content"]
     assert len(shift["rows"]) == 8 and shift["prior_period_label"] == "Jun-Aug 2025" and all(r["prior"] is not None for r in shift["rows"])
+    # Size cross-check — added 2026-09-27 (changes/2026-09-25-employer-size-standard-bands.md, Step 7/8).
+    # Fixture companies' real size bands (employer_headcount.py): monzo/wise/starling-bank/deliveroo -> 2500+
+    # (200 of 275 postings); trainline/gymshark/autotrader -> 250-2499 (75 of 275) — nothing in the smaller
+    # three ONS bands, mirroring the real production lean the change request's research predicted.
+    size_cross = sec["size-crosscheck"]["content"]
+    assert [r["code"] for r in size_cross["rows"]] == ["1-9", "10-49", "50-249", "250-2499", "2500+"]  # fixed size order
+    assert [r["primary_share_pct"] for r in size_cross["rows"]] == [0.0, 0.0, 0.0, 27.27, 72.73]
+    # 2dp here (ons_shares()'s own precision, matching industry_mix's convention) — the coarser 1dp
+    # values in "uk-vacancies-by-size" above come from a separate rounding in that block's own code.
+    assert [r["secondary_share_pct"] for r in size_cross["rows"]] == [12.96, 14.1, 14.67, 24.07, 34.19]
+    assert size_cross["platform_total"] == 275 and size_cross["unplaced_count"] == 0
+    assert "aren't expected to match" in sec["size-crosscheck"]["qualifier"].lower()
+    assert "worldwide" in sec["size-crosscheck"]["qualifier"].lower()          # required qualifier, spec §6
     assert story["attribution_text"].startswith("Source: Office for National Statistics — Vacancy Survey.")
     for sid in ("uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-tech-and-communications",
-               "uk-industry-shift", "industry-crosscheck"):
+               "uk-industry-shift", "industry-crosscheck", "size-crosscheck"):
         att = sec[sid]["content"]["attribution"]
         assert att["publisher"] == "Office for National Statistics" and "Open Government Licence v3.0" in att["text"] and att["licence_confirmed"] is True
     assert story["provenance"]["model_used"] is False

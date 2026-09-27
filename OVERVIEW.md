@@ -53,7 +53,11 @@ advertised salaries, not just one average figure; what the tracked companies hir
 Design, Product Management, and Engineering is now sized visually by how much of the wider
 picture each area actually is; and which industries are gaining or losing UK vacancies is now a
 plain up-or-down comparison. Every chart also now has a "Show as table" option for the exact
-numbers, works from the keyboard, and reads correctly with a screen reader.
+numbers, works from the keyboard, and reads correctly with a screen reader. _(New, 2026-09-27.)_
+"UK vacancies (official data)" now also places the roles this platform tracks alongside the
+official figures by **company size**, not just by industry — so you can see, for example, that
+none of the employers this platform tracks have under 50 people, while official figures put
+roughly a quarter of all UK vacancies at businesses that small.
 
 **Tell us how it's going.** _(New, 2026-09-23.)_ "Give Feedback" sits at the bottom of the task
 list, always available — click it to rate overall satisfaction (1–5) and optionally say more, in

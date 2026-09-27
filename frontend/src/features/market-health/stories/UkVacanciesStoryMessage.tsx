@@ -123,11 +123,14 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
   const techSection = section(story, "uk-tech-and-communications");
   const shiftSection = section(story, "uk-industry-shift");
   const crossSection = section(story, "industry-crosscheck");
+  // Added 2026-09-27 (changes/2026-09-25-employer-size-standard-bands.md, Step 7/8) — the size
+  // dimension's own comparison block, a sibling to crossSection above, same shape.
+  const sizeCrossSection = section(story, "size-crosscheck");
 
   // The attribution comes from whichever section carries it (the API puts the same object on every
   // section with an ONS figure); absent only when nothing has been collected yet.
   const attribution: SourceAttributionData | null =
-    [totalSection, industrySection, sizeSection, techSection, shiftSection, crossSection]
+    [totalSection, industrySection, sizeSection, techSection, shiftSection, crossSection, sizeCrossSection]
       .map((s) => s?.content.attribution)
       .find(isSourceAttribution) ?? null;
 
@@ -194,6 +197,17 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
   const crossRows: ComparisonRow[] = listFrom(crossSection, "rows")
     .map((r) => ({
       label: shortIndustry(str(r.label)),
+      primary: numOrNull(r.primary_share_pct),
+      secondary: numOrNull(r.secondary_share_pct),
+    }))
+    .filter((r) => r.label !== "");
+
+  // Size labels ("1–9 employees", "Not placed in a size band") are already short and carry no
+  // official long-form name to trim, unlike industry labels — no shortIndustry() here.
+  const sizeCrossContent = sizeCrossSection?.content ?? {};
+  const sizeCrossRows: ComparisonRow[] = listFrom(sizeCrossSection, "rows")
+    .map((r) => ({
+      label: str(r.label),
       primary: numOrNull(r.primary_share_pct),
       secondary: numOrNull(r.secondary_share_pct),
     }))
@@ -306,6 +320,25 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
             rows={crossRows}
             primaryName={str(crossContent.primary_name) || "Roles we track"}
             secondaryName={str(crossContent.secondary_name) || "UK vacancies (official)"}
+          />
+        </Suspense>
+      </StoryBlock>
+
+      {/* Added 2026-09-27 (changes/2026-09-25-employer-size-standard-bands.md, Step 7/8) — same
+          two-series-comparison form as the block above, deliberately reused for the size
+          dimension rather than given a new form (design/market-health/data-stories.md — Story 5,
+          block 7). */}
+      <StoryBlock
+        heading="Where our headcount profile sits against the UK market"
+        subtitle="Share of the UK-based roles we track, and share of all UK vacancies, by size of the employing business."
+        {...blockProps(sizeCrossSection, sizeCrossRows.length > 0)}
+      >
+        {str(sizeCrossContent.legend) ? <p className="mb-2 text-xs text-gray-400">{str(sizeCrossContent.legend)}</p> : null}
+        <Suspense fallback={CHART_LOADING_FALLBACK}>
+          <SourceComparisonBars
+            rows={sizeCrossRows}
+            primaryName={str(sizeCrossContent.primary_name) || "Roles we track"}
+            secondaryName={str(sizeCrossContent.secondary_name) || "UK vacancies (official)"}
           />
         </Suspense>
       </StoryBlock>

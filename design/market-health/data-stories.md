@@ -729,8 +729,10 @@ under one heading would mix two populations.
 It is also the first story that puts a **platform figure beside an outside figure**. That is
 allowed here, under strict rules (see the third movement and "Honesty and empty states"): two
 labelled, separately-sourced values; never a difference, a score, or a verdict; and only on a
-dimension where an honest mapping exists (industry — yes; employer size — **not yet**, because
-this platform's size bands and the official ones don't line up).
+dimension where an honest mapping exists — industry, and, **added 2026-09-27**
+(`changes/2026-09-25-employer-size-standard-bands.md`, Step 7), employer size, now that the
+platform's own size label is derived from a cited headcount and lines up with ONS's own five
+size classes (`EMPLOYER_SIZE_STANDARDS.md`).
 
 ### Display name
 
@@ -898,20 +900,51 @@ all industries. A reader goes from "how big is it" (blocks 2–4) → "how did i
    the coverage gap: "{x} of {n} UK-based roles are at employers whose industry we couldn't place
    in a group."
 
-**Revised 2026-09-27:** the story now uses **six** distinct visual forms, each chosen for the
-shape of its own question, with no repeat: Hero Figure (block 2), Ranked bar list (block 3, the
-story's only ranking question), Ordered columns (block 4, an ordered scale), Time series (block
-4a, added 2026-09-26 — movement over 25 years), Diverging change bars (block 5, a one-year
-change), and Two-series comparison (block 6, two sources side by side). It never repeats the
-welcome's current-snapshot figures (the platform's own job count, company count, or current role
-split) — the only platform figure it shows is the industry *share* in block 6, which is a
-different question (how our sample leans against an outside reference).
+7. **Where our headcount profile sits against the UK market** — *Added 2026-09-27
+   (`changes/2026-09-25-employer-size-standard-bands.md`, Step 7).* A **two-series comparison**
+   (grouped horizontal bars, one row per size band) — the same form as block 6, reused
+   deliberately: this is the same kind of question (a platform share beside an ONS share) asked
+   of a different dimension, not a new one needing its own form. Subtitle: "Share of the
+   UK-based roles we track, and share of all UK vacancies, by size of the employing business."
+   A legend names both series: "Solid bar: roles we track — share of {n} UK-based roles we hold
+   as of {date}. Lighter bar: UK vacancies — share of all vacancies, official estimate for
+   Jun–Aug 2026." Rows: the five ONS size bands, always in size order — 1–9, 10–49, 50–249,
+   250–2,499, 2,500 or more employees — never sorted by value, same "the order is the meaning"
+   rule as block 4's column chart, plus a final row **"Not placed in a size band"** carrying
+   only the platform side. *Qualifiers (always shown, in this order):*
+   1. "These are not expected to match. The official figures estimate vacancies across the whole
+      UK economy from a business survey; we track hiring at a chosen set of employers, most of
+      them technology and finance companies. This shows how our view leans — not whether either
+      one is right." (the same not-expected-to-match framing as block 6)
+   2. "Most of our size figures are the employer's worldwide headcount, not the UK business
+      alone — for a multinational, this is an approximation."
+   3. "A business owned by a larger group may be classed by ONS at its group's size, which can
+      differ from the company's own headcount."
+   4. "{x} of {n} UK-based roles are at employers whose size we couldn't place in a band."
+   5. "The survey covers Great Britain, weighted to the UK."
+
+   Where this leans, from the research behind this block: the panel has no company under 50
+   employees, while ONS's own figures put roughly a quarter of UK vacancies at businesses that
+   small — this block exists to show that lean plainly, not to imply either side is wrong.
+
+**Revised 2026-09-27:** the story now uses **six** distinct visual forms across **seven** blocks,
+each chosen for the shape of its own question: Hero Figure (block 2), Ranked bar list (block 3,
+the story's only ranking question), Ordered columns (block 4, an ordered scale), Time series
+(block 4a, added 2026-09-26 — movement over 25 years), Diverging change bars (block 5, a
+one-year change), and Two-series comparison — used twice, for industry (block 6) and, added
+2026-09-27, for employer size (block 7) — the one form the story repeats, because both blocks
+ask the same shape of question (a platform share beside an ONS share) of a different dimension,
+not because a new question was forced into an old form. It never repeats the welcome's
+current-snapshot figures (the platform's own job count, company count, or current role split) —
+the only platform figures it shows are the industry share (block 6) and the size-band share
+(block 7), both a different question (how our sample leans against an outside reference).
 
 ### Data contract
 
 Reads trusted statistics only through `query_trusted_statistics_data` (never the tables
 directly) and the platform's own postings only inside `statistics_crosscheck.industry_mix()`
-(`backend/specs/trusted-statistics/api.md`). No LLM. Gated on
+(block 6) and, added 2026-09-27, `statistics_crosscheck.size_mix()` (block 7)
+(`backend/specs/trusted-statistics/api.md` §6). No LLM. Gated on
 `source_licences.is_source_usable("ons_vacancy_survey")` before any query runs.
 
 | Story fact | Aggregate | Required qualifier |
@@ -921,7 +954,8 @@ directly) and the platform's own postings only inside `statistics_crosscheck.ind
 | By business size | Latest-vintage five size-class series, shown as shares of `AP2Y`, in size order | States what "size" means |
 | Tech and communications over time *(block 4a, added 2026-09-26)* | Latest-vintage series for SIC section J (information and communication) and `AP2Y` (all industries), **every** period from the first published (Apr–Jun 2001) to the latest; each value divided by that series' own value for the same months in 2019 (× 100) to give the index; the value in thousands kept alongside; the series' highest point and its latest point picked from the same data | Names the group's breadth (telecoms, publishing, broadcasting as well as software and IT); whole-thousand rounding; employment agencies left out; base period stated in words; provisional flag on the latest point; adjustment status from the stored field |
 | Year-on-year | Same series, latest period vs the same period one year earlier; both stated in words | Both periods official estimates; newer may be revised |
-| Comparison | Platform side: share of UK-located postings by industry group via the versioned crosswalk; ONS side: share of the all-industries total | Not expected to match; how many roles are unplaced; dates and denominators for both sides |
+| Comparison (industry, block 6) | Platform side: share of UK-located postings by industry group via the versioned crosswalk; ONS side: share of the all-industries total | Not expected to match; how many roles are unplaced; dates and denominators for both sides |
+| Comparison (size, block 7, added 2026-09-27) | Platform side: share of UK-located postings by ONS size band, derived from `COMPANY_HEADCOUNT` at query time; ONS side: each size class's share of the `AP2Y` total for the latest period (VACS03) | Not expected to match; worldwide-vs-UK headcount approximation; enterprise-group sizing unconfirmed; how many roles are unplaced; dates and denominators for both sides |
 | Attribution | `source_licences.get_licence("ons_vacancy_survey").attribution_text` | Rendered visibly in the framing block, always |
 
 ### Honesty and empty states

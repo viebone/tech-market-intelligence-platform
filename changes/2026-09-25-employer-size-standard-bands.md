@@ -4,7 +4,7 @@ date: 2026-09-25
 trigger-type: stakeholder-request
 change-type: api-change
 outcome: job-data-source-flexibility
-status: in-progress
+status: complete
 ---
 
 # Change Request: Replace the platform's own employer size bands with headcount-derived, standards-based bands
@@ -123,9 +123,9 @@ publisher.
 - ✅ Step 4 (research done 2026-09-25; two follow-ups remain that need a human): Research pass — headcount range, basis, source and date for the 26 US/EU companies, `lever`, **and the 21 UK panel companies** → `research/2026-09-25-panel-headcount-research.md`; confirm with ONS whether register employment is UK-only (**cannot be done by me — needs a human to email ONS**)
 - ✅ Step 5 (implemented 2026-09-25; live database backfilled — see Decision Log): `/implement-backend` — headcount data, derivation helper, `db.py` column(s), `raw_postings.py`, backfill, tests (every tagged company derives a band or an explicit "ambiguous"; no company guessed)
 - ✅ Step 6 (docs updated for the specified design; rewrite again when Step 5 ships): Update `EMPLOYER_PANEL.md`, `DATA_SOURCES.md`, `backend/TRUSTED_STATISTICS.md`, product `CLAUDE.md`
-- [ ] Step 7: `/new-experience` — Story 5 size comparison (only after Step 5 data exists and `trusted-statistics` is implemented)
-- [ ] Step 8: `/new-frontend-spec`, `/implement-frontend` for that story change
-- [ ] Step 9: Update `OVERVIEW.md`
+- [x] ✅ Step 7: `/new-experience` — **Done 2026-09-27**. Story 5, block 7 ("Where our headcount profile sits against the UK market"), added to `design/market-health/data-stories.md` — reuses the existing two-series-comparison form deliberately (same question shape as block 6, different dimension). Story intro's stale "not yet" claim about size corrected.
+- [x] ✅ Step 8: **Done 2026-09-27.** Backend: `statistics_crosscheck.size_mix()` (already written to spec, unwired) hooked into `market_stories.py::build_uk_vacancies_story()` as the `size-crosscheck` section; 7 new pure-function tests (`test_statistics_crosscheck.py`) + `test_trusted_stats.py`'s fixture-driven story test extended for the new section (61/61 pass). Frontend: `frontend/specs/market-health/architecture.md` updated (Block 7 subsection); `UkVacanciesStoryMessage.tsx` reuses the existing `SourceComparisonBars` component with a second row set, no new component. `tsc - [ ] Step 8: `/new-frontend-spec`, `/implement-frontend` for that story change- [ ] Step 8: `/new-frontend-spec`, `/implement-frontend` for that story change vite build` clean, no new bundle chunk. Verified against real production data: real, honest lean (0% of tracked UK roles at 1–9/10–49-employee businesses vs ONS's ~27% combined) — exactly the finding the CR's own 2026-09-25 research predicted.
+- [x] ✅ Step 9: `OVERVIEW.md` updated — **Done 2026-09-27**, one new sentence under "UK vacancies (official data)" naming the size comparison and its headline finding
 
 ## Decision Log
 - 2026-09-25: PM asked to use ONS breakpoints in place of ours, and to document ONS's standards,
@@ -150,3 +150,6 @@ publisher.
   weighted to the UK, and its smallest band is "2 to 9" in the methodology but "1 – 9" in the
   file. Those corrections are recorded against *that* change request's specs (its status is
   `in-progress`), not here.
+- 2026-09-27: **Real gap found while wiring this up: `size_mix()` already existed, unused.** It was written to the spec's exact contract (`backend/specs/trusted-statistics/api.md` §6, decided 2026-09-25) but never called anywhere and never tested — a genuine "spec was ahead of the wiring" gap, not a bug. This closes it.
+- 2026-09-27: Reused the same "two-series comparison" visual form as block 6 rather than inventing a new one — same question shape (a platform share beside an ONS share), just a different dimension. Story 5's own closing summary was revised to state this explicitly, so "one form per question" doesn't read as violated by a deliberate, justified reuse.
+- 2026-09-27: Not fixed here (flagged only): `industry_mix()`/`size_mix()`'s wider module, `statistics_crosscheck.py`, had zero test coverage before this CR (`industry_mix()` shipped 2026-09-25 with none either, beyond the fixture-driven story test). Added focused pure-function tests for both functions' shared helpers rather than leaving the gap unaddressed, but did not go back and add dedicated `industry_mix()`-only tests beyond what already existed.

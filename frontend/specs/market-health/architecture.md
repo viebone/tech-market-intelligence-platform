@@ -673,7 +673,7 @@ merge into a "{N} smaller functions" tile is server-computed (`backend/specs/mar
 already-flagged aggregate tile (dashed hollow) from an `unknown` tile (solid hollow) by a field
 the response already carries, never by re-deriving which is which from the name string.
 
-### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`; **block 4a spec added 2026-09-27 — `changes/2026-09-26-story-5-tech-lens.md`, not yet implemented**)
+### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`; block 4a added 2026-09-27 — `changes/2026-09-26-story-5-tech-lens.md`; **block 7 (size comparison) added and implemented 2026-09-27** — `changes/2026-09-25-employer-size-standard-bands.md`, Step 7/8)
 
 > **Implementation notes (2026-09-25).** Built: `UkVacanciesStoryMessage`, `SourceAttribution`, `SourceComparisonBars`, the `mode` prop on
 > `YearOnYearGroupedBars`, the router branch in `DataStoryMessage`. `tsc` + `vite build` clean; `SourceComparisonBars` is a lazy 1.9 kB chunk on
@@ -706,7 +706,7 @@ movement** and a platform-vs-publisher comparison.
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), **`OrderedColumns`** *(revised 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`, was `RankedBarList` in size order)* (by business size, in fixed size order) → *(Movement 2)* `TechCommsTrendChart` (block 4a, above) then **`DivergingChangeBars`** *(revised 2026-09-27, was `YearOnYearGroupedBars mode="level"` — see "Superseded", above)* (which industries are changing) → *(Movement 3)* `SourceComparisonBars`. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
+| `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), **`OrderedColumns`** *(revised 2026-09-27 — `changes/2026-09-26-data-story-chart-variety.md`, was `RankedBarList` in size order)* (by business size, in fixed size order) → *(Movement 2)* `TechCommsTrendChart` (block 4a, above) then **`DivergingChangeBars`** *(revised 2026-09-27, was `YearOnYearGroupedBars mode="level"` — see "Superseded", above)* (which industries are changing) → *(Movement 3)* `SourceComparisonBars` (industry, `industry-crosscheck`) then, **added 2026-09-27**, a second `SourceComparisonBars` instance (size, `size-crosscheck`, block 7 below) — the same component reused for a second source-comparison question, not a new one. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
 | `SourceAttribution` *(new, generic)* | Renders a story's visible attribution line (`text-xs text-gray-400`) from the section payload's `attribution` object — publisher, attribution text, and a period/provisional note. **Never hard-codes a publisher or licence string**; a story built from any future trusted source reuses it. If `licence_confirmed === false` it also renders the visible "usage terms not yet confirmed" caveat (`data-legibility` Provenance) — unused for ONS today, required for the first surface of any unconfirmed publisher. | `frontend/src/features/market-health/stories/SourceAttribution.tsx` |
 | `SourceComparisonBars` *(new)* | Nivo grouped horizontal bar chart for the **two-series comparison** (`design/visual-design.md`): rows `{ label, primary?: number, secondary?: number }`, `primaryName` / `secondaryName` for the legend and tooltip, both values are shares (%). A row missing one side renders only the existing bar plus its inline caption (never a zero bar). Legend line always shown above the chart, built from names, denominators and dates supplied by the API — not composed client-side. Tooltip names each series with its own source and figure, **never a difference or "over/under-represented"**. Lazy-loaded (`React.lazy` + `Suspense`, same `h-40 animate-pulse bg-gray-800` fallback), themed via the shared `nivoTheme.ts`; primary `indigo-500`, secondary `gray-600`. | `frontend/src/features/market-health/stories/SourceComparisonBars.tsx` |
 
@@ -812,6 +812,36 @@ its own `StoryBlock` with `heading="Tech and communications vacancies since 2001
 `subtitle`. Placed immediately after the "Vacancies by size of business" block, before the
 `MovementLabel` reads "How it's shifting" is unchanged (the movement label already introduces this
 block correctly, since 4a is the first block of Movement 2 per the experience spec).
+
+**Block 7 — "Where our headcount profile sits against the UK market"** *(added and implemented
+2026-09-27, `changes/2026-09-25-employer-size-standard-bands.md`, Step 7/8; experience:
+`design/market-health/data-stories.md` — Story 5, block 7; backend: `backend/specs/market-health/api.md`,
+section id `size-crosscheck`)*. Placed in `UkVacanciesStoryMessage`, last, immediately after the
+existing "Where our roles sit against the UK market" block, both inside Movement 3.
+
+No new component — this block reuses `SourceComparisonBars` (above) with a second row set, exactly
+the pattern `industry-crosscheck` already established:
+- `sizeCrossSection = section(story, "size-crosscheck")`, added alongside the existing
+  `crossSection` lookup (and to the `attribution` fallback list, since either comparison block may
+  be the one carrying it if the other is `insufficient_data`).
+- `sizeCrossRows` maps `rows[]` straight through (`label`, `primary_share_pct` → `primary`,
+  `secondary_share_pct` → `secondary`) — **no `shortIndustry()`** (that helper trims long official
+  SIC section names like "Wholesale and retail trade; repair of …"; size-band labels ("1–9
+  employees", "Not placed in a size band") are already short and have nothing to trim).
+- The legend, both series names, and every qualifier line arrive fully composed from the API
+  (`size_cross_qualifier` in `market_stories.py`) — same "server computes, client renders"
+  discipline as every other block; nothing here derives the "worldwide vs UK headcount" or
+  "enterprise-group sizing" caveats client-side.
+- Rows render in the order the API sends them (`_ONS_SIZE_ORDER` — fixed size order, never
+  re-sorted), same as `OrderedColumns` for block 4 — `SourceComparisonBars` does not sort its
+  `rows` prop, so no change to that component was needed for this to hold.
+
+Verified: `tsc && vite build` clean (no new chunk — `SourceComparisonBars` is already the lazy
+chunk both blocks share); the real story rendered against production data (`market_stories.get_story
+("uk-vacancies-official")`) confirmed the section is `ready`, with real, honest shares (e.g. 0% of
+tracked UK roles at 1–9 or 10–49 employee businesses vs ONS's ~27% combined — the exact lean the
+change request's research predicted). **Not verified in a real browser** — same disclosed gap as
+`industry-crosscheck` and block 4a above.
 
 **`YearOnYearGroupedBars`'s `mode: "share" | "level"` prop — added 2026-09-25, superseded
 2026-09-27.** Built for this block ("Which industries are changing") to draw a thousands-based

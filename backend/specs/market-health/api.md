@@ -455,7 +455,9 @@ pattern as Stories 2-4 — a catalogue entry, `market_stories.py::build_uk_vacan
 tests. **No LLM.**
 
 Reads statistics **only** through `query_trusted_statistics_data` (never the tables directly)
-and, for the comparison block only, `statistics_crosscheck.industry_mix()`. Before any query it
+and, for the comparison blocks only, `statistics_crosscheck.industry_mix()` and, added
+2026-09-27 (`changes/2026-09-25-employer-size-standard-bands.md`, Step 7/8),
+`statistics_crosscheck.size_mix()`. Before any query it
 calls `source_licences.is_source_usable("ons_vacancy_survey")`; `False` → every section
 `insufficient_data` with "This data source isn't currently available." Sources with no data yet
 → every section `insufficient_data` with "We haven't collected the official UK figures yet." —
@@ -485,6 +487,7 @@ also carries the `attribution` object (rule 4 of the trusted-statistics spec):
 | `uk-tech-and-communications` *(added 2026-09-26, `changes/2026-09-26-story-5-tech-lens.md`)* | 2 (first block) | `{ attribution, heading, subtitle, legend, group: { code: "J", label: "Information and communication" }, base: { period_label: "Jun–Aug 2019", period_words: "the three months to Aug 2019" }, first_period_label, latest_period_label, provisional: true, y_axis_title: "Index (Jun–Aug 2019 = 100)", points: [...], peak: {...}, latest: {...}, table: { caption, rows: [...] }, summary, aria_label, definitions: { "<key>": "<text>" } }` — full shape and rules in **Block 4a computation**, below. Placed **between `uk-vacancies-by-size` and `uk-industry-shift`** in `sections` (order is the story) |
 | `uk-industry-shift` | 2 | `{ attribution, current_period_label: "Jun-Aug 2026", prior_period_label: "Jun-Aug 2025", rows: [{ code, label, current, prior, delta, unit: "thousand vacancies" }] }` — top 8 by current value; `prior` from the same series one year earlier (latest vintage of that period); rows lacking a prior value are omitted, and if none have one the section is `insufficient_data` |
 | `industry-crosscheck` | 3 | `{ attribution, primary_name: "Roles we track", secondary_name: "UK vacancies (ONS)", legend, platform_total: 1240, platform_as_of, unplaced_count, unplaced_share_pct, crosswalk_version, rows: [{ code, label, primary_share_pct, secondary_share_pct }] }` — `legend` is composed server-side (names, denominators, dates) so the client never builds provenance text; rows = ONS top 5 ∪ platform groups ≥5%, max 8, plus one `{ code: null, label: "Not placed in an industry group", primary_share_pct, secondary_share_pct: null }`; **no difference field exists in this payload, deliberately** |
+| `size-crosscheck` *(added 2026-09-27, `changes/2026-09-25-employer-size-standard-bands.md`)* | 3 | `{ attribution, primary_name: "Roles we track", secondary_name: "UK vacancies (ONS)", legend, platform_total, platform_as_of, unplaced_count, unplaced_share_pct, rows: [{ code, label, primary_share_pct, secondary_share_pct }] }` — same shape as `industry-crosscheck`, from `statistics_crosscheck.size_mix()`; rows are the **5 ONS size bands in fixed size order** (`_ONS_SIZE_ORDER`, never sorted by value), plus one `{ code: null, label: "Not placed in a size band", primary_share_pct, secondary_share_pct: null }`; no `crosswalk_version` field (the platform band comes from `employer_headcount.size_band_for()`, not a versioned crosswalk); **no difference field, deliberately** |
 
 `limitations` always includes: the survey's excluded sectors (from the series' `coverage_note`),
 "the latest figures are provisional and may be revised", "the comparison is not expected to
@@ -494,7 +497,7 @@ footnotes as not adjusted), and the size-of-business series is stated as seasona
 methodology page though not in the data file itself (the block's qualifier says where that status
 comes from). Also always stated: the survey covers Great Britain and ONS weights it up to the UK
 (Northern Ireland is about 3% of UK employment).
-`provenance.sources` lists `ons_vacancy_survey` (and `raw_postings` for the comparison block) and
+`provenance.sources` lists `ons_vacancy_survey` (and `raw_postings` for the comparison blocks) and
 `provenance.model_used = false`; the Reasoning Panel additionally lists dataset codes
 (VACS02, VACS03), the crosswalk version, and the unplaced-role count.
 
