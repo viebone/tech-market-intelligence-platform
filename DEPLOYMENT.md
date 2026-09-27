@@ -73,9 +73,10 @@ dedicated chat project:**
 
 - **Auto-recharge must stay OFF on both** — this is what makes each prepaid
   balance a hard ceiling. If it's on, the "can't overspend" guarantee is void.
-- Keep only a small balance loaded on each (target: ~$5/month of headroom) until
-  the follow-on spend-ledger change adds an in-app monthly cap.
-- Optional: cloud-console budget alerts at $2 / $3 / $4.
+- Keep only a small balance loaded on each (target: ~$10/month of headroom,
+  raised from $5 by the operator 2026-09-27 — `changes/2026-09-27-llm-budget-raised-to-10.md`)
+  until the follow-on spend-ledger change adds an in-app monthly cap.
+- Optional: cloud-console budget alerts at $4 / $6 / $8.
 - **Record the dedicated chat project's GCP id and balance** in the table above
   and in product `CLAUDE.md` (both carry a placeholder) — outstanding as of
   2026-09-06.
