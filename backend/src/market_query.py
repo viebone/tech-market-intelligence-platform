@@ -889,8 +889,8 @@ def query_trusted_statistics_data(
     industry_code: str | None = None,
     size_band: str | None = None,
     period: str = "latest",
-    date_from=None,
-    date_to=None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> dict:
     """
     Official statistics from trusted institutions (today: the ONS Vacancy Survey — estimated UK job
@@ -906,7 +906,9 @@ def query_trusted_statistics_data(
         size_band: optional ONS size band code ("1-9", "10-49", "50-249", "250-2499", "2500+").
         period: "latest" (newest period only); "year_ago" or "previous_quarter" (the newest period PLUS the
             comparison period, so a caller can see the change). Ignored when date_from/date_to is given.
-        date_from / date_to: optional date range over period start/end.
+        date_from / date_to: optional date range over period start/end, as an ISO date string
+            ("YYYY-MM-DD") or a `date` object. A range with no natural start (e.g. "2000-01-01")
+            returns every period actually stored — the whole published history, not an error.
 
     Returns:
         {
@@ -917,17 +919,34 @@ def query_trusted_statistics_data(
                           "observations": [{period_label, period_start, period_end, value, value_status, released_on}]}],
           "sources_checked": [...], "sources_unavailable": [...],   # unavailable = a human marked the source rejected for use
           "latest_period_label": str | None, "total_matching": number of series returned, "as_of": ISO time,
-          "usable": False only if EVERY candidate source is unavailable
+          "usable": False only if EVERY candidate source is unavailable,
+          "definitions": {key: text}   # shared plain-language wording (data_definitions.py) for whichever
+                                        # series are returned — e.g. the ONS Vacancy Survey's rounding note,
+                                        # or the "information and communication is broader than tech" note
+                                        # when the "J" industry series is part of the result. {} if none apply.
         }
         `value` is as published, in the series' `unit` (ONS levels: thousands of vacancies — see unit_scale).
         An empty `statistics` with a source in `sources_checked` means "checked, nothing collected yet" —
         never "does not exist". Nothing is estimated, interpolated or filled.
     """
-    from datetime import datetime, timezone
+    from datetime import date, datetime, timezone
 
     import statistics_storage
     from source_licences import is_source_usable
     from trusted_stats.registry import TRUSTED_PUBLISHERS
+
+    def _normalize_date(value, field_name: str):
+        if value is None or isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD), got {value!r}") from exc
+        raise ValueError(f"{field_name} must be a date or an ISO date string, got {value!r}")
+
+    date_from = _normalize_date(date_from, "date_from")
+    date_to = _normalize_date(date_to, "date_to")
 
     if dimension not in _STATISTIC_DIMENSIONS:
         raise ValueError(f"dimension must be one of {_STATISTIC_DIMENSIONS}, got {dimension!r}")
@@ -942,7 +961,7 @@ def query_trusted_statistics_data(
     base = {"sources_checked": candidates, "sources_unavailable": unavailable,
             "as_of": datetime.now(timezone.utc).isoformat()}
     if not usable:
-        return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": False}
+        return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": False, "definitions": {}}
 
     if date_from or date_to:
         rows = statistics_storage.fetch_observations(sources=usable, dimension_type=dimension, industry_code=industry_code,
@@ -950,7 +969,7 @@ def query_trusted_statistics_data(
     else:
         latest = statistics_storage.latest_period_start(sources=usable, dimension_type=dimension)
         if latest is None:
-            return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": True}
+            return {**base, "statistics": [], "latest_period_label": None, "total_matching": 0, "usable": True, "definitions": {}}
         periods = [latest]
         if period == "year_ago":
             periods.append(_add_months(latest, -12))
@@ -958,6 +977,18 @@ def query_trusted_statistics_data(
             periods.append(_add_months(latest, -3))
         rows = statistics_storage.fetch_observations(sources=usable, dimension_type=dimension, industry_code=industry_code,
                                                      size_band=size_band, periods=periods)
+
+    definitions: dict[str, str] = {}
+    if rows:
+        from data_definitions import DEFINITIONS
+        keys: set[str] = set()
+        for r in rows:
+            s = r["series"]
+            if s.get("source") == "ons_vacancy_survey":
+                keys.add("ons.vacancies.rounding")
+                if s["dimension_type"] == "industry" and s["dimensions"].get("industry", {}).get("code") == "J":
+                    keys.add("ons.industry.J.breadth")
+        definitions = {k: DEFINITIONS[k] for k in sorted(keys)}
 
     by_series: dict[str, dict] = {}
     for r in rows:
@@ -977,4 +1008,4 @@ def query_trusted_statistics_data(
     statistics = list(by_series.values())
     newest = max((o for e in statistics for o in e["observations"]), key=lambda o: o["period_start"], default=None)
     return {**base, "statistics": statistics, "latest_period_label": newest["period_label"] if newest else None,
-            "total_matching": len(statistics), "usable": True}
+            "total_matching": len(statistics), "usable": True, "definitions": definitions}

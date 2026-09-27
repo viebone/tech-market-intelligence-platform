@@ -26,14 +26,21 @@ collected data, never a guess.
 exactly what data it looked at and how it got there — so you can verify it instead of just
 trusting it.
 
-**Read fixed data stories with no AI involved.** Four standing reports — "What we know about
+**Read fixed data stories with no AI involved.** Five standing reports — "What we know about
 the market," "Employment risk across the market," "Independent market benchmark" (a second,
 outside read on hiring demand and pay from a specialist third-party site, shown separately,
-never blended with this platform's own numbers), and _(new, 2026-09-21)_ "Beyond Design,
+never blended with this platform's own numbers), _(new, 2026-09-21)_ "Beyond Design,
 Product & Engineering" (what the tracked companies are actually hiring for outside the 3
-tracked role categories — roughly half of all classified postings, never shown anywhere else)
-— are built straight from the data, no model call, so they're instant and can't be wrong in the
-way an AI answer occasionally can be. _(New, 2026-09-22.)_ Several blocks across these stories
+tracked role categories — roughly half of all classified postings, never shown anywhere else),
+and _(new, 2026-09-25 — corrected here, missed at the time)_ "UK vacancies (official data)"
+(official UK government statistics on job vacancies economy-wide, by industry and by business
+size, with the roles this platform tracks placed alongside them so you can see how far this
+platform's own view leans) — are built straight from the data, no model call, so they're
+instant and can't be wrong in the way an AI answer occasionally can be. _(New, 2026-09-27.)_
+"UK vacancies (official data)" now also traces the official group closest to tech — it covers
+software and IT services as well as telecoms, publishing, and broadcasting, so it's a wider
+category than "tech" alone — back to 2001, so you can see how it has moved against the whole UK
+market through the 2022 hiring peak and since. _(New, 2026-09-22.)_ Several blocks across these stories
 now render as real comparison charts instead of plain ranked lists or a bare percentage bar —
 "What we know about the market"'s skills-demand, year-on-year, and pay-transparency blocks;
 "Employment risk"'s contraction-vs-expansion split; "Beyond Design, Product Management &

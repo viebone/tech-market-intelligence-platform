@@ -3,6 +3,7 @@ import { RankedBarList, type RankedBarRow } from "./RankedBarList";
 import { StoryBlock } from "./StoryBlock";
 import { StoryFigure } from "./StoryFigure";
 import { SourceAttribution, isSourceAttribution, type SourceAttributionData } from "./SourceAttribution";
+import { TechCommsTrendChart, type TrendPoint } from "./TechCommsTrendChart";
 import type { LevelYoYRow } from "./YearOnYearGroupedBars";
 import type { ComparisonRow } from "./SourceComparisonBars";
 import type { DataStoryResult, DataStorySection } from "./DataStoryMessage";
@@ -62,6 +63,17 @@ function blockProps(sec: DataStorySection | undefined, hasData: boolean) {
   };
 }
 
+/** A nested-object field of a section's content, or {} — content.points[i].group, content.table, etc. */
+function rec(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function seriesPoint(value: unknown): { value: number; index: number; status: "final" | "provisional" | "revised" } {
+  const r = rec(value);
+  const status = str(r.status);
+  return { value: num(r.value), index: num(r.index), status: status === "provisional" || status === "revised" ? status : "final" };
+}
+
 /** The eyebrow label that opens each labelled movement of a story. */
 function MovementLabel({ children }: { children: string }) {
   return <p className="text-[10px] font-medium uppercase tracking-widest text-gray-500">{children}</p>;
@@ -105,13 +117,14 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
   const totalSection = section(story, "uk-vacancies-total");
   const industrySection = section(story, "uk-vacancies-by-industry");
   const sizeSection = section(story, "uk-vacancies-by-size");
+  const techSection = section(story, "uk-tech-and-communications");
   const shiftSection = section(story, "uk-industry-shift");
   const crossSection = section(story, "industry-crosscheck");
 
   // The attribution comes from whichever section carries it (the API puts the same object on every
   // section with an ONS figure); absent only when nothing has been collected yet.
   const attribution: SourceAttributionData | null =
-    [totalSection, industrySection, sizeSection, shiftSection, crossSection]
+    [totalSection, industrySection, sizeSection, techSection, shiftSection, crossSection]
       .map((s) => s?.content.attribution)
       .find(isSourceAttribution) ?? null;
 
@@ -146,6 +159,28 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
     }))
     .filter((r) => r.label !== "");
   const priorPeriodLabel = str(shiftSection?.content.prior_period_label) || null;
+
+  // Block 4a — "Tech and communications vacancies since 2001" (changes/2026-09-26-story-5-tech-lens.md).
+  // Every value is a straight pass-through from the API — the index, peak and table rows are all
+  // computed server-side; nothing here re-derives them.
+  const techContent = techSection?.content ?? {};
+  const techGroupLabel = str(rec(techContent.group).label) || "Information and communication";
+  const techPoints: TrendPoint[] = listFrom(techSection, "points")
+    .map((r) => ({ periodStart: str(r.period_start), label: str(r.label), words: str(r.words), group: seriesPoint(r.group), all: seriesPoint(r.all) }))
+    .filter((p) => p.periodStart !== "" && p.label !== "");
+  const techPeakRaw = rec(techContent.peak);
+  const techPeak = { periodLabel: str(techPeakRaw.period_label), value: num(techPeakRaw.value), index: num(techPeakRaw.index) };
+  const techLatestRaw = rec(techContent.latest);
+  const techLatest = {
+    periodLabel: str(techLatestRaw.period_label),
+    periodWords: str(techLatestRaw.period_words),
+    provisional: Boolean(techContent.provisional),
+  };
+  const techTable = rec(techContent.table);
+  const techTableRows = (Array.isArray(techTable.rows) ? techTable.rows.filter(isRecord) : []).map((r) => ({
+    periodLabel: str(r.period_label), groupValue: num(r.group_value), allValue: num(r.all_value),
+    groupIndex: num(r.group_index), allIndex: num(r.all_index),
+  }));
 
   const crossContent = crossSection?.content ?? {};
   const crossRows: ComparisonRow[] = listFrom(crossSection, "rows")
@@ -206,6 +241,24 @@ export function UkVacanciesStoryMessage({ story }: { story: DataStoryResult }) {
       </StoryBlock>
 
       <MovementLabel>How it's shifting</MovementLabel>
+
+      <StoryBlock
+        heading="Tech and communications vacancies since 2001"
+        subtitle={str(techContent.subtitle)}
+        {...blockProps(techSection, techPoints.length > 0)}
+      >
+        <TechCommsTrendChart
+          points={techPoints}
+          groupLabel={techGroupLabel}
+          yAxisTitle={str(techContent.y_axis_title)}
+          peak={techPeak}
+          latest={techLatest}
+          legend={str(techContent.legend)}
+          ariaLabel={str(techContent.aria_label)}
+          summary={str(techContent.summary)}
+          table={{ caption: str(techTable.caption), rows: techTableRows }}
+        />
+      </StoryBlock>
 
       <StoryBlock
         heading="Which industries are changing"

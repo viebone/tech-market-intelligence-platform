@@ -321,16 +321,22 @@ def get_trusted_statistics(
 
     Use get_taxonomy's `statistic_dimensions` for the valid industry_code / size_band / publisher values.
     dimension: "total" | "industry" | "size_band". period: "latest" | "year_ago" | "previous_quarter" (the
-    latest period plus the comparison period). An empty result means nothing has been collected yet — not
-    that the statistic does not exist.
-    """
-    from datetime import date
+    latest period plus the comparison period), ignored when date_from/date_to is given. date_from / date_to
+    are ISO dates ("YYYY-MM-DD"); a range with no natural start (e.g. "2000-01-01") returns every period
+    actually stored — use this for a TREND question ("how has X changed since 2019?"), not just a single
+    figure. Prefer a date_from no earlier than 2019 unless the user actually asks for a longer history — the
+    full published history is several hundred points per series. An empty result means nothing has been
+    collected yet — not that the statistic does not exist.
 
+    If `industry_code="J"` (information and communication) is part of your result, say so plainly when
+    describing it as "tech": it is the closest official group to tech but is broader (it also covers
+    telecoms, publishing, film, TV and radio) — see `meta.definitions` for the exact wording to use, which
+    is the same wording this platform's own UK vacancies story shows a human reader.
+    """
     try:
         result = query_trusted_statistics_data(
             dimension=dimension, publisher=publisher, industry_code=industry_code, size_band=size_band, period=period,
-            date_from=date.fromisoformat(date_from) if date_from else None,
-            date_to=date.fromisoformat(date_to) if date_to else None,
+            date_from=date_from, date_to=date_to,
         )
     except ValueError as exc:
         return no_data(f"That request wasn't valid: {exc}")
@@ -360,4 +366,8 @@ def get_trusted_statistics(
     envelope["meta"]["attribution"] = sorted({s["series"]["source"]["attribution_text"] for s in result["statistics"]})
     envelope["meta"]["licence_unconfirmed"] = sorted({s["series"]["source"]["publisher"] for s in result["statistics"]
                                                       if not s["series"]["source"]["licence_confirmed"]})
+    # Shared plain-language wording (data_definitions.py) — the SAME text this platform's own Data Stories
+    # show a human reader for the same series, so a person and an external AI describing this figure use
+    # identical words (changes/2026-09-26-story-5-tech-lens.md).
+    envelope["meta"]["definitions"] = result.get("definitions", {})
     return envelope

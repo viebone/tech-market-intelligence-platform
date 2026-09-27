@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from db import get_connection
@@ -1027,9 +1027,175 @@ _UK_SECTION_TITLES = [
     ("uk-vacancies-total", "UK job vacancies"),
     ("uk-vacancies-by-industry", "Vacancies by industry"),
     ("uk-vacancies-by-size", "Vacancies by size of business"),
+    ("uk-tech-and-communications", "Tech and communications vacancies"),
     ("uk-industry-shift", "Which industries are changing"),
     ("industry-crosscheck", "Where our roles sit against the UK market"),
 ]
+
+# ── Block 4a — "Tech and communications vacancies since 2001" ──────────────────────────────────
+# Added 2026-09-27, changes/2026-09-26-story-5-tech-lens.md. No new query, no new table: two reads
+# of the SAME query_trusted_statistics_data already used above, over the whole published history.
+# design/market-health/data-stories.md — Story 5, block 4a; backend/specs/market-health/api.md —
+# "Block 4a computation — uk-tech-and-communications" (the full contract this code follows).
+
+_TECH_LENS_INDUSTRY_CODE = "J"
+_TECH_LENS_GROUP_LABEL = "Information and communication"
+_TECH_LENS_BASE_YEAR = 2019
+_TECH_LENS_MIN_PERIODS = 24
+
+
+def _en_dash_period(label: str) -> str:
+    """'Jun-Aug 2026' -> 'Jun–Aug 2026' — visible copy uses an en dash; stored labels keep the hyphen."""
+    import re
+    m = re.match(r"^([A-Za-z]{3})-\s*([A-Za-z]{3})\s+(\d{4})$", label.strip())
+    return f"{m.group(1)}–{m.group(2)} {m.group(3)}" if m else label
+
+
+def _period_words(label: str) -> str:
+    """'Jun-Aug 2026' -> 'three months to Aug 2026' (the end month, short form — matches the frontend's
+    own periodEndShort so the same period reads identically wherever it appears)."""
+    import re
+    m = re.match(r"^[A-Za-z]{3}-\s*([A-Za-z]{3})\s+(\d{4})$", label.strip())
+    return f"three months to {m.group(1)} {m.group(2)}" if m else f"three months to {label}"
+
+
+def _tech_comms_points(group_obs: list[dict[str, Any]], all_obs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """
+    Pure computation (no query, no I/O) — align the two series on their common periods, index each
+    to its own value at the same calendar months in `_TECH_LENS_BASE_YEAR`, and derive the peak,
+    latest point, and one table row per year. `group_obs`/`all_obs` are observation dicts with a
+    real `date` `period_start` (the API's own ISO-string form must be parsed back first — see the
+    caller). Returns None when there is not enough shared, base-anchored history to draw an honest
+    chart — never a shortened or re-based one (spec: "Block 4a — index basis").
+    """
+    by_group = {o["period_start"]: o for o in group_obs}
+    by_all = {o["period_start"]: o for o in all_obs}
+    common = sorted(set(by_group) & set(by_all))
+    if len(common) < _TECH_LENS_MIN_PERIODS:
+        return None
+
+    latest_start = common[-1]
+    base_start = latest_start.replace(year=_TECH_LENS_BASE_YEAR)
+    if base_start not in by_group or base_start not in by_all:
+        return None
+    base_group_value, base_all_value = by_group[base_start]["value"], by_all[base_start]["value"]
+    if not base_group_value or not base_all_value:
+        return None
+
+    def indexed(value: float, base: float) -> float:
+        return round(100.0 * value / base, 1)
+
+    points: list[dict[str, Any]] = []
+    for ps in common:
+        g, a = by_group[ps], by_all[ps]
+        points.append({
+            "period_start": ps.isoformat(), "label": _en_dash_period(g["period_label"]), "words": _period_words(g["period_label"]),
+            "group": {"value": g["value"], "index": indexed(g["value"], base_group_value), "status": g["value_status"]},
+            "all": {"value": a["value"], "index": indexed(a["value"], base_all_value), "status": a["value_status"]},
+        })
+
+    peak = max(points, key=lambda p: p["group"]["value"])           # first occurrence on a tie (max() keeps it)
+    latest = points[-1]
+    provisional = latest["group"]["status"] == "provisional" or latest["all"]["status"] == "provisional"
+
+    # One row per YEAR, at the same calendar months as the latest period — the order is the meaning
+    # (a real year-over-year read), not every monthly point.
+    table_rows = [
+        {"period_label": p["label"], "group_value": p["group"]["value"], "all_value": p["all"]["value"],
+         "group_index": p["group"]["index"], "all_index": p["all"]["index"]}
+        for p in points if date.fromisoformat(p["period_start"]).month == latest_start.month
+    ]
+
+    return {
+        "points": points,
+        "peak": {"period_label": peak["label"], "value": peak["group"]["value"], "index": peak["group"]["index"]},
+        "latest": {"period_label": latest["label"], "period_words": latest["words"], "group": latest["group"], "all": latest["all"]},
+        "provisional": provisional, "latest_period_start": latest_start.isoformat(),
+        "first_period_label": points[0]["label"], "latest_period_label": latest["label"],
+        "base_period_label": _en_dash_period(by_group[base_start]["period_label"]),
+        "base_period_words": _period_words(by_group[base_start]["period_label"]),
+        "table_rows": table_rows,
+    }
+
+
+def _tech_comms_section(now_period_start: date) -> dict[str, Any]:
+    """
+    Builds the `uk-tech-and-communications` section: reads the group series (SIC J) and the
+    all-industries total over the whole published history via the existing read function, computes
+    the indexed points, and composes every visible string server-side (nothing is built client-side
+    — same discipline as the cross-check's `legend`). `now_period_start` isn't used for filtering
+    (this block always shows the full history) — kept as a parameter so a future caller can't
+    accidentally query it before the rest of the story has confirmed data exists.
+    """
+    from data_definitions import DEFINITIONS
+    from market_query import query_trusted_statistics_data
+
+    def _with_real_date(o: dict[str, Any]) -> dict[str, Any]:
+        return {**o, "period_start": date.fromisoformat(o["period_start"])}
+
+    ind_q = query_trusted_statistics_data(dimension="industry", industry_code=_TECH_LENS_INDUSTRY_CODE,
+                                          publisher=_UK_VACANCIES_SOURCE, date_from=date(2000, 1, 1))
+    all_q = query_trusted_statistics_data(dimension="total", publisher=_UK_VACANCIES_SOURCE, date_from=date(2000, 1, 1))
+    group_stat = ind_q["statistics"][0] if ind_q["statistics"] else None
+    all_stat = all_q["statistics"][0] if all_q["statistics"] else None
+
+    tech = None
+    if group_stat and all_stat:
+        tech = _tech_comms_points([_with_real_date(o) for o in group_stat["observations"]],
+                                  [_with_real_date(o) for o in all_stat["observations"]])
+
+    if tech is None:
+        empty = _section("uk-tech-and-communications", "Tech and communications vacancies since 2001", {}, "", ready=False)
+        empty["message"] = "We don't have enough official history to draw this yet."
+        return empty
+
+    group_seasonal = group_stat["series"]["seasonal_adjustment"]
+    all_seasonal = all_stat["series"]["seasonal_adjustment"]
+    adjustment_phrase = ("adjusted for the time of year" if group_seasonal == "seasonally_adjusted" and all_seasonal == "seasonally_adjusted"
+                         else "not consistently stated as adjusted for the time of year across the two lines")
+
+    base_words = tech["base_period_words"]
+    definitions = {**all_q.get("definitions", {}), **ind_q.get("definitions", {})}
+
+    heading = "Tech and communications vacancies since 2001"
+    subtitle = (f"The official group closest to tech — software and IT services, plus telecoms, publishing and broadcasting. "
+               f"Estimated vacancies, three-month averages from {tech['first_period_label']} to {tech['latest_period_label']}, "
+               f"{adjustment_phrase}. Each line is scaled so the {base_words} = 100.")
+    legend = (f"Solid line: {_TECH_LENS_GROUP_LABEL.lower()}. Dashed line: all industries. Above 100 means more vacancies than "
+             f"in the {base_words}; below 100 means fewer.")
+    if tech["provisional"]:
+        legend += " Hollow point: first estimate, may be revised."
+    latest_group, latest_all, peak = tech["latest"]["group"], tech["latest"]["all"], tech["peak"]
+    summary = (f"{_TECH_LENS_GROUP_LABEL} stands at {latest_group['index']:g} ({latest_group['value']:g} thousand vacancies) and "
+              f"all industries at {latest_all['index']:g} ({latest_all['value']:g} thousand), where 100 is the {base_words}. "
+              f"The group's highest point was {peak['period_label']}, at {peak['value']:g} thousand.")
+    aria_label = (f"Line chart of estimated UK job vacancies in {_TECH_LENS_GROUP_LABEL.lower()} and in all industries, as an index "
+                 f"where {tech['base_period_label']} = 100, from {tech['first_period_label']} to {tech['latest_period_label']}.")
+    month_range = tech["latest_period_label"].rsplit(" ", 1)[0]
+    first_year = tech["table_rows"][0]["period_label"].rsplit(" ", 1)[1]
+    last_year = tech["table_rows"][-1]["period_label"].rsplit(" ", 1)[1]
+    table_caption = f"Estimated vacancies in thousands and index, {month_range} of each year, {first_year} to {last_year}"
+
+    latest_all_obs = next((o for o in all_stat["observations"] if o["period_start"] == tech["latest_period_start"]), None)
+    content = {
+        "attribution": _uk_attribution(group_stat["series"]["source"], {
+            "period_label": latest_all_obs["period_label"] if latest_all_obs else tech["latest"]["period_label"],
+            "value_status": latest_group["status"],
+            "released_on": latest_all_obs["released_on"] if latest_all_obs else None,
+        }),
+        "heading": heading, "subtitle": subtitle, "legend": legend,
+        "group": {"code": _TECH_LENS_INDUSTRY_CODE, "label": _TECH_LENS_GROUP_LABEL},
+        "base": {"period_label": tech["base_period_label"], "period_words": base_words},
+        "y_axis_title": f"Index ({tech['base_period_label']} = 100)",
+        "first_period_label": tech["first_period_label"], "latest_period_label": tech["latest_period_label"],
+        "provisional": tech["provisional"], "points": tech["points"], "peak": peak, "latest": tech["latest"],
+        "table": {"caption": table_caption, "rows": tech["table_rows"]},
+        "summary": summary, "aria_label": aria_label, "definitions": definitions,
+    }
+    qualifier = f"{DEFINITIONS['ons.industry.J.breadth']} {DEFINITIONS['ons.vacancies.rounding']}"
+    if tech["provisional"]:
+        qualifier += " The latest figure may be revised."
+    return _section("uk-tech-and-communications", heading, content, qualifier, ready=True)
 
 
 def build_uk_vacancies_story() -> dict[str, Any]:
@@ -1147,6 +1313,10 @@ def build_uk_vacancies_story() -> dict[str, Any]:
                        "whether the size figures are.")
     excluded = tot["series"]["coverage_note"]
 
+    # Block 4a — a new block, not a new query: same UK_VACANCIES_SOURCE, no platform data.
+    # changes/2026-09-26-story-5-tech-lens.md.
+    tech_section = _tech_comms_section(now_obs["period_start"])
+
     sections = [
         _section("uk-vacancies-total", "UK job vacancies", total_content,
                  "An estimate from a monthly survey of businesses; the latest figure is provisional and may be revised. " + _UK_SCOPE_PLAIN),
@@ -1156,6 +1326,7 @@ def build_uk_vacancies_story() -> dict[str, Any]:
         _section("uk-vacancies-by-size", "Vacancies by size of business", {"attribution": attribution, "rows": size_rows},
                  "Business size means the number of people the business employs, not how big the vacancy is. " + adjustment_note,
                  ready=bool(size_rows)),
+        tech_section,
         _section("uk-industry-shift", "Which industries are changing", shift_content,
                  "Both periods are official estimates; the newer one may be revised.", ready=bool(shift_rows)),
         _section("industry-crosscheck", "Where our roles sit against the UK market", cross_content, cross_qualifier,
@@ -1163,6 +1334,8 @@ def build_uk_vacancies_story() -> dict[str, Any]:
     ]
     if not cross_ready:
         sections[-1]["message"] = ("We don't hold enough UK-based roles to compare yet." if ons.get("collected") else _NOT_COLLECTED)
+
+    from data_definitions import DEFINITIONS
 
     return {
         "story_id": "uk-vacancies-official",
@@ -1175,6 +1348,8 @@ def build_uk_vacancies_story() -> dict[str, Any]:
             "The latest figures are provisional and may be revised.",
             "The comparison is not expected to match — different populations.",
             adjustment_note,
+            DEFINITIONS["ons.industry.J.breadth"],
+            DEFINITIONS["ons.vacancies.rounding"],
         ],
         # Rendered visibly beside the framing line, always — never only in the Reasoning Panel (OGL attribution condition).
         "attribution_text": source["attribution_text"],

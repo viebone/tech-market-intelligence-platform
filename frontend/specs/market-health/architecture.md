@@ -576,7 +576,7 @@ to `JobFunctionStoryMessage` — same thin-router pattern as Stories 2-3. Reuses
 `StoryBlock`/`Meter` — no new shared component needed. `tsc --noEmit` and `npm run build` both
 clean.
 
-### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`)
+### Story 5: UK vacancies (official data) (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; **IMPLEMENTED and DEPLOYED 2026-09-25**, `96a31bf`; **block 4a spec added 2026-09-27 — `changes/2026-09-26-story-5-tech-lens.md`, not yet implemented**)
 
 > **Implementation notes (2026-09-25).** Built: `UkVacanciesStoryMessage`, `SourceAttribution`, `SourceComparisonBars`, the `mode` prop on
 > `YearOnYearGroupedBars`, the router branch in `DataStoryMessage`. `tsc` + `vite build` clean; `SourceComparisonBars` is a lazy 1.9 kB chunk on
@@ -589,6 +589,18 @@ clean.
 > `valueLabel` (the size block shows "14.1% · 99k"); (3) `SourceComparisonBars` has no `minValue` (not in this Nivo version; bars start at 0).
 > **Two copy bugs the render check found and fixed at the source (backend):** ONS's raw footnote wording (SIC codes, "QMI") and a raw ISO date
 > leaked into visible copy, and the empty state showed a duplicated message and "three months to ." — now pinned by backend tests.
+>
+> **Block 4a implementation notes (2026-09-27, `changes/2026-09-26-story-5-tech-lens.md`).** New
+> `TechCommsTrendChart.tsx` (hand-rolled SVG, not Nivo). `tsc --noEmit` and `npm run build` both
+> clean. Verified by bundling the real component with esbuild and rendering it via
+> `react-dom/server` against the live production story (stronger than the SSR check above, since
+> this chart isn't lazy and so actually renders, not just its loading fallback) — confirmed real,
+> non-`NaN` chart paths and the latest marker rendering **hollow** because the real live latest ONS
+> figure is provisional right now. `StoryBlock`'s shared `text-gray-500` qualifier bug (flagged
+> above at Story 5's original build, and again in the frontend spec section above) was fixed by
+> `changes/2026-09-26-data-story-chart-variety.md`'s own implementation — block 4a's qualifier uses
+> the normal `blockProps(...)` path like every other block, no workaround needed. **Real-browser
+> check still not done** (no browser automation tool in this session).
 
 Experience: `design/market-health/data-stories.md` — Story 5. Backend contract:
 `backend/specs/market-health/api.md` (Story 5) and `backend/specs/trusted-statistics/api.md`.
@@ -600,6 +612,109 @@ movement** and a platform-vs-publisher comparison.
 | `UkVacanciesStoryMessage` | Renders `POST /api/market-health/stories/uk-vacancies-official`'s resolved sections in three labelled movements: framing line + `SourceAttribution` → *(Movement 1)* `StoryFigure` + a plain change line (total vacancies), `RankedBarList` (by industry, top 10), `RankedBarList` in **size order** (by business size, share) → *(Movement 2)* `YearOnYearGroupedBars` (levels mode) → *(Movement 3)* `SourceComparisonBars`. Each block wrapped in `StoryBlock`; an `insufficient_data` block shows its own line. | `frontend/src/features/market-health/stories/UkVacanciesStoryMessage.tsx` |
 | `SourceAttribution` *(new, generic)* | Renders a story's visible attribution line (`text-xs text-gray-400`) from the section payload's `attribution` object — publisher, attribution text, and a period/provisional note. **Never hard-codes a publisher or licence string**; a story built from any future trusted source reuses it. If `licence_confirmed === false` it also renders the visible "usage terms not yet confirmed" caveat (`data-legibility` Provenance) — unused for ONS today, required for the first surface of any unconfirmed publisher. | `frontend/src/features/market-health/stories/SourceAttribution.tsx` |
 | `SourceComparisonBars` *(new)* | Nivo grouped horizontal bar chart for the **two-series comparison** (`design/visual-design.md`): rows `{ label, primary?: number, secondary?: number }`, `primaryName` / `secondaryName` for the legend and tooltip, both values are shares (%). A row missing one side renders only the existing bar plus its inline caption (never a zero bar). Legend line always shown above the chart, built from names, denominators and dates supplied by the API — not composed client-side. Tooltip names each series with its own source and figure, **never a difference or "over/under-represented"**. Lazy-loaded (`React.lazy` + `Suspense`, same `h-40 animate-pulse bg-gray-800` fallback), themed via the shared `nivoTheme.ts`; primary `indigo-500`, secondary `gray-600`. | `frontend/src/features/market-health/stories/SourceComparisonBars.tsx` |
+
+**Block 4a — "Tech and communications vacancies since 2001"** *(added 2026-09-27,
+`changes/2026-09-26-story-5-tech-lens.md`; experience: `design/market-health/data-stories.md` —
+Story 5, block 4a; backend: `backend/specs/market-health/api.md`, section id
+`uk-tech-and-communications`)*. Placed in `UkVacanciesStoryMessage` **between** the "Vacancies by
+size of business" block and the "Which industries are changing" `StoryBlock` (Movement 2 opens
+with this block, per the experience spec's re-ordering).
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `TechCommsTrendChart` *(new)* | The two-line indexed time series (block 4a). Renders `points[]` as two SVG polylines (solid = the industry group, dashed = all industries) on one indexed y-axis, the `peak`/`latest` markers, direct end labels, the "Show as table" disclosure, and the one-sentence summary. | `frontend/src/features/market-health/stories/TechCommsTrendChart.tsx` |
+
+**Why hand-rolled SVG, not Nivo.** `@nivo/line` is not an installed dependency, and this block
+needs per-series dash pattern (solid vs. dashed on one chart), a conditionally hollow marker,
+precise arrow-key stepping between exact data points with an announced tooltip, and a "Show as
+table" view of the same points — control Nivo does not give without fighting its API. This is the
+same call Story 5 already made once for the "Which industries are changing" delta glyphs ("not a
+Nivo primitive," see this file's Story 5 implementation note above) and the one the World risk map
+made for its own reasons — a real custom need, not a preference. No new package, no bundle growth
+from a chart library; `TechCommsTrendChart`'s own code is the only cost, and it stays a normal
+(non-lazy) component like `RankedBarList` and `StoryFigure` — it adds no heavy dependency, so there
+is nothing to defer loading.
+
+**Props:**
+```ts
+type TrendPoint = {
+  periodStart: string;        // ISO date, for x-position only — never rendered
+  label: string;               // "Apr–Jun 2001" (en dash, pre-formatted by the API)
+  words: string;                // "three months to Jun 2001" — used in the tooltip/announcement
+  group: { value: number; index: number; status: "final" | "provisional" | "revised" };
+  all:   { value: number; index: number; status: "final" | "provisional" | "revised" };
+};
+
+type TechCommsTrendChartProps = {
+  points: TrendPoint[];
+  groupLabel: string;           // "Information and communication"
+  yAxisTitle: string;           // "Index (Jun–Aug 2019 = 100)"
+  peak: { periodLabel: string; value: number; index: number };
+  latest: { periodLabel: string; periodWords: string; provisional: boolean };
+  legend: string;               // full legend line, composed server-side — rendered as-is above the chart
+  ariaLabel: string;            // composed server-side
+  summary: string;              // composed server-side
+  table: { caption: string; rows: Array<{ periodLabel: string; groupValue: number; allValue: number; groupIndex: number; allIndex: number }> };
+};
+```
+All wording (`legend`, `ariaLabel`, `summary`, `table.caption`, axis title) is a prop taken
+verbatim from the API — the component never composes provenance or definition text itself, same
+rule `SourceComparisonBars`'s legend already follows.
+
+**Rendering (`design/visual-design.md` — Time series, and the Chart accessibility standard):**
+- **Scales:** x = `periodStart` linear across the full range; y = fixed 0–200, gridline at 100
+  labelled with the axis title. One `<svg>`, `viewBox`-based so it scales to its container
+  (Reflow & zoom rule) — never a fixed pixel width.
+- **Lines:** `group` solid `stroke="#6366f1"` (indigo-500) width 2; `all` dashed
+  (`strokeDasharray="4 3"`) `stroke="#9ca3af"` (gray-400 — the muted-series colour the Chart
+  accessibility standard sets; **not** `gray-500`, which the standard retires) width 2. A gap in
+  `points` (checked by non-contiguous `periodStart` values) breaks the polyline into two `<path>`
+  segments — never a joined or interpolated line (none exists in the data today, per the backend
+  spec, but the component does not assume that stays true).
+- **Markers:** two on the `group` line only — `peak` (filled circle, ≥8px, indigo-500) and
+  `latest` (filled circle, or **hollow** — white/gray-800 fill, indigo-500 ring — when
+  `latest.provisional`), each with a small text label (period + value) beside it, positioned to
+  avoid overlapping the end labels.
+- **Direct end labels:** at the right edge, one line per series — "{groupLabel} {index}
+  ({value} thousand vacancies)" and "All industries {index} ({value} thousand vacancies)" — reading
+  from the last point in `points`. Below 480px width (Reflow rule) these labels are dropped and the
+  `legend` prop is shown instead (it already names both series).
+- **Text sizing/colour:** every label, tick, and the legend/summary/caption text is **≥12px** and
+  **gray-400 or lighter** (Chart accessibility standard rules 1–2) — this block does not reuse
+  `StoryBlock`'s default qualifier styling (`text-gray-500`) for its own legend/summary/caption,
+  precisely because that token is retired for story text. *(Flag, not fixed here: `StoryBlock`'s
+  `qualifier` slot and `UkVacanciesStoryMessage`'s existing cross-check `legend` paragraph still
+  render `text-gray-500` — pre-existing, out of this change's scope; the chart-variety change owns
+  the accessibility standard and is expected to fix shared occurrences. `/implement-frontend`
+  re-checks whether that landed before this block ships, and fixes block 4a's own qualifier/legend
+  paragraph regardless.)*
+- **Keyboard:** the `<svg>` is one `tabIndex={0}` stop with `role="img"` and `aria-label={ariaLabel}`;
+  a visually hidden `aria-live="polite"` region holds the currently focused period's announcement
+  (same text as the hover tooltip). Left/Right arrow keys move focus one point at a time; Home/End
+  jump to the first/last point; a visible focus ring (`outline-2 outline-indigo-400`) marks the
+  focused point on the `group` line.
+- **Hover:** mousing over the plot area finds the nearest point by x-position and shows the same
+  tooltip content as the keyboard-focused announcement, styled like every other Nivo tooltip in
+  this product (`gray-800` surface, `gray-700` border) even though this chart isn't Nivo, so it
+  reads as the same system.
+- **Show as table:** a `<button>` ("Show as table", `text-xs`, ≥24px target) toggles a collapsed
+  `<table>` with `table.caption` as its `<caption>`, column headers naming period/value/unit, one
+  row per `table.rows` entry — the same numbers the chart plots, never a separate computation.
+- **Summary:** `summary` rendered as a plain `<p className="mt-2 text-sm text-gray-400">` beneath
+  the chart, always visible (not only for assistive tech).
+- **Loading:** no lazy-load (no heavy dependency to defer); if the section is `insufficient_data`,
+  `UkVacanciesStoryMessage` shows the block's empty message instead of mounting this component at
+  all (same `blockProps`/`StoryBlock` pattern as every other block).
+
+**Wiring in `UkVacanciesStoryMessage`:** a new `techSection = section(story,
+"uk-tech-and-communications")`, mapped into `TechCommsTrendChartProps` (points, peak, latest,
+table rows — straight pass-through, no client-side computation of the index or any other value —
+Rule 5, "Direct Manipulation" doesn't apply here since there is nothing for a user to edit, but the
+same "server computes, client renders" discipline as every other Story 5 block holds), wrapped in
+its own `StoryBlock` with `heading="Tech and communications vacancies since 2001"` and the API's
+`subtitle`. Placed immediately after the "Vacancies by size of business" block, before the
+`MovementLabel` reads "How it's shifting" is unchanged (the movement label already introduces this
+block correctly, since 4a is the first block of Movement 2 per the experience spec).
 
 **Modification to an existing component (small, additive):** `YearOnYearGroupedBars` gains a
 `mode: "share" | "level"` prop (default `"share"`, so every current caller is unchanged). In
@@ -623,7 +738,8 @@ frontend copy (catalogue rule).
 call every story uses.
 
 **Out of scope:** any client-side computation of a difference or ratio between the two series;
-size-band comparison; revision history display.
+size-band comparison; revision history display; any client-side computation of the block 4a index
+(server-computed, per above); an `@nivo/line` dependency (deliberately not added, see block 4a).
 
 ### Reference story: market data briefing
 

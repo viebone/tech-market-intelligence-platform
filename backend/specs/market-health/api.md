@@ -437,6 +437,7 @@ also carries the `attribution` object (rule 4 of the trusted-statistics spec):
 | `uk-vacancies-total` | 1 | `{ attribution, total: 702000, unit: "estimated job vacancies", period_label, previous_period_label: "Mar-May 2026", previous_total: 710000, change: -8000, change_pct: -1.1, coverage_note }` — `change` is derived server-side from stored levels (total × `unit_scale`), never stored |
 | `uk-vacancies-by-industry` | 1 | `{ attribution, rows: [{ code: "J", label, value: 61, unit: "thousand vacancies" }], shown: 10, of: 18 }` — top 10 by value; labels from `SIC_2007_SECTIONS` |
 | `uk-vacancies-by-size` | 1 | `{ attribution, rows: [{ code: "1-9", label: "1–9 employees", value: 91, share_pct: 13.0 }] }` — **fixed size order**, not sorted by value; `share_pct` = value / `AP2Y` total |
+| `uk-tech-and-communications` *(added 2026-09-26, `changes/2026-09-26-story-5-tech-lens.md`)* | 2 (first block) | `{ attribution, heading, subtitle, legend, group: { code: "J", label: "Information and communication" }, base: { period_label: "Jun–Aug 2019", period_words: "the three months to Aug 2019" }, first_period_label, latest_period_label, provisional: true, y_axis_title: "Index (Jun–Aug 2019 = 100)", points: [...], peak: {...}, latest: {...}, table: { caption, rows: [...] }, summary, aria_label, definitions: { "<key>": "<text>" } }` — full shape and rules in **Block 4a computation**, below. Placed **between `uk-vacancies-by-size` and `uk-industry-shift`** in `sections` (order is the story) |
 | `uk-industry-shift` | 2 | `{ attribution, current_period_label: "Jun-Aug 2026", prior_period_label: "Jun-Aug 2025", rows: [{ code, label, current, prior, delta, unit: "thousand vacancies" }] }` — top 8 by current value; `prior` from the same series one year earlier (latest vintage of that period); rows lacking a prior value are omitted, and if none have one the section is `insufficient_data` |
 | `industry-crosscheck` | 3 | `{ attribution, primary_name: "Roles we track", secondary_name: "UK vacancies (ONS)", legend, platform_total: 1240, platform_as_of, unplaced_count, unplaced_share_pct, crosswalk_version, rows: [{ code, label, primary_share_pct, secondary_share_pct }] }` — `legend` is composed server-side (names, denominators, dates) so the client never builds provenance text; rows = ONS top 5 ∪ platform groups ≥5%, max 8, plus one `{ code: null, label: "Not placed in an industry group", primary_share_pct, secondary_share_pct: null }`; **no difference field exists in this payload, deliberately** |
 
@@ -451,6 +452,115 @@ comes from). Also always stated: the survey covers Great Britain and ONS weights
 `provenance.sources` lists `ons_vacancy_survey` (and `raw_postings` for the comparison block) and
 `provenance.model_used = false`; the Reasoning Panel additionally lists dataset codes
 (VACS02, VACS03), the crosswalk version, and the unplaced-role count.
+
+**Block 4a computation — `uk-tech-and-communications`** *(added 2026-09-26,
+`changes/2026-09-26-story-5-tech-lens.md`; experience: `design/market-health/data-stories.md` — Story 5,
+block 4a)*. No new table, endpoint, source or ingestion — a new section of the existing story, built
+in `build_uk_vacancies_story()` from two reads of the existing function:
+
+```
+group = query_trusted_statistics_data(dimension="industry", industry_code="J", publisher=ons, date_from="2000-01-01")
+all   = query_trusted_statistics_data(dimension="total",                       publisher=ons, date_from="2000-01-01")
+```
+A `date_from` earlier than the first published period returns **every** stored period of the series
+(latest vintage), so the full history (Apr–Jun 2001 → latest, 303 periods on 2026-09-26) needs no
+change to *what* is read. **One small read-path fix is required** (found by this review, and answering
+the PM's "add whatever is needed"): the function's `date_from` / `date_to` are **unannotated**, unlike
+every sibling tool function (`date_from: str | None`), so the chat model's tool schema for them is
+unreliable and an ISO string from the chat path was never exercised. They become `str | None = None`
+(ISO `YYYY-MM-DD`, wording matching the siblings) and the function accepts a `date` object as well
+(the MCP tool and this story pass `date`), normalising both with `date.fromisoformat`. An invalid
+string → the existing `ValueError` path (the MCP tool already turns that into a plain "That request
+wasn't valid").
+
+**Alignment and index.** Keep only periods present in **both** series (same `period_start`), sorted
+ascending; *latest* = the newest common period. `base` = the common period **in 2019 whose start month
+equals the latest period's start month** (`_TECH_LENS_BASE_YEAR = 2019`; latest Jun–Aug 2026 → base
+Jun–Aug 2019). `index = round(100 × value ÷ that series' own base value, 1)` — each line is scaled to
+its own base, so both read 100 there. Levels stay in thousands, as published. The index is derived at
+read time, **never stored**, and is a presentation of published levels, not a new statistic.
+
+**Section `content`** (`sections[]` position: after `uk-vacancies-by-size`, before `uk-industry-shift`):
+
+```json
+{
+  "attribution": { "...": "same object as every other section, period_label = latest" },
+  "heading": "Tech and communications vacancies since 2001",
+  "subtitle": "The official group closest to tech — software and IT services, plus telecoms, publishing and broadcasting. Estimated vacancies, three-month averages from Apr–Jun 2001 to Jun–Aug 2026, adjusted for the time of year. Each line is scaled so the three months to Aug 2019 = 100.",
+  "legend": "Solid line: information and communication. Dashed line: all industries. Above 100 means more vacancies than in the three months to Aug 2019; below 100 means fewer. Hollow point: first estimate, may be revised.",
+  "group": { "code": "J", "label": "Information and communication" },
+  "base": { "period_label": "Jun–Aug 2019", "period_words": "the three months to Aug 2019" },
+  "y_axis_title": "Index (Jun–Aug 2019 = 100)",
+  "first_period_label": "Apr–Jun 2001", "latest_period_label": "Jun–Aug 2026", "provisional": true,
+  "points": [ { "period_start": "2001-04-01", "label": "Apr–Jun 2001", "words": "three months to Jun 2001",
+                "group": { "value": 50, "index": 116.3, "status": "final" },
+                "all":   { "value": 680, "index": 81.9, "status": "final" } } ],
+  "peak":   { "period_label": "Apr–Jun 2022", "value": 78, "index": 181.4 },
+  "latest": { "period_label": "Jun–Aug 2026", "period_words": "three months to Aug 2026",
+              "group": { "value": 36, "index": 83.7, "status": "provisional" },
+              "all":   { "value": 702, "index": 84.6, "status": "provisional" } },
+  "table": { "caption": "Estimated vacancies in thousands and index, Jun–Aug of each year, 2001 to 2026",
+             "rows": [ { "period_label": "Jun–Aug 2001", "group_value": 47, "all_value": 663, "group_index": 109.3, "all_index": 79.9 } ] },
+  "summary": "Information and communication stands at 84 (36 thousand vacancies) and all industries at 85 (702 thousand), where 100 is the three months to Aug 2019. The group's highest point was Apr–Jun 2022, at 78 thousand.",
+  "aria_label": "Line chart of estimated UK job vacancies in information and communication and in all industries, as an index where Jun–Aug 2019 = 100, from Apr–Jun 2001 to Jun–Aug 2026.",
+  "definitions": { "ons.industry.J.breadth": "…", "ons.vacancies.rounding": "…" }
+}
+```
+
+- **All visible strings are composed server-side** from the templates in the experience spec (heading,
+  subtitle, legend, summary, aria label, table caption, axis title), exactly as the cross-check's
+  `legend` is — the client never builds provenance or definition text. Period labels use an en dash
+  (`Jun–Aug 2026`); `period_start` is for positioning only and is never displayed. The wording of the
+  provisional sentence in `legend` is included only when `provisional` is true. The subtitle's
+  "adjusted for the time of year" is read from each series' stored `seasonal_adjustment`; if either is
+  not `seasonally_adjusted` it says so in words instead (experience spec).
+- **`peak`** = the group series' highest value among the shown points (first occurrence on ties);
+  **`latest`** = the newest common period; `provisional` is true if either latest status is
+  `provisional`. `table.rows` = one row per year for the latest period's months (Jun–Aug), oldest
+  first, taken from the same `points` so chart and table can never disagree.
+- **No difference, ratio, score, direction word or cause field exists** in this payload (experience
+  spec — "never a verdict, never a cause"). The summary is a fixed template of levels, indexes and the
+  peak.
+- **`insufficient_data`** (the section alone; other blocks unaffected — message "We don't have enough
+  official history to draw this yet.") when: either read returns no series; fewer than 24 common
+  periods; the base period is missing from either series or its base value is not > 0. Never a
+  shortened, re-based, or interpolated chart. A period missing between two present ones stays missing
+  (the client breaks the line); contiguity is guaranteed by the ONS adapter's validation today, so no
+  gap exists in the data at present.
+- **Source unusable / not collected:** unchanged — the whole story returns the existing empty-state
+  sections (`_UK_SECTION_TITLES` gains this section's id; its empty-state title is the plain
+  "Tech and communications vacancies").
+- **Payload size:** about 300 points × two series plus the table; well under 100 KB uncompressed and
+  the story response is compressed in transit. Not cached beyond the existing story behaviour.
+
+**Shared definition wording (`backend/src/data_definitions.py`)** — agreed 2026-09-26 with the
+`data-story-chart-variety` change so there is **one** mechanism, not two. A pure-constants module:
+`DEFINITIONS: dict[str, str]`, dotted-id keys, plain-language values, no imports, no DB. Keys this
+change adds: `ons.industry.J.breadth` ("Information and communication is the closest official group
+to tech, but it is broader — it also covers telecoms, publishing, film, TV and radio, alongside
+software and IT services. Engineering and research roles are counted in a different group
+(professional, scientific and technical activities).") and `ons.vacancies.rounding` ("Estimates are
+published in whole thousands, so small moves in a group this size are within rounding. The survey
+leaves out employment agencies."). The other change adds `benchmark.salary.percentiles`; whichever
+`/implement-backend` runs first creates the file, the other re-reads it and only adds its own keys. A
+test fails if a key is unused or a story/tool references a key that does not exist. The story's
+qualifier lines are built **from** these values (plus the provisional line), and the same text reaches
+external AI clients through `meta.definitions` (`backend/specs/mcp-access/api.md`) — the read function
+`query_trusted_statistics_data` attaches a top-level `definitions: {key: text}` to its result for
+whichever series it returns (the `J` industry series → the breadth key; any ONS series → the rounding
+key), so the story, the chat tool and the MCP tool receive identical words from one place. **No stored
+data changes and no re-ingest** — the series' own `definition_note` stays as ingested.
+
+`limitations` additionally always includes the two definition texts above. The Reasoning Panel
+additionally lists: dataset VACS02, the two series codes, the index base period, and that the group is
+SIC 2007 section J (divisions 58–63: publishing; film, video, TV, sound and music production;
+programming and broadcasting; telecoms; computer programming and consultancy; information services).
+
+**Tests (this section):** index maths (each line = 100 at its base; a hand-computed sample);
+alignment when the series' period sets differ; base missing → `insufficient_data`; < 24 periods →
+`insufficient_data`; peak tie → first occurrence; provisional flag; table rows equal the matching
+points; summary and aria-label templates against a fixed fixture; en-dash labels and no ISO date in any
+visible string; the `definitions` key test; `date_from` accepted as `str` and as `date`.
 
 **Cross-check computation** — `statistics_crosscheck.industry_mix()`
 (`trusted-statistics/api.md`, Business Logic §6): platform side = share of UK-located postings
@@ -471,8 +581,23 @@ estimate of the whole UK economy, not this platform's own postings). The tool de
 instructs the model not to present these figures as a check on, or a correction of, the
 platform's own numbers.
 
+*Extended 2026-09-26 (`changes/2026-09-26-story-5-tech-lens.md`) — Rule 14 item 4, "can the ad-hoc
+path reach the new view?".* A free-form "how are tech vacancies trending?" is answered by the same
+tool with `dimension="industry", industry_code="J"` plus an ISO `date_from` (and a second call with
+`dimension="total"` to compare with the whole market) — reachable **after** the `date_from`/`date_to`
+annotation fix described in Block 4a computation. The tool's docstring and the chat system prompt gain
+four sentences: (1) a date range returns every period in it, so a trend question passes `date_from`;
+(2) **prefer `date_from` no earlier than 2019 unless the user asks for longer** — the full history is
+~300 periods per series and chat spend is bounded (`outcomes/llm-spend-is-bounded-and-isolated.md`);
+(3) information and communication is the closest official group to tech but is broader, and the answer
+must say so, using the returned `definitions` text; (4) figures in thousands. The measured size of a
+full-history result in model tokens is recorded during verification, and if it is too large the
+guidance in (2) becomes a hard cap in the function — decided then, not assumed now.
+
 **Catalogue registration:** `id = "uk-vacancies-official"`, `display_name = "UK vacancies
-(official data)"`, `question` and `example_phrasings` per the experience spec; placed after
+(official data)"`, `question` and `example_phrasings` per the experience spec (two phrasings added
+2026-09-26 — "Are tech vacancies going up or down in the UK?" and "How are technology and
+communications jobs doing compared with the whole market?"); placed after
 Story 4 (document order). Curated instant-answer chips: **none added** — the story is the fast
 path; a single-number chip ("how many vacancies in the UK?") is a candidate for the curated
 catalogue later but is not decided here.

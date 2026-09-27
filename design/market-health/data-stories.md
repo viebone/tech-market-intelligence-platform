@@ -659,6 +659,8 @@ this platform's size bands and the official ones don't line up).
 - "What does the ONS say about vacancies?"
 - "Which industries have the most vacancies?"
 - "How does this compare with official figures?"
+- "Are tech vacancies going up or down in the UK?" *(added 2026-09-26)*
+- "How are technology and communications jobs doing compared with the whole market?" *(added 2026-09-26)*
 
 ### Audience job
 
@@ -706,6 +708,72 @@ compares with the roles we track**.
 
 **Movement 2 — How it's shifting**
 
+Movement 2 now reads long view first, then the latest year: block 4a shows how one industry group
+has moved over the whole published history, block 5 zooms in on the last twelve months across
+all industries. A reader goes from "how big is it" (blocks 2–4) → "how did it get here" (4a) →
+"what changed lately" (5) → "how do our roles sit against it" (6).
+
+4a. **Tech and communications vacancies since 2001** — a **trend line** (two lines on one
+   scale). *Added 2026-09-26 — `changes/2026-09-26-story-5-tech-lens.md`, for a tech professional
+   who wants the official picture for their own field. Numbered 4a so that blocks 5 and 6, which
+   another change is editing, keep their numbers; renumber once both changes have landed.*
+   - **Heading:** "Tech and communications vacancies since 2001".
+   - **Subtitle:** "The official group closest to tech — software and IT services, plus telecoms,
+     publishing and broadcasting. Estimated vacancies, three-month averages from Apr–Jun 2001 to
+     Jun–Aug 2026, adjusted for the time of year. Each line is scaled so the three months to Aug
+     2019 = 100." (The adjustment wording comes from what the publisher states for each series,
+     never assumed; the "2019" months are the same months as the latest period.)
+   - **The chart:** two lines over the whole published history. **Solid line** — information and
+     communication, the official name for that group. **Dashed line** — all industries. Both are
+     shown as an index so they share one scale (a group of ~40 thousand vacancies and a market of
+     ~700 thousand cannot honestly share an axis in thousands, and two axes are never used). The
+     vertical scale is labelled "Index (Jun–Aug 2019 = 100)", runs from 0 to 200, and
+     the 100 line is marked "2019 level". The horizontal scale shows years. Colour is never the
+     only difference between the lines — one is solid and one is dashed.
+   - **Direct labels:** each line is labelled at its right-hand end with its name and latest value
+     — "Information and communication 84 (36 thousand vacancies)" and "All industries 85 (702
+     thousand vacancies)". On a narrow panel these move into the legend line.
+   - **Two marked points, on the solid line only:** its **highest point** ("Highest: Apr–Jun
+     2022, 78 thousand") and its **latest point** ("Latest: Jun–Aug 2026, 36 thousand"). Nothing
+     else is annotated — no shaded bands or event labels, because a cause is not in this data and
+     the story never asserts one. If the latest figure is provisional, its point is drawn hollow.
+   - **Legend line (always shown, above the chart):** "Solid line: information and communication.
+     Dashed line: all industries. Above 100 means more vacancies than in the three months to Aug
+     2019; below 100 means fewer." When the latest point is provisional it adds "Hollow point:
+     first estimate, may be revised."
+   - **Hover / keyboard:** hovering, or stepping with the left and right arrow keys (the chart is
+     one tab stop; Home and End jump to the first and latest period), shows one tooltip for that
+     period naming the period in words and both lines — "Three months to Aug 2022 — Information
+     and communication: 68 thousand vacancies (index 158) · All industries: 1,257 thousand
+     (index 151)" — plus "first estimate" or "revised" where the publisher flags it. The focused
+     period has a visible marker.
+   - **For assistive technology:** the chart carries a one-sentence label — "Line chart of
+     estimated UK job vacancies in information and communication and in all industries, as an index
+     where Jun–Aug 2019 = 100, from Apr–Jun 2001 to Jun–Aug 2026." — and stepping through periods
+     with the keyboard announces the same text the tooltip shows. Chart text is at least 12px and
+     small text uses the lighter grey required by the Chart accessibility standard
+     (`design/visual-design.md`); the lines, markers, labels and keyboard behaviour follow that
+     file's **Time series** entry, which this block is the worked example for.
+   - **One plain sentence beneath the chart**, facts only,
+     no verdict word ("boom", "slump", "recovery"): "Information and communication stands at 84
+     (36 thousand vacancies) and all industries at 85 (702 thousand), where 100 is the three
+     months to Aug 2019. The group's highest point was Apr–Jun 2022, at 78 thousand."
+   - **View as table:** a "Show as table" control beneath the sentence, collapsed by default —
+     one row per year for the same three months as the latest period (Jun–Aug), columns: period,
+     information and communication (thousand vacancies), all industries (thousand vacancies),
+     and each one's index, under a caption naming the window and units ("Estimated vacancies in
+     thousands and index, Jun–Aug of each year, 2001 to 2026"). The chart and the table always
+     show the same numbers.
+   - **Qualifier (two short lines, both always shown):** "Information and communication is the
+     closest official group to tech, but it is broader — it also covers telecoms, publishing, film,
+     TV and radio, alongside software and IT services. Engineering and research roles are counted
+     in a different group (professional, scientific and technical activities)." / "Estimates are
+     published in whole thousands, so small moves in a group this size are within rounding. The
+     survey leaves out employment agencies." When the latest point is provisional a third short
+     line adds "The latest figure may be revised."
+   - **Loading:** a same-size placeholder shows while the chart loads; the sentence and qualifier
+     do not wait on it. **Empty:** see "Honesty and empty states" — never an empty axis.
+
 5. **Which industries are changing** — a **year-on-year comparison**. Subtitle: "Estimated
    vacancies by industry, in thousands: three months to Aug 2026 compared with the same three
    months a year earlier." A legend line names the two bar colours ("Lighter bar: Jun–Aug 2025.
@@ -733,7 +801,9 @@ compares with the roles we track**.
 
 The story uses five distinct visual forms across its blocks (Hero Figure, ranked bar list,
 year-on-year comparison, two-series comparison, and the ordered ranked list), comfortably
-above the standard's minimum. It never repeats the welcome's current-snapshot figures (the
+above the standard's minimum — and, from 2026-09-26, a sixth, the **trend line** in block 4a
+(the only block in the story that shows movement over many years rather than one or two
+periods). It never repeats the welcome's current-snapshot figures (the
 platform's own job count, company count, or current role split) — the only platform figure it
 shows is the industry *share* in block 6, which is a different question (how our sample leans
 against an outside reference).
@@ -750,6 +820,7 @@ directly) and the platform's own postings only inside `statistics_crosscheck.ind
 | Total vacancies + change | Latest-vintage `AP2Y` value for the latest period; the value for the period three months earlier (non-overlapping) for the change | Estimate; provisional flag stated; sectors excluded; period stated in words |
 | By industry | Latest-vintage 18 SIC-section series for the latest period, top 10 | States 8 groups are not shown; classification named in the Reasoning Panel, not the visible copy |
 | By business size | Latest-vintage five size-class series, shown as shares of `AP2Y`, in size order | States what "size" means |
+| Tech and communications over time *(block 4a, added 2026-09-26)* | Latest-vintage series for SIC section J (information and communication) and `AP2Y` (all industries), **every** period from the first published (Apr–Jun 2001) to the latest; each value divided by that series' own value for the same months in 2019 (× 100) to give the index; the value in thousands kept alongside; the series' highest point and its latest point picked from the same data | Names the group's breadth (telecoms, publishing, broadcasting as well as software and IT); whole-thousand rounding; employment agencies left out; base period stated in words; provisional flag on the latest point; adjustment status from the stored field |
 | Year-on-year | Same series, latest period vs the same period one year earlier; both stated in words | Both periods official estimates; newer may be revised |
 | Comparison | Platform side: share of UK-located postings by industry group via the versioned crosswalk; ONS side: share of the all-industries total | Not expected to match; how many roles are unplaced; dates and denominators for both sides |
 | Attribution | `source_licences.get_licence("ons_vacancy_survey").attribution_text` | Rendered visibly in the framing block, always |
@@ -777,6 +848,29 @@ directly) and the platform's own postings only inside `statistics_crosscheck.ind
   means the publisher's own UK estimate, not a UK-wide survey.
 - **Provisional figures** are flagged in words (framing line). Revisions are never announced in
   this story; the newest value simply shows.
+- **Block 4a — the tech lens is a stand-in, and says so** *(added 2026-09-26)*. The official
+  statistics have no "technology" group; information and communication is the closest, and it is
+  broader (the Reasoning Panel names its parts: publishing; film, video, TV, sound and music
+  production; programming and broadcasting; telecoms; computer programming and consultancy;
+  information services). The block therefore always shows the official group name in its legend,
+  always carries the breadth qualifier, and no copy anywhere calls the line "tech vacancies" or
+  "technology jobs" as a plain fact.
+- **Block 4a — never a verdict, never a cause.** The sentence beneath the chart states levels,
+  index values and the highest point, and nothing else: no direction words such as "boom",
+  "slump", "recovery" or "outperforming", no reason for any movement, no annotation of outside
+  events. Both lines come from the same publisher, so showing them together is allowed; the block
+  still shows no gap, ratio or score between them.
+- **Block 4a — index basis.** The 100 mark is the same months in 2019 as the latest period, for
+  each line separately. If that 2019 value is missing for either series, or fewer than 24 monthly
+  periods exist, the block renders "We don't have enough official history to draw this yet." —
+  never a shortened or re-based chart. A gap in the series (none exists today) breaks the line;
+  it is never joined across or filled in.
+- **Block 4a — small numbers.** A group of this size is published as whole thousands, so single
+  months can move by a thousand or two on rounding alone; the qualifier says so, and the
+  sentence never states a change between adjacent months.
+- **Block 4a — adjustment status** is read from each series' stored status. If the two series
+  differ, or either is unadjusted, the subtitle says so in words instead of "adjusted for the time
+  of year".
 - **A cross-check is context, not proof.** The story never states or implies that the platform
   is "accurate", "biased", or "validated" by the official figures, never shows a difference or
   a score between the two series, and never uses colour to imply one side is right. The

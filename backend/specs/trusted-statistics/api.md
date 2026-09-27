@@ -248,6 +248,20 @@ tables directly.
 `"total"`), `publisher` (a `TRUSTED_PUBLISHERS` key), `industry_code`, `size_band`,
 `period` (`"latest"` default | `"year_ago"` | `"previous_quarter"`), `date_from`, `date_to`.
 
+**Revised 2026-09-26** (`changes/2026-09-26-story-5-tech-lens.md`):
+- `date_from` / `date_to` are now annotated **`str | None`** (ISO `YYYY-MM-DD`, same wording as every
+  sibling query function) and the function also accepts a `date` object, normalising both with
+  `date.fromisoformat`; an unparseable value raises the existing `ValueError`. They were unannotated,
+  which made the chat tool's schema for them unreliable — a real gap for any trend question asked in
+  chat. A range returns **every** stored period in it (latest vintage), i.e. a history; `period` is
+  ignored when a range is given (unchanged).
+- The result gains a top-level `definitions: {key: text}` — the shared wording from
+  `backend/src/data_definitions.py` for whichever series are returned (the `J` industry series →
+  `ons.industry.J.breadth`; any ONS Vacancy Survey series → `ons.vacancies.rounding`). Empty `{}` when
+  nothing returned. This is how the story, the chat tool and the MCP tool (`meta.definitions`) all
+  carry the same words, from one place. No stored data changes; a series' own `definition_note` is
+  as ingested.
+
 **Returns:**
 ```json
 {

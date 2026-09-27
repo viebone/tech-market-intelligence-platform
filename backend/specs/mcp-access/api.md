@@ -502,6 +502,29 @@ comparison — and then to state that the two measure different populations.** T
 server-side enforcement possible once an AI holds both tools' outputs; that is the same real,
 named limitation `get_market_benchmark` already records.
 
+**Revised 2026-09-26** (`changes/2026-09-26-story-5-tech-lens.md` — Story 5 gains a "Tech and
+communications" trend block; MCP Access Review re-run). **Decision: no new tool; the existing tool
+is extended, additively.** A tech-sector question ("how are tech vacancies trending?") is already a
+primitive call — `dimension="industry"`, `industry_code="J"`, `date_from` (and a second call with
+`dimension="total"` to compare with the whole market); the calling AI composes any index or
+comparison itself, as the "compare X vs Y" note below already says. Changes:
+- **`meta.definitions`** — a `{key: text}` object carried straight through from
+  `query_trusted_statistics_data`'s top-level `definitions` (shared wording in
+  `backend/src/data_definitions.py`; **the same text the Story 5 block shows the user**, so a person
+  reading the story and an external AI describing the same series use the same words). Today's keys:
+  `ons.industry.J.breadth` (information and communication is the closest official group to tech but is
+  broader — telecoms, publishing, film/TV/radio as well as software and IT services; engineering and
+  research roles sit in a different group) and `ons.vacancies.rounding` (whole-thousand publication,
+  employment agencies left out). Present whenever a returned series triggers a key; `{}` otherwise.
+  The mechanism is shared with `get_market_benchmark` (`benchmark.salary.percentiles`, owned by the
+  `data-story-chart-variety` change) — one module, no second mechanism.
+- **Docstring** gains: a date range returns every period in it (a history); the industry-group `J`
+  caveat above and an instruction to repeat it when describing it as "tech"; `date_from`/`date_to` are
+  ISO `YYYY-MM-DD` strings.
+- **Parameters unchanged** (`date_from`/`date_to` were already parameters; the underlying function's
+  annotation was fixed so the in-app chat tool can use them too).
+- **Scope, plan tier, licence gate, attribution and the non-empty-`source` contract: all unchanged.**
+
 ### What's deliberately not a tool
 
 See also `ACCESS.md` (product root) for the full picture across *every* capability this product
@@ -548,6 +571,11 @@ MCP-exposure status.
   own caveats — the same reasoning as "Any 'compare X vs Y' tool," above.
 - **Story 5 ("UK vacancies (official data)") as a pre-composed story** — not a tool, same
   reasoning as every other story (`ACCESS.md`, "Data stories").
+- **The indexed "tech and communications vs all industries" series** (Story 5 block 4a, added
+  2026-09-26) — not a tool. The index is a derived presentation of published levels (each line ÷ its
+  own 2019 value); the primitives it is built from are already reachable through
+  `get_trusted_statistics`, and a pre-composed comparison report is exactly what this outcome does not
+  expose. A calling AI can compute an index itself from the levels the tool returns.
 - **Trusted-statistics admin views** — operator-only, no end-user data.
 
 ---

@@ -635,6 +635,7 @@ import market_query  # noqa: E402
 import market_stories  # noqa: E402
 import statistics_crosscheck  # noqa: E402
 import statistics_storage  # noqa: E402
+from data_definitions import DEFINITIONS as DATA_DEFINITIONS  # noqa: E402
 from mcp_access import tools as mcp_tools  # noqa: E402
 from mcp_access.taxonomy import get_taxonomy  # noqa: E402
 from statistics_crosscheck import ons_shares, platform_mix_from_counts  # noqa: E402
@@ -779,7 +780,8 @@ def test_story5_sections_and_numbers_come_from_the_real_figures():
         story = market_stories.get_story("uk-vacancies-official")
     json.dumps(story)                                               # serialisable as-is
     sec = {s["id"]: s for s in story["sections"]}
-    assert list(sec) == ["uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-industry-shift", "industry-crosscheck"]
+    assert list(sec) == ["uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-tech-and-communications",
+                         "uk-industry-shift", "industry-crosscheck"]
     assert all(s["status"] == "ready" for s in sec.values()), {k: v["status"] for k, v in sec.items()}
     t = sec["uk-vacancies-total"]["content"]
     assert (t["total"], t["previous_total"], t["change"], t["change_pct"]) == (702000, 710000, -8000, -1.1)     # ONS's own -8k, -1.1%
@@ -793,10 +795,111 @@ def test_story5_sections_and_numbers_come_from_the_real_figures():
     shift = sec["uk-industry-shift"]["content"]
     assert len(shift["rows"]) == 8 and shift["prior_period_label"] == "Jun-Aug 2025" and all(r["prior"] is not None for r in shift["rows"])
     assert story["attribution_text"].startswith("Source: Office for National Statistics — Vacancy Survey.")
-    for sid in ("uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-industry-shift", "industry-crosscheck"):
+    for sid in ("uk-vacancies-total", "uk-vacancies-by-industry", "uk-vacancies-by-size", "uk-tech-and-communications",
+               "uk-industry-shift", "industry-crosscheck"):
         att = sec[sid]["content"]["attribution"]
         assert att["publisher"] == "Office for National Statistics" and "Open Government Licence v3.0" in att["text"] and att["licence_confirmed"] is True
     assert story["provenance"]["model_used"] is False
+
+
+def test_story5_tech_lens_block_index_maths_and_markers():
+    # changes/2026-09-26-story-5-tech-lens.md — real ONS figures (2026-09 fixtures): J is 43k in
+    # Jun-Aug 2019 (the base), 36k in Jun-Aug 2026 (latest, provisional), peaked at 78k in
+    # Apr-Jun 2022; all-industries is 830k / 702k for the same base/latest periods.
+    with _patched(FakeStatsStore(), _UK_COUNTS):
+        story = market_stories.get_story("uk-vacancies-official")
+    sec = {s["id"]: s for s in story["sections"]}["uk-tech-and-communications"]
+    assert sec["status"] == "ready"
+    c = sec["content"]
+    assert c["group"] == {"code": "J", "label": "Information and communication"}
+    assert c["base"]["period_label"] == "Jun–Aug 2019" and c["y_axis_title"] == "Index (Jun–Aug 2019 = 100)"
+    assert c["first_period_label"] == "Apr–Jun 2001" and c["latest_period_label"] == "Jun–Aug 2026"
+    assert len(c["points"]) == 303                                              # every published period, no window
+    assert c["provisional"] is True                                             # the latest ONS point is flagged provisional
+    latest = c["latest"]
+    assert latest["group"] == {"value": 36.0, "index": 83.7, "status": "provisional"}
+    assert latest["all"] == {"value": 702.0, "index": 84.6, "status": "provisional"}
+    assert c["peak"] == {"period_label": "Apr–Jun 2022", "value": 78.0, "index": 181.4}
+    base_point = next(p for p in c["points"] if p["label"] == "Jun–Aug 2019")
+    assert base_point["group"]["index"] == 100.0 and base_point["all"]["index"] == 100.0     # both lines read exactly 100 at their own base
+    # one table row per YEAR at the latest period's months, oldest first, matching the plotted points
+    assert [r["period_label"] for r in c["table"]["rows"][:3]] == ["Jun–Aug 2001", "Jun–Aug 2002", "Jun–Aug 2003"]
+    assert c["table"]["rows"][-1] == {"period_label": "Jun–Aug 2026", "group_value": 36.0, "all_value": 702.0,
+                                      "group_index": 83.7, "all_index": 84.6}
+    assert c["table"]["caption"] == "Estimated vacancies in thousands and index, Jun–Aug of each year, 2001 to 2026"
+    assert c["definitions"] == {"ons.industry.J.breadth": DATA_DEFINITIONS["ons.industry.J.breadth"],
+                                "ons.vacancies.rounding": DATA_DEFINITIONS["ons.vacancies.rounding"]}
+    assert "Hollow point" in c["legend"] and "information and communication" in c["legend"].lower()
+    assert sec["qualifier"] == (DATA_DEFINITIONS["ons.industry.J.breadth"] + " " + DATA_DEFINITIONS["ons.vacancies.rounding"]
+                                + " The latest figure may be revised.")
+    assert c["summary"] == ("Information and communication stands at 83.7 (36 thousand vacancies) and all industries at 84.6 "
+                            "(702 thousand), where 100 is the three months to Aug 2019. The group's highest point was "
+                            "Apr–Jun 2022, at 78 thousand.")
+    assert c["aria_label"] == ("Line chart of estimated UK job vacancies in information and communication and in all industries, "
+                               "as an index where Jun–Aug 2019 = 100, from Apr–Jun 2001 to Jun–Aug 2026.")
+    # the same two definition texts always reach the top-level limitations (spec: "always includes")
+    assert DATA_DEFINITIONS["ons.industry.J.breadth"] in story["limitations"]
+    assert DATA_DEFINITIONS["ons.vacancies.rounding"] in story["limitations"]
+    json.dumps(story)
+
+
+def test_story5_tech_lens_block_is_insufficient_data_with_too_little_history():
+    # A pure-function check, independent of the database/query layer: fewer than 24 shared
+    # periods, or no matching 2019 base period, must never render a shortened or re-based chart.
+    too_short = [{"period_start": date(2025, 1 + i, 1), "period_label": "x", "value": 1.0, "value_status": "final"} for i in range(10)]
+    assert market_stories._tech_comms_points(too_short, too_short) is None
+    no_base = [{"period_start": date(2020 + i, 6, 1), "period_label": "Jun-Aug " + str(2020 + i), "value": 10.0, "value_status": "final"}
+              for i in range(30)]
+    assert market_stories._tech_comms_points(no_base, no_base) is None            # none of these periods is in 2019
+    zero_base = [{"period_start": date(2019 + i, 6, 1), "period_label": "Jun-Aug " + str(2019 + i), "value": 0.0, "value_status": "final"}
+                for i in range(30)]
+    assert market_stories._tech_comms_points(zero_base, zero_base) is None        # a zero base would divide by zero
+
+
+def test_story5_tech_lens_survives_no_collected_data():
+    with _patched(FakeStatsStore(blank=True), _UK_COUNTS):
+        story = market_stories.get_story("uk-vacancies-official")
+    sec = {s["id"]: s for s in story["sections"]}["uk-tech-and-communications"]
+    assert sec["status"] == "insufficient_data" and sec["message"] == "We haven't collected the official UK figures yet."
+
+
+def test_query_trusted_statistics_data_accepts_iso_string_and_date_and_returns_definitions():
+    with _patched(FakeStatsStore()):
+        by_str = market_query.query_trusted_statistics_data(dimension="industry", industry_code="J", date_from="2000-01-01")
+        by_date = market_query.query_trusted_statistics_data(dimension="industry", industry_code="J", date_from=date(2000, 1, 1))
+        no_range = market_query.query_trusted_statistics_data(dimension="total")     # no J series here -> no breadth key
+    assert by_str["total_matching"] == by_date["total_matching"] == 1
+    assert by_str["definitions"] == by_date["definitions"] == {"ons.industry.J.breadth": DATA_DEFINITIONS["ons.industry.J.breadth"],
+                                                                "ons.vacancies.rounding": DATA_DEFINITIONS["ons.vacancies.rounding"]}
+    assert no_range["definitions"] == {"ons.vacancies.rounding": DATA_DEFINITIONS["ons.vacancies.rounding"]}
+    try:
+        market_query.query_trusted_statistics_data(date_from="not-a-date")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("accepted an unparseable date_from")
+
+
+def test_mcp_tool_carries_the_same_definitions_an_ai_would_need():
+    with _patched(FakeStatsStore()):
+        r = mcp_tools.get_trusted_statistics(dimension="industry", industry_code="J", date_from="2000-01-01")
+    assert r["meta"]["definitions"] == {"ons.industry.J.breadth": DATA_DEFINITIONS["ons.industry.J.breadth"],
+                                        "ons.vacancies.rounding": DATA_DEFINITIONS["ons.vacancies.rounding"]}
+    with _patched(FakeStatsStore(blank=True)):
+        assert mcp_tools.get_trusted_statistics()["meta"]["definitions"] == {}
+
+
+def test_data_definitions_are_pure_constants_with_no_unused_or_missing_keys():
+    # backend/src/data_definitions.py — every key here must be referenced somewhere (dead text is a
+    # bug), and every key referenced by this file's own consumers must exist (never a KeyError at
+    # runtime). Scoped to the keys this change owns; a sibling change's own key is its own concern.
+    assert set(DATA_DEFINITIONS) >= {"ons.industry.J.breadth", "ons.vacancies.rounding"}
+    for key, text in DATA_DEFINITIONS.items():
+        assert isinstance(text, str) and text.strip(), f"{key} has no real wording"
+    with _patched(FakeStatsStore(), _UK_COUNTS):
+        story = market_stories.get_story("uk-vacancies-official")
+    assert DATA_DEFINITIONS["ons.industry.J.breadth"] in story["limitations"]      # referenced, not dead
+    assert DATA_DEFINITIONS["ons.vacancies.rounding"] in story["limitations"]
 
 
 def test_story5_visible_copy_carries_no_implementation_words_or_raw_dates():
