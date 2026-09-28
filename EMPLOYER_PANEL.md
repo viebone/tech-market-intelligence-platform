@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 21 of 36 UK candidates added and live; a separate US + EU panel started 2026-09-23 is now on batch 3 (batch 1: 26, batch 2: 35, batch 3: 14 — 75 companies added, 61 still held, giants and two identity-unconfirmed candidates last — see "US + EU expansion" below)** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
+**Status: 21 of 36 UK candidates added and live; a separate US + EU panel started 2026-09-23 is now on batch 5 (batch 1: 26, batch 2: 35, batch 3: 14, batch 4: 27, batch 5: 9 — 111 companies added, 25 still held, giants and two identity-unconfirmed candidates last — see "US + EU expansion" below)** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -533,7 +533,26 @@ discipline the panel already applies to 300+-role giants. Change request:
 | Clerk | ashby (`clerk`) | US | Software | 2 |
 | Medium | greenhouse (`medium`) | US | Media | 1 |
 
-### Held for later batches — verified, not yet added (34 companies)
+### Batch 5 — added 2026-09-28 (9 companies, 1,229 postings, live-verified at fetch time)
+
+The smaller half of the 18 100–280-role US candidates held from batch 4 (under ~180 roles
+each); the 9 largest (200–280 roles) are held for a dedicated batch 6, same "watch anything
+large individually" discipline. Change request:
+`changes/2026-09-23-us-eu-employer-panel-expansion.md`, `research/2026-09-28-us-eu-panel-batch-5.md`.
+
+| Company | Platform (`token`) | HQ | Sector | Roles |
+|---|---|---|---|---|
+| Nuro | greenhouse (`nuro`) | US | Autonomous | 106 |
+| Instacart | greenhouse (`instacart`) | US | Grocery Tech | 116 |
+| Planet Labs | greenhouse (`planetlabs`) | US | Earth Observation | 120 |
+| Ripple | greenhouse (`ripple`) | US | Crypto | 122 |
+| Glean | greenhouse (`gleanwork`) | US | AI Software | 131 |
+| Redwood Materials | greenhouse (`redwoodmaterials`) | US | Climate/Materials | 140 |
+| Epic Games | greenhouse (`epicgames`) | US | Gaming | 154 |
+| Riot Games | greenhouse (`riotgames`) | US | Gaming | 165 |
+| Lyft | greenhouse (`lyft`) | US | Mobility | 175 |
+
+### Held for later batches — verified, not yet added (25 companies)
 
 Ordered by country, then role count. Release in small groups, checking the classification
 backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
@@ -570,15 +589,6 @@ Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
 | Saronic | US | Defense Tech | ashby (`saronic`) | 206 |
 | Sierra | US | AI | ashby (`sierra`) | 206 |
 | Flexport | US | Logistics | greenhouse (`flexport`) | 199 |
-| Lyft | US | Mobility | greenhouse (`lyft`) | 178 |
-| Riot Games | US | Gaming | greenhouse (`riotgames`) | 163 |
-| Epic Games | US | Gaming | greenhouse (`epicgames`) | 150 |
-| Redwood Materials | US | Climate/Materials | greenhouse (`redwoodmaterials`) | 141 |
-| Ripple | US | Crypto | greenhouse (`ripple`) | 128 |
-| Glean | US | AI Software | greenhouse (`gleanwork`) | 127 |
-| Planet Labs | US | Earth Observation | greenhouse (`planetlabs`) | 113 |
-| Instacart | US | Grocery Tech | greenhouse (`instacart`) | 111 |
-| Nuro | US | Autonomous | greenhouse (`nuro`) | 105 |
 
 ---
 

@@ -21,7 +21,7 @@ entry here — adding an industry tag without deciding its mapping is not possib
 
 from __future__ import annotations
 
-CROSSWALK_VERSION = "2026-09-28.2"
+CROSSWALK_VERSION = "2026-09-28.3"
 
 OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # J — Information and communication: software, AI, developer/cloud platforms, media, social, search, security
@@ -96,6 +96,14 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # service with pharmacy/medication logistics, the same "mixed, not a single clean activity"
     # reasoning as the existing "Healthtech" entry.
     "Digital Health": None,
+    # Added 2026-09-28 with the US + EU panel batch 5: Grocery Tech (Instacart) mixes a software
+    # platform with the actual grocery delivery/logistics operation, same reasoning as the
+    # existing "Food Delivery/Marketplace" entry; Earth Observation (Planet Labs) mixes operating
+    # a physical satellite fleet (real space-hardware infrastructure) with selling imagery/data
+    # analytics software — genuine mixing, same "hardware operation, not just software" reasoning
+    # as Semiconductors/AI; Climate/Materials (Redwood Materials) is battery-materials recycling
+    # and processing — real industrial/manufacturing activity, not software.
+    "Grocery Tech": None, "Earth Observation": None, "Climate/Materials": None,
 }
 
 

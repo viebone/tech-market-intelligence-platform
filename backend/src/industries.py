@@ -119,6 +119,10 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "lattice": "HR Tech", "udemy": "EdTech", "buzzfeed": "Media", "medium": "Media",
     "ro": "Digital Health", "headway": "Healthtech", "abridge": "Healthtech AI",
     "sentry": "Software", "quora": "Consumer Internet", "clerk": "Software",
+    # US + EU panel, batch 5 — added 2026-09-28 (EMPLOYER_PANEL.md)
+    "nuro": "Autonomous", "instacart": "Grocery Tech", "planetlabs": "Earth Observation",
+    "ripple": "Crypto", "gleanwork": "AI Software", "redwoodmaterials": "Climate/Materials",
+    "epicgames": "Gaming", "riotgames": "Gaming", "lyft": "Mobility",
 }
 
 
@@ -196,6 +200,9 @@ COMPANY_REGION: dict[str, str] = {
     "nextdoor": "US", "coursera": "US", "voxmedia": "US", "lattice": "US", "udemy": "US",
     "buzzfeed": "US", "medium": "US", "ro": "US", "headway": "US", "abridge": "US",
     "sentry": "US", "quora": "US", "clerk": "US",
+    # US + EU panel, batch 5 — added 2026-09-28 (EMPLOYER_PANEL.md). All US-headquartered.
+    "nuro": "US", "instacart": "US", "planetlabs": "US", "ripple": "US", "gleanwork": "US",
+    "redwoodmaterials": "US", "epicgames": "US", "riotgames": "US", "lyft": "US",
 }
 
 # employer_size_band — RETIRED as a hand-assigned label 2026-09-25

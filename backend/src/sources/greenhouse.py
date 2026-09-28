@@ -91,6 +91,13 @@ COMPANIES: list[str] = [
     "pagerduty", "newrelic", "dropbox", "fastly", "amplitude", "gemini",
     "squarespace", "flatironhealth", "nextdoor", "coursera", "voxmedia",
     "lattice", "udemy", "buzzfeed", "medium",
+    # US + EU panel, batch 5 (added 2026-09-28, EMPLOYER_PANEL.md) — the smaller half of the 18
+    # 100-280-role US candidates held from batch 4 (under ~180 roles each); the 9 largest
+    # (200-280 roles) are held for a dedicated batch 6, same "watch anything large individually"
+    # discipline. Each verified 2026-09-28 by a real HTTP 200 with real open roles matching the
+    # company.
+    "nuro", "instacart", "planetlabs", "ripple", "gleanwork",
+    "redwoodmaterials", "epicgames", "riotgames", "lyft",
 ]
 
 
