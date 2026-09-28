@@ -21,7 +21,7 @@ entry here — adding an industry tag without deciding its mapping is not possib
 
 from __future__ import annotations
 
-CROSSWALK_VERSION = "2026-09-27.1"
+CROSSWALK_VERSION = "2026-09-28.1"
 
 OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # J — Information and communication: software, AI, developer/cloud platforms, media, social, search, security
@@ -34,10 +34,18 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # same reasoning as the existing J entries above.
     "AI Software": "J", "Analytics Software": "J", "Gaming": "J", "Marketplace Software": "J",
     "Security": "J", "Software": "J",
+    # Added 2026-09-28 with the US + EU panel batch 3 — Restaurant Tech (Flipdish) is an ordering
+    # software platform, not a restaurant operator; Autonomous (Wayve) is fundamentally an AI/
+    # software company (self-driving models), same reasoning as the existing "AI" entry, even
+    # though it also tests physical vehicles.
+    "Restaurant Tech": "J", "Autonomous": "J",
     # K — Financial and insurance activities
     "Fintech": "K", "Fintech (Banking-as-a-Service)": "K", "Fintech/AI": "K", "Insurtech": "K",
     # Added 2026-09-27 — crypto exchanges/custody are financial-services activity, same section as Fintech.
     "Crypto": "K",
+    # Added 2026-09-28 — Alan is fundamentally a regulated health insurer (its telehealth clinic
+    # is additive), same section as the existing "Insurtech" entry.
+    "Insurtech/Health": "K",
     # G — Wholesale and retail trade
     "Retail/Consumer": "G", "Retail/E-commerce": "G", "Retail/Tech (Grocery/Robotics)": "G",
     # Added 2026-09-27 — Farfetch's own tag string, distinct from "Retail/E-commerce" above but same section.
@@ -61,6 +69,12 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # (same reasoning as Travel/Tech).
     "Crypto Analytics": None, "Gaming/Crypto": None, "Health Wearables": None, "Logistics": None,
     "Mobility": None, "Travel Tech": None,
+    # Added 2026-09-28 with the US + EU panel batch 3: Delivery (Wolt) mixes a software platform
+    # with the actual delivery operation (same reasoning as Food Delivery/Marketplace);
+    # Semiconductors/AI (Graphcore) designs and manufactures physical chips — real manufacturing
+    # activity, not software, and no manufacturing section is otherwise mapped in this crosswalk,
+    # so forcing one here would be a guess, not a decision.
+    "Delivery": None, "Semiconductors/AI": None,
 }
 
 

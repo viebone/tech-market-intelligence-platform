@@ -9,7 +9,7 @@ at runtime. To change something, edit the file this points to.
 feeds, research and articles later — all normalised into one internal model. This document
 keeps that growing surface reviewable in one place.
 
-Last reviewed: 2026-09-27 (§4 company count, US + EU panel batch 2 — earlier: 2026-09-26 (Personio adapter: §2, §3, §4, §7 — earlier: 2026-09-24 (§2, the §3b category note, new §3c, §7 and §8 updated for the new **trusted external statistics** source type))).
+Last reviewed: 2026-09-28 (§4 company count, US + EU panel batch 3 — earlier: 2026-09-27 (§4 company count, US + EU panel batch 2 — earlier: 2026-09-26 (Personio adapter: §2, §3, §4, §7 — earlier: 2026-09-24 (§2, the §3b category note, new §3c, §7 and §8 updated for the new **trusted external statistics** source type)))).
 
 ---
 
@@ -343,7 +343,7 @@ release. That is a normal, expected state — not a defect and never faked.
 
 ## 4. Tracked companies
 
-**120 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
+**134 companies**, hand-curated per adapter — a deliberately curated, periodically-reviewed
 list, *not* an attempt at exhaustive coverage. Every board token is verified against a live
 HTTP 200 before being added (`backend/specs/market-health/api.md` — Tech Decisions —
 Company-list curation). A wrong token 404s loudly the same day, not a silent gap.
@@ -506,7 +506,7 @@ Everything tunable, and where it lives. Grouped by area.
 ### Ingestion & sources
 | Lever | Value | File |
 |---|---|---|
-| Tracked companies | 120, per adapter | `backend/src/sources/{greenhouse,lever,ashby,workable,personio}.py` — `COMPANIES` |
+| Tracked companies | 134, per adapter | `backend/src/sources/{greenhouse,lever,ashby,workable,personio}.py` — `COMPANIES` |
 | Company → industry | static dict | `backend/src/industries.py` — `COMPANY_INDUSTRY` |
 | Trusted-statistics publishers (trust-bar sign-off, check interval `min_check_interval_hours`, `release_settle_days`) | registry | `backend/src/trusted_stats/registry.py` — `TRUSTED_PUBLISHERS` |
 | Our industry tag → SIC 2007 section (cross-check) | versioned dict + completeness test | `backend/src/trusted_stats/crosswalks.py` |

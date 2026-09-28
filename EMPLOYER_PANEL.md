@@ -466,7 +466,32 @@ actual Ashby token is `perk`, not `travelperk`). Change request:
 | OakNorth | ashby (`oaknorth`) | UK | Fintech | 16 |
 | Farfetch | lever (`farfetch`) | UK | E-commerce | 43 |
 
-### Held for later batches — verified, not yet added (75 companies)
+### Batch 3 — added 2026-09-28 (14 companies, 1,571 postings, live-verified at fetch time)
+
+A deliberately different shape from batch 2 — not new-country coverage, but **finishing off
+every remaining non-giant EU/UK candidate** in one clean sweep, leaving only the 300+-role giants
+and the two identity-unconfirmed candidates (Intercom, Anysphere/Cursor) held from Europe.
+Change request: `changes/2026-09-23-us-eu-employer-panel-expansion.md` (Step 13),
+`research/2026-09-28-us-eu-panel-batch-3.md`.
+
+| Company | Platform (`token`) | HQ | Sector | Roles |
+|---|---|---|---|---|
+| Celonis | greenhouse (`celonis`) | DE | Software | 253 |
+| Wolt | greenhouse (`wolt`) | FI | Delivery | 210 |
+| Doctolib | ashby (`doctolib`) | FR | Healthtech | 149 |
+| Pigment | lever (`pigment`) | FR | Software | 136 |
+| Alan | ashby (`alan`) | FR | Insurtech/Health | 115 |
+| Flipdish | greenhouse (`flipdish`) | IE | Restaurant Tech | 16 |
+| Adyen | greenhouse (`adyen`) | NL | Fintech | 208 |
+| Wayve | ashby (`wayve`) | UK | Autonomous | 199 |
+| Graphcore | greenhouse (`graphcore`) | UK | Semiconductors/AI | 180 |
+| Tide | greenhouse (`tide`) | UK | Fintech | 88 |
+| Stability AI | greenhouse (`stabilityai`) | UK | AI | 6 |
+| Improbable | ashby (`improbable`) | UK | Gaming | 5 |
+| PolyAI | greenhouse (`polyai`) | UK | AI | 3 |
+| TrueLayer | greenhouse (`truelayer`) | UK | Fintech | 3 |
+
+### Held for later batches — verified, not yet added (61 companies)
 
 Ordered by country, then role count. Release in small groups, checking the classification
 backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
@@ -479,22 +504,8 @@ Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
 | Company | HQ | Sector | Platform (`token`) | Roles |
 |---|---|---|---|---|
 | HelloFresh | DE | Food | greenhouse (`hellofresh`) | 440 |
-| Celonis | DE | Software | greenhouse (`celonis`) | 262 |
-| Wolt | FI | Delivery | greenhouse (`wolt`) | 221 |
-| Doctolib | FR | Healthtech | ashby (`doctolib`) | 150 |
-| Pigment | FR | Software | lever (`pigment`) | 136 |
-| Alan | FR | Insurtech/Health | ashby (`alan`) | 119 |
 | Intercom | IE | Software | greenhouse (`intercom`) | 116 |
-| Flipdish | IE | Restaurant Tech | greenhouse (`flipdish`) | 15 |
-| Adyen | NL | Fintech | greenhouse (`adyen`) | 217 |
 | SumUp | UK | Fintech | greenhouse (`sumup`) | 365 |
-| Wayve | UK | Autonomous | ashby (`wayve`) | 193 |
-| Graphcore | UK | Semiconductors/AI | greenhouse (`graphcore`) | 171 |
-| Tide | UK | Fintech | greenhouse (`tide`) | 84 |
-| Stability AI | UK | AI | greenhouse (`stabilityai`) | 6 |
-| Improbable | UK | Gaming | ashby (`improbable`) | 5 |
-| PolyAI | UK | AI | greenhouse (`polyai`) | 3 |
-| TrueLayer | UK | Fintech | greenhouse (`truelayer`) | 2 |
 | SpaceX | US | Aerospace | greenhouse (`spacex`) | 2570 |
 | Databricks | US | Data/AI | greenhouse (`databricks`) | 881 |
 | Anthropic | US | AI | greenhouse (`anthropic`) | 629 |

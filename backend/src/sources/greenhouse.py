@@ -76,6 +76,12 @@ COMPANIES: list[str] = [
     "bitpanda", "collibra", "ledgy", "scandit", "raisin", "solarisbank",
     "cabify", "oura", "mirakl", "tines", "catawiki", "swordhealth",
     "feedzai", "gocardless",
+    # US + EU panel, batch 3 (added 2026-09-28, EMPLOYER_PANEL.md) — the remaining non-giant
+    # EU/UK candidates (300+-role boards and the two identity-unconfirmed candidates, Intercom
+    # and Anysphere/Cursor, are still held — same "giants last, one at a time" rule as batch 2).
+    # Each verified 2026-09-28 by a real HTTP 200 with real open roles matching the company.
+    "celonis", "flipdish", "adyen", "tide", "stabilityai", "polyai",
+    "truelayer", "wolt", "graphcore",
 ]
 
 

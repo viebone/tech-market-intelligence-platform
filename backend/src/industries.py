@@ -103,6 +103,12 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "brainly": "EdTech", "swordhealth": "Healthtech", "feedzai": "Fintech/AI",
     "lovable": "AI Software", "elliptic": "Crypto Analytics", "gocardless": "Fintech",
     "oaknorth": "Fintech", "farfetch": "E-commerce",
+    # US + EU panel, batch 3 — added 2026-09-28 (EMPLOYER_PANEL.md)
+    "celonis": "Software", "flipdish": "Restaurant Tech", "adyen": "Fintech",
+    "tide": "Fintech", "stabilityai": "AI", "polyai": "AI", "truelayer": "Fintech",
+    "wolt": "Delivery", "graphcore": "Semiconductors/AI", "pigment": "Software",
+    "doctolib": "Healthtech", "alan": "Insurtech/Health", "wayve": "Autonomous",
+    "improbable": "Gaming",
 }
 
 
@@ -168,6 +174,11 @@ COMPANY_REGION: dict[str, str] = {
     "catawiki": "NL", "miro": "NL", "docplanner": "PL", "brainly": "PL",
     "swordhealth": "PT", "feedzai": "PT", "lovable": "SE",
     "elliptic": "UK", "gocardless": "UK", "oaknorth": "UK", "farfetch": "UK",
+    # US + EU panel, batch 3 — added 2026-09-28 (EMPLOYER_PANEL.md)
+    "celonis": "DE", "wolt": "FI", "pigment": "FR", "doctolib": "FR", "alan": "FR",
+    "flipdish": "IE", "adyen": "NL",
+    "tide": "UK", "stabilityai": "UK", "polyai": "UK", "truelayer": "UK",
+    "wayve": "UK", "graphcore": "UK", "improbable": "UK",
 }
 
 # employer_size_band — RETIRED as a hand-assigned label 2026-09-25

@@ -79,6 +79,9 @@ COMPANIES: list[str] = [
     # US + EU panel, batch 2 (added 2026-09-27, EMPLOYER_PANEL.md) — verified
     # 2026-09-27 by a real HTTP 200 with real open roles matching the company.
     "contentsquare", "swile", "blablacar", "farfetch",
+    # US + EU panel, batch 3 (added 2026-09-28, EMPLOYER_PANEL.md) — verified
+    # 2026-09-28 by a real HTTP 200 with real open roles matching the company.
+    "pigment",
 ]
 
 

@@ -67,6 +67,9 @@ COMPANIES: list[str] = [
     "forto", "lunar", "perk", "supercell", "qonto", "backmarket", "ledger",
     "sorare", "workhuman", "satispay", "nord-security", "miro", "docplanner",
     "brainly", "lovable", "elliptic", "oaknorth",
+    # US + EU panel, batch 3 (added 2026-09-28, EMPLOYER_PANEL.md) — verified
+    # 2026-09-28 by a real HTTP 200 with real open roles matching the company.
+    "doctolib", "alan", "wayve", "improbable",
 ]
 
 
