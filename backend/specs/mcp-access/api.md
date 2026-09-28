@@ -589,6 +589,19 @@ MCP-exposure status.
   own 2019 value); the primitives it is built from are already reachable through
   `get_trusted_statistics`, and a pre-composed comparison report is exactly what this outcome does not
   expose. A calling AI can compute an index itself from the levels the tool returns.
+- **`statistics_crosscheck.size_mix()` — the platform-vs-ONS composition by employer size**
+  (Story 5 block 7, `changes/2026-09-25-employer-size-standard-bands.md`, decided 2026-09-28) —
+  **not a tool**, same reasoning as `industry_mix()` above: a pre-composed comparison, not a
+  primitive. **One real difference from the industry case, disclosed rather than glossed over:**
+  for industry, a calling AI *can* reconstruct this comparison itself, because `list_tracked_companies`
+  already returns each company's industry tag. For size, it genuinely cannot — `employer_size_band`
+  is still deliberately not returned by `list_tracked_companies` (see "Tracked companies +
+  industry", above; a bare band would mislead without its worldwide-vs-UK basis travelling with
+  it). So an external AI today has no path to ask about the platform's size distribution at all,
+  not even by composing primitives — a real, named limitation of today's tool surface, not a
+  decision that it's acceptable forever. Revisit alongside that row's own "revisit when the basis
+  can travel with the value" condition, which `employer_headcount.py`'s cited-headcount-plus-basis
+  model now satisfies technically; nothing has yet decided to act on it.
 - **Trusted-statistics admin views** — operator-only, no end-user data.
 
 ---

@@ -1,6 +1,6 @@
 # UK Employer Panel — Candidate List
 
-**Status: 21 of 36 UK candidates added and live; a separate US + EU panel started 2026-09-23 (batch 1: 26 added — see "US + EU expansion" below)** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
+**Status: 21 of 36 UK candidates added and live; a separate US + EU panel started 2026-09-23 is now on batch 3 (batch 1: 26, batch 2: 35, batch 3: 14 — 75 companies added, 61 still held, giants and two identity-unconfirmed candidates last — see "US + EU expansion" below)** (16 from verification pass 1, 2026-09-18; 3 more from pass 2, plus Starling and Cuvva via the new Workable adapter, 2026-09-19 — below), the rest still
 proposal/unverified. This is a backlog worked through one entry at a time, not a decision that
 all 36 employers are confirmed sources. See `DATA_SOURCES.md` §5 ("How to change coverage") for
 the actual procedure to promote a candidate into a real, live source — every `Unverified` row
@@ -25,16 +25,21 @@ employers, not just the same category of company the platform already over-repre
 
 ---
 
-**Employer size bands (added 2026-09-25):** the four size labels used for this panel (Startup <50,
-Small/Growth 50–500, Medium 500–5,000, Large 5,000+) are the platform's own and match no published
-standard, which is why a size cross-check against official statistics isn't possible yet. The PM decided on
-2026-09-25 to store headcount as the source of truth and use ONS's five bands as the default label
-(`changes/2026-09-25-employer-size-standard-bands.md`, `in-progress`); the standards are in
-`EMPLOYER_SIZE_STANDARDS.md` and the headcount research for all 48 unresearched companies (26 US/EU, Lever,
-21 UK) is in `research/2026-09-25-panel-headcount-research.md`. **Implemented 2026-09-25:** `backend/src/employer_headcount.py` now holds a cited headcount range per
-company and derives the ONS band; `COMPANY_SIZE_BAND` is retired; the live `raw_postings` column was backfilled
-(9,729 rows). Ambiguous ranges were resolved to the more probable band by PM decision, with the reasoning
-recorded per company. **Not yet deployed** to the Railway services — re-run the backfill after deploying.
+**Employer size bands (added 2026-09-25, completed 2026-09-27):** the four size labels this panel
+used to carry (Startup <50, Small/Growth 50–500, Medium 500–5,000, Large 5,000+) were the
+platform's own invention and matched no published standard. The PM decided on 2026-09-25 to store
+headcount as the source of truth and use ONS's five bands as the default label
+(`changes/2026-09-25-employer-size-standard-bands.md`, **`complete`**); the standards are in
+`EMPLOYER_SIZE_STANDARDS.md` and the headcount research for the 48 companies researched at the
+time is in `research/2026-09-25-panel-headcount-research.md`. `backend/src/employer_headcount.py`
+holds a cited headcount range per company and derives the ONS band; `COMPANY_SIZE_BAND` is
+retired. Deployed and live: the `raw_postings.employer_size_band` column carries only real ONS
+codes or `NULL` (verified 2026-09-28 — 6,428 rows `2500+`, 3,297 `250-2499`, 173 `50-249`, 3,000
+`NULL` for companies not yet researched — never a retired label). **A size comparison against
+ONS's own figures is now live** — Story 5, "UK vacancies (official data)", block 7 — showing that
+none of the researched companies in this panel are under 50 employees, against ONS's own ~27% of
+UK vacancies at businesses that small. Every company added by the US + EU panel's batches 2 and 3
+starts with `NULL` (not yet researched, never guessed) until a headcount research pass covers it.
 
 ---
 

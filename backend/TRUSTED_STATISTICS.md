@@ -126,12 +126,17 @@ unaffected, and each run's outcome is in `statistics_ingestion_runs` (admin -> S
 - Files are ~720 rows with mostly empty rows and footnotes: locate by pattern, never by row number.
 - The latest period is flagged **provisional** — it *will* be revised; that's why vintages exist.
 - Rolling three-month windows **overlap**: consecutive periods are not independent observations.
-- Our employer size bands (5,000+ / 500–5,000 / 50–500 / <50) **don't align** with ONS's
-  (1–9 / 10–49 / 50–249 / 250–2,499 / 2,500+) — don't cross-check sizes until a standards-based
-  band exists. See `EMPLOYER_SIZE_STANDARDS.md` (why ONS uses these bands, and which parts apply
-  outside the UK). **Update 2026-09-25:** the platform's size label is now ONS's five bands, derived from
-  cited headcounts (`backend/src/employer_headcount.py`, live) — so a size cross-check is now possible once
-  this category's adapter is built. Caveats stay: headcounts are mostly worldwide, and ONS may size a group.
+- The platform's old employer size bands (5,000+ / 500–5,000 / 50–500 / <50, its own invention)
+  **didn't align** with ONS's (1–9 / 10–49 / 50–249 / 250–2,499 / 2,500+), so a size cross-check
+  was withheld until a standards-based band existed. See `EMPLOYER_SIZE_STANDARDS.md` (why ONS
+  uses these bands, and which parts apply outside the UK). **Update 2026-09-25:** the platform's
+  size label is now ONS's five bands, derived from cited headcounts
+  (`backend/src/employer_headcount.py`, live). **Update 2026-09-27 — built and live**
+  (`changes/2026-09-25-employer-size-standard-bands.md`, Step 7/8): `statistics_crosscheck.size_mix()`
+  is wired into Story 5 as its `size-crosscheck` section (block 7,
+  `design/market-health/data-stories.md`). Caveats still apply and are stated on the block itself:
+  headcounts are mostly worldwide (not the UK business alone), and ONS may size a company at its
+  parent group's headcount rather than its own (unconfirmed).
 - The ONS Vacancy Survey covers **Great Britain** and ONS **weights it up to the UK** (Northern
   Ireland ≈3% of UK employment) — the published "UK" figure is derived, and the coverage note says
   so.

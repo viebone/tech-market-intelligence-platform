@@ -91,7 +91,7 @@ publisher.
 | Backend Implementation | `backend/src/industries.py`, `raw_postings.py`, `db.py`, new derivation helper, backfill script, tests | update (Step 5) |
 | Frontend Implementation | `frontend/src/` | update only with Step 8 |
 | Plain-Language Overview | `OVERVIEW.md` | update when the size comparison ships (Step 9); no user-visible effect before |
-| MCP Access Review | `ACCESS.md` | **not-applicable now** — no MCP tool exposes this field; revisit if `list_tracked_companies` ever returns it |
+| MCP Access Review | `ACCESS.md`, `backend/specs/mcp-access/api.md` | **update — done 2026-09-28** (found during a documentation audit, not originally scheduled as its own step): `size_mix()` is a real new backend capability (Step 7/8) and had no recorded exposure decision. Decided *not exposed* — same reasoning as `industry_mix()` — but flagged, unlike the industry case, that a calling AI has no primitive path to reconstruct this comparison itself, since `list_tracked_companies` still doesn't return `employer_size_band` |
 | Polite Scraping Review | — | not-applicable — no scraped source |
 | Data Surface Review | — | **not-applicable** — an attribute of existing company metadata, not a new data category; no new table |
 
@@ -153,3 +153,4 @@ publisher.
 - 2026-09-27: **Real gap found while wiring this up: `size_mix()` already existed, unused.** It was written to the spec's exact contract (`backend/specs/trusted-statistics/api.md` §6, decided 2026-09-25) but never called anywhere and never tested — a genuine "spec was ahead of the wiring" gap, not a bug. This closes it.
 - 2026-09-27: Reused the same "two-series comparison" visual form as block 6 rather than inventing a new one — same question shape (a platform share beside an ONS share), just a different dimension. Story 5's own closing summary was revised to state this explicitly, so "one form per question" doesn't read as violated by a deliberate, justified reuse.
 - 2026-09-27: Not fixed here (flagged only): `industry_mix()`/`size_mix()`'s wider module, `statistics_crosscheck.py`, had zero test coverage before this CR (`industry_mix()` shipped 2026-09-25 with none either, beyond the fixture-driven story test). Added focused pure-function tests for both functions' shared helpers rather than leaving the gap unaddressed, but did not go back and add dedicated `industry_mix()`-only tests beyond what already existed.
+- 2026-09-28: **Found during a documentation audit, not this CR's own trigger**: the original Specs Affected table marked MCP Access Review "not-applicable now" — true when written (`size_mix()` didn't exist yet), but stale once Step 7/8 shipped it as a real, callable capability. Rule 12 requires an explicit decision, not a default; recorded above.
