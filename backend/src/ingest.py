@@ -68,6 +68,18 @@ def ingest_company(adapter, company: str) -> dict:
     exhausted is recorded with its error rather than propagated, so one bad
     company can't abort the run. See backend/specs/market-health/api.md —
     Business Logic — Ingestion — Fault isolation, per company.
+
+    The fetch and the DB write are isolated separately (added 2026-09-30 —
+    changes/2026-09-30-ashby-db-write-isolation.md, a real gap this docstring's
+    "never raises" promise didn't actually keep before). A transient DB failure
+    during insert_new_postings() — a connection timeout hit in production
+    2026-09-27, `changes/2026-09-26-personio-adapter.md` — previously escaped
+    this function uncaught, was caught only by run()'s outer per-*adapter* try/
+    except, and aborted every remaining company in that adapter's list for the
+    run, not just the one company with the bad luck. Both `existing_ids()` and
+    the insert itself open their own connection via `with get_connection()`, so
+    a failure here never leaves a partial write to roll back — safe to catch
+    broadly, same as the fetch side.
     """
     try:
         postings = adapter.fetch_company(company)
@@ -75,7 +87,12 @@ def ingest_company(adapter, company: str) -> dict:
         logger.error("ingest[%s/%s]: failed, skipping this company: %s", adapter.name, company, exc)
         return {"source": adapter.name, "company": company, "fetched": 0, "inserted": 0, "error": str(exc)}
 
-    new_ids = insert_new_postings(adapter.name, postings)
+    try:
+        new_ids = insert_new_postings(adapter.name, postings)
+    except Exception as exc:
+        logger.error("ingest[%s/%s]: fetched %d but failed to store them: %s", adapter.name, company, len(postings), exc)
+        return {"source": adapter.name, "company": company, "fetched": len(postings), "inserted": 0, "error": str(exc)}
+
     logger.info(
         "ingest[%s/%s]: fetched %d, inserted %d new",
         adapter.name, company, len(postings), len(new_ids),

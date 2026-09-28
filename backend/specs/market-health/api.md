@@ -864,11 +864,17 @@ in the weeks after this ships, as a real, expected transition effect, not a pipe
 Anomaly flagging below, which needs a fresh baseline once the source mix changes).
 
 **Fault isolation, per company, and per adapter.** Two nested levels, both non-aborting:
-- **Per company** (within one adapter): a single company's board fetch failing — board token
-  renamed or removed, network error, rate limited after exhausting retries — is recorded with
-  its error in `terms_processed` (see Data Models — IngestionRun) and skipped; the adapter moves
-  on to the next company. Mirrors the per-search-term isolation the 2026-07-27 Adzuna resilience
-  change already established — same principle, applied one level differently (company instead of
+- **Per company** (within one adapter): a single company's board fetch **or its storage into
+  `raw_postings`** failing — board token renamed or removed, network error, rate limited after
+  exhausting retries, or a transient DB failure (a real connection timeout hit in production,
+  2026-09-27, `changes/2026-09-30-ashby-db-write-isolation.md`) — is recorded with its error in
+  `terms_processed` (see Data Models — IngestionRun) and skipped; the adapter moves on to the
+  next company. **Revised 2026-09-30**: this bullet originally scoped isolation to "a single
+  company's board fetch failing" — narrower than `ingest_company()`'s own "never raises" contract
+  — and that narrower wording is exactly what let the storage step go unguarded for over a
+  month; the isolation boundary is the whole per-company operation (fetch AND store), not just
+  the fetch. Mirrors the per-search-term isolation the 2026-07-27 Adzuna resilience change
+  already established — same principle, applied one level differently (company instead of
   search term).
 - **Per adapter** (within the whole run): an adapter-level failure outside any single company's
   fetch (e.g. an unexpected bug in that adapter's response parsing) is caught at the
