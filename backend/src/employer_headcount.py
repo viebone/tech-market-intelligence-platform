@@ -142,6 +142,14 @@ UNKNOWN_HEADCOUNT: dict[str, str] = {
         "celonis", "flipdish", "adyen", "tide", "stabilityai", "polyai", "truelayer", "wolt",
         "graphcore", "pigment", "doctolib", "alan", "wayve", "improbable",
     )},
+    # US + EU panel, batch 4 — added 2026-09-28 (EMPLOYER_PANEL.md). Same discipline: no headcount
+    # yet, left without a band rather than guessed.
+    **{c: "Not yet researched (added with the US + EU panel batch 4, 2026-09-28). No band until a cited figure exists." for c in (
+        "mozilla", "mixpanel", "chime", "sweetgreen", "sofi", "zocdoc", "pagerduty", "newrelic",
+        "dropbox", "fastly", "amplitude", "gemini", "squarespace", "flatironhealth", "nextdoor",
+        "coursera", "voxmedia", "lattice", "udemy", "buzzfeed", "medium", "ro", "headway",
+        "abridge", "sentry", "quora", "clerk",
+    )},
 }
 
 COMPANY_HEADCOUNT: dict[str, EmployerHeadcount] = {

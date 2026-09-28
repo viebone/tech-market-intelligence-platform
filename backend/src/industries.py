@@ -109,6 +109,16 @@ COMPANY_INDUSTRY: dict[str, str] = {
     "wolt": "Delivery", "graphcore": "Semiconductors/AI", "pigment": "Software",
     "doctolib": "Healthtech", "alan": "Insurtech/Health", "wayve": "Autonomous",
     "improbable": "Gaming",
+    # US + EU panel, batch 4 — added 2026-09-28 (EMPLOYER_PANEL.md)
+    "mozilla": "Nonprofit/Software", "mixpanel": "Analytics Software", "chime": "Fintech",
+    "sweetgreen": "Restaurant", "sofi": "Fintech", "zocdoc": "Healthtech",
+    "pagerduty": "DevOps Software", "newrelic": "Observability Software",
+    "dropbox": "Cloud Software", "fastly": "Edge Cloud", "amplitude": "Analytics Software",
+    "gemini": "Crypto", "squarespace": "Software", "flatironhealth": "Healthtech",
+    "nextdoor": "Consumer Internet", "coursera": "EdTech", "voxmedia": "Media",
+    "lattice": "HR Tech", "udemy": "EdTech", "buzzfeed": "Media", "medium": "Media",
+    "ro": "Digital Health", "headway": "Healthtech", "abridge": "Healthtech AI",
+    "sentry": "Software", "quora": "Consumer Internet", "clerk": "Software",
 }
 
 
@@ -179,6 +189,13 @@ COMPANY_REGION: dict[str, str] = {
     "flipdish": "IE", "adyen": "NL",
     "tide": "UK", "stabilityai": "UK", "polyai": "UK", "truelayer": "UK",
     "wayve": "UK", "graphcore": "UK", "improbable": "UK",
+    # US + EU panel, batch 4 — added 2026-09-28 (EMPLOYER_PANEL.md). All US-headquartered.
+    "mozilla": "US", "mixpanel": "US", "chime": "US", "sweetgreen": "US", "sofi": "US",
+    "zocdoc": "US", "pagerduty": "US", "newrelic": "US", "dropbox": "US", "fastly": "US",
+    "amplitude": "US", "gemini": "US", "squarespace": "US", "flatironhealth": "US",
+    "nextdoor": "US", "coursera": "US", "voxmedia": "US", "lattice": "US", "udemy": "US",
+    "buzzfeed": "US", "medium": "US", "ro": "US", "headway": "US", "abridge": "US",
+    "sentry": "US", "quora": "US", "clerk": "US",
 }
 
 # employer_size_band — RETIRED as a hand-assigned label 2026-09-25

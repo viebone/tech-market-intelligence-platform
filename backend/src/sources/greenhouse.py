@@ -82,6 +82,15 @@ COMPANIES: list[str] = [
     # Each verified 2026-09-28 by a real HTTP 200 with real open roles matching the company.
     "celonis", "flipdish", "adyen", "tide", "stabilityai", "polyai",
     "truelayer", "wolt", "graphcore",
+    # US + EU panel, batch 4 (added 2026-09-28, EMPLOYER_PANEL.md) — the smaller half of the
+    # remaining US candidates (under 100 open roles each); the 18 larger ones (100-280 roles)
+    # are held for a dedicated batch 5, same "watch anything large individually" discipline the
+    # panel already applies to 300+-role giants. Each verified 2026-09-28 by a real HTTP 200
+    # with real open roles matching the company.
+    "mozilla", "mixpanel", "chime", "sweetgreen", "sofi", "zocdoc",
+    "pagerduty", "newrelic", "dropbox", "fastly", "amplitude", "gemini",
+    "squarespace", "flatironhealth", "nextdoor", "coursera", "voxmedia",
+    "lattice", "udemy", "buzzfeed", "medium",
 ]
 
 

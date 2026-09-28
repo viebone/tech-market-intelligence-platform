@@ -70,6 +70,9 @@ COMPANIES: list[str] = [
     # US + EU panel, batch 3 (added 2026-09-28, EMPLOYER_PANEL.md) — verified
     # 2026-09-28 by a real HTTP 200 with real open roles matching the company.
     "doctolib", "alan", "wayve", "improbable",
+    # US + EU panel, batch 4 (added 2026-09-28, EMPLOYER_PANEL.md) — verified
+    # 2026-09-28 by a real HTTP 200 with real open roles matching the company.
+    "headway", "abridge", "sentry", "quora", "clerk",
 ]
 
 

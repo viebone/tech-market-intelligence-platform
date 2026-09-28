@@ -496,7 +496,44 @@ Change request: `changes/2026-09-23-us-eu-employer-panel-expansion.md` (Step 13)
 | PolyAI | greenhouse (`polyai`) | UK | AI | 3 |
 | TrueLayer | greenhouse (`truelayer`) | UK | Fintech | 3 |
 
-### Held for later batches — verified, not yet added (61 companies)
+### Batch 4 — added 2026-09-28 (27 companies, 1,024 postings, live-verified at fetch time)
+
+The smaller half of the remaining US candidates (under 100 open roles each) — the 18 larger ones
+(100–280 roles) are held for a dedicated batch 5, same "watch anything large individually"
+discipline the panel already applies to 300+-role giants. Change request:
+`changes/2026-09-23-us-eu-employer-panel-expansion.md`, `research/2026-09-28-us-eu-panel-batch-4.md`.
+
+| Company | Platform (`token`) | HQ | Sector | Roles |
+|---|---|---|---|---|
+| Mozilla | greenhouse (`mozilla`) | US | Nonprofit/Software | 77 |
+| Mixpanel | greenhouse (`mixpanel`) | US | Analytics Software | 72 |
+| Chime | greenhouse (`chime`) | US | Fintech | 66 |
+| Sweetgreen | greenhouse (`sweetgreen`) | US | Restaurant | 62 |
+| Ro | lever (`ro`) | US | Digital Health | 53 |
+| SoFi | greenhouse (`sofi`) | US | Fintech | 57 |
+| Zocdoc | greenhouse (`zocdoc`) | US | Healthtech | 57 |
+| PagerDuty | greenhouse (`pagerduty`) | US | DevOps Software | 51 |
+| New Relic | greenhouse (`newrelic`) | US | Observability Software | 51 |
+| Headway | ashby (`headway`) | US | Healthtech | 85 |
+| Dropbox | greenhouse (`dropbox`) | US | Cloud Software | 44 |
+| Abridge | ashby (`abridge`) | US | Healthtech AI | 47 |
+| Sentry | ashby (`sentry`) | US | Software | 41 |
+| Fastly | greenhouse (`fastly`) | US | Edge Cloud | 40 |
+| Amplitude | greenhouse (`amplitude`) | US | Analytics Software | 37 |
+| Gemini | greenhouse (`gemini`) | US | Crypto | 33 |
+| Squarespace | greenhouse (`squarespace`) | US | Software | 34 |
+| Flatiron Health | greenhouse (`flatironhealth`) | US | Healthtech | 27 |
+| Nextdoor | greenhouse (`nextdoor`) | US | Consumer Internet | 23 |
+| Coursera | greenhouse (`coursera`) | US | EdTech | 19 |
+| Vox Media | greenhouse (`voxmedia`) | US | Media | 16 |
+| Lattice | greenhouse (`lattice`) | US | HR Tech | 10 |
+| Udemy | greenhouse (`udemy`) | US | EdTech | 8 |
+| Quora | ashby (`quora`) | US | Consumer Internet | 7 |
+| BuzzFeed | greenhouse (`buzzfeed`) | US | Media | 4 |
+| Clerk | ashby (`clerk`) | US | Software | 2 |
+| Medium | greenhouse (`medium`) | US | Media | 1 |
+
+### Held for later batches — verified, not yet added (34 companies)
 
 Ordered by country, then role count. Release in small groups, checking the classification
 backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
@@ -542,33 +579,6 @@ Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
 | Planet Labs | US | Earth Observation | greenhouse (`planetlabs`) | 113 |
 | Instacart | US | Grocery Tech | greenhouse (`instacart`) | 111 |
 | Nuro | US | Autonomous | greenhouse (`nuro`) | 105 |
-| Headway | US | Healthtech | ashby (`headway`) | 84 |
-| Mozilla | US | Nonprofit/Software | greenhouse (`mozilla`) | 84 |
-| Mixpanel | US | Analytics Software | greenhouse (`mixpanel`) | 77 |
-| Chime | US | Fintech | greenhouse (`chime`) | 66 |
-| Sweetgreen | US | Restaurant | greenhouse (`sweetgreen`) | 63 |
-| SoFi | US | Fintech | greenhouse (`sofi`) | 55 |
-| Zocdoc | US | Healthtech | greenhouse (`zocdoc`) | 55 |
-| Ro | US | Digital Health | lever (`ro`) | 53 |
-| PagerDuty | US | DevOps Software | greenhouse (`pagerduty`) | 51 |
-| New Relic | US | Observability Software | greenhouse (`newrelic`) | 50 |
-| Dropbox | US | Cloud Software | greenhouse (`dropbox`) | 47 |
-| Abridge | US | Healthtech AI | ashby (`abridge`) | 47 |
-| Sentry | US | Software | ashby (`sentry`) | 46 |
-| Fastly | US | Edge Cloud | greenhouse (`fastly`) | 41 |
-| Amplitude | US | Analytics Software | greenhouse (`amplitude`) | 37 |
-| Gemini | US | Crypto | greenhouse (`gemini`) | 36 |
-| Squarespace | US | Software | greenhouse (`squarespace`) | 34 |
-| Flatiron Health | US | Healthtech | greenhouse (`flatironhealth`) | 27 |
-| Nextdoor | US | Consumer Internet | greenhouse (`nextdoor`) | 21 |
-| Coursera | US | EdTech | greenhouse (`coursera`) | 17 |
-| Vox Media | US | Media | greenhouse (`voxmedia`) | 15 |
-| Lattice | US | HR Tech | greenhouse (`lattice`) | 10 |
-| Udemy | US | EdTech | greenhouse (`udemy`) | 8 |
-| Quora | US | Consumer Internet | ashby (`quora`) | 5 |
-| BuzzFeed | US | Media | greenhouse (`buzzfeed`) | 5 |
-| Clerk | US | Software | ashby (`clerk`) | 1 |
-| Medium | US | Media | greenhouse (`medium`) | 1 |
 
 ---
 

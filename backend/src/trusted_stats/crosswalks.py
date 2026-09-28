@@ -21,7 +21,7 @@ entry here — adding an industry tag without deciding its mapping is not possib
 
 from __future__ import annotations
 
-CROSSWALK_VERSION = "2026-09-28.1"
+CROSSWALK_VERSION = "2026-09-28.2"
 
 OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # J — Information and communication: software, AI, developer/cloud platforms, media, social, search, security
@@ -39,6 +39,18 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # software company (self-driving models), same reasoning as the existing "AI" entry, even
     # though it also tests physical vehicles.
     "Restaurant Tech": "J", "Autonomous": "J",
+    # Added 2026-09-28 with the US + EU panel batch 4 — pure software products/platforms serving
+    # an industry, not an operator in it, same reasoning as "Restaurant Tech" above (Healthtech AI
+    # / Abridge is an AI clinical-documentation vendor, not a care provider). "Media" (Vox Media,
+    # BuzzFeed, Medium) is placed on the structure of SIC section J itself, not by analogy — J's
+    # own divisions include publishing, broadcasting and motion-picture activities alongside
+    # software, the same breadth the tech-and-communications trend block's own qualifier states.
+    "DevOps Software": "J", "Observability Software": "J", "Cloud Software": "J",
+    "Edge Cloud": "J", "Consumer Internet": "J", "Media": "J", "Healthtech AI": "J",
+    # Mozilla's underlying activity is software development (Firefox); "nonprofit" is a legal/tax
+    # structure, not a SIC activity — same reasoning already applied to "Nonprofit/EdTech" -> P
+    # (classified by activity, not nonprofit status).
+    "Nonprofit/Software": "J",
     # K — Financial and insurance activities
     "Fintech": "K", "Fintech (Banking-as-a-Service)": "K", "Fintech/AI": "K", "Insurtech": "K",
     # Added 2026-09-27 — crypto exchanges/custody are financial-services activity, same section as Fintech.
@@ -52,6 +64,11 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     "E-commerce": "G",
     # P — Education (an education nonprofit only; the mixed EdTech tag is None)
     "Nonprofit/EdTech": "P",
+    # I — Accommodation and food service activities. Added 2026-09-28 with batch 4: Sweetgreen is
+    # an unambiguous restaurant chain (a fast-casual operator, not a software vendor to
+    # restaurants — that's "Restaurant Tech", already J) — the cleanest single-company fit for a
+    # new section this crosswalk has had, no genuine mixing to weigh.
+    "Restaurant": "I",
     # None — genuinely ambiguous or mixed; reported as "not placed", never forced
     "Automotive Marketplace": None, "Climate Tech": None, "Climate/Data": None, "Consumer Fitness": None,
     "Consumer Reviews/Marketplace": None, "EdTech": None, "Fintech Software": None,
@@ -75,6 +92,10 @@ OUR_INDUSTRY_TO_SIC_SECTION: dict[str, str | None] = {
     # activity, not software, and no manufacturing section is otherwise mapped in this crosswalk,
     # so forcing one here would be a guess, not a decision.
     "Delivery": None, "Semiconductors/AI": None,
+    # Added 2026-09-28 with the US + EU panel batch 4 — Digital Health (Ro) mixes a telehealth
+    # service with pharmacy/medication logistics, the same "mixed, not a single clean activity"
+    # reasoning as the existing "Healthtech" entry.
+    "Digital Health": None,
 }
 
 
