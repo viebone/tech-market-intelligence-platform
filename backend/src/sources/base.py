@@ -100,16 +100,31 @@ COUNTRY_NAME_TO_ISO2 = {
 
 def normalize_country(raw: str | None) -> str | None:
     """
-    Map a free-text country name to its ISO-2 code. Returns None for empty,
-    already-2-letter (assumed already-ISO), or unrecognized input — an
-    unnormalizable value is excluded from location answers, never guessed.
+    Map a free-text country name to its ISO-2 code. Returns None for empty or
+    unrecognized input — an unnormalizable value is excluded from location
+    answers, never guessed.
+
+    The `COUNTRY_NAME_TO_ISO2` lookup runs BEFORE the "already 2 letters,
+    assume already-ISO" fallback — not after (fixed 2026-09-28,
+    `changes/2026-09-28-uk-gb-country-normalization-bug.md`). A 2-letter raw
+    value isn't always already a real ISO-2 code: `"UK"` is a common
+    colloquial abbreviation, not the actual ISO 3166-1 alpha-2 code for the
+    United Kingdom (`"GB"`), and this dict already has `"uk": "GB"` — the old
+    order made that entry unreachable for exactly the input it exists to
+    catch. Confirmed against real production data from two independent
+    sources (Ashby's raw `addressCountry: "UK"`, Greenhouse's raw office
+    string `"London, UK"`), both of which were stored as `"UK"` instead of
+    `"GB"` under the old order.
     """
     if not raw:
         return None
     cleaned = raw.strip()
+    mapped = COUNTRY_NAME_TO_ISO2.get(cleaned.lower())
+    if mapped:
+        return mapped
     if len(cleaned) == 2:
         return cleaned.upper()
-    return COUNTRY_NAME_TO_ISO2.get(cleaned.lower())
+    return None
 
 
 # Known structural gaps per registered source — what a source can *never*
