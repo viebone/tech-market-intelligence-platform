@@ -558,14 +558,32 @@ Ordered by country, then role count. Release in small groups, checking the class
 backlog and daily LLM budget between groups. Companies with 300+ open roles (SpaceX 2,570,
 Databricks 881, Anthropic 629, Shield AI 529, Rocket Lab 518, Datadog 445, HelloFresh 440,
 MongoDB 399, Elastic 369, SumUp 365, Waymo 355, Relativity Space 336, Okta 329, Toast 326,
-Harvey 308) should go last and one at a time. **Identity not fully confirmed** (check job content
-before adding): Intercom (Greenhouse board is titled "Fin", Dublin/London roles) and Anysphere /
-Cursor (Ashby `cursor`; the name is not in the job text under "Anysphere").
+Harvey 308) should go last and one at a time.
+
+**Identity resolved 2026-09-30** (content-inspected both, real board text read directly — see
+`research/2026-09-30-intercom-anysphere-identity-check.md`):
+- **Intercom — Rejected, not held.** The Greenhouse board at token `intercom` no longer belongs
+  to Intercom. Its own postings' content states plainly: *"Fin, now part of Salesforce, is on a
+  mission to help businesses provide perfect customer experiences... Fin can also be combined
+  with our natively integrated Intercom help desk."* — **Fin** (fin.ai), Intercom's former AI
+  Agent product, was spun out and acquired by Salesforce; this board is Fin/Salesforce hiring,
+  not Intercom's own. Adding it as "Intercom" would misattribute Salesforce hiring data to a
+  different, unrelated company. Removed from the held table below (was 116 roles). A genuine
+  Intercom board, if one still exists, would need separate research — not attempted here.
+- **Anysphere / Cursor — Verified, now held.** The Ashby board at token `cursor` is confirmed
+  real: its own postings state *"the technical face of Anysphere in the field, helping customers
+  evaluate Cursor"* — Anysphere is the company, Cursor is its AI coding-assistant product, exactly
+  as expected. Moved into the held table below with its real live count (128, re-probed
+  2026-09-30). **One real data-quality artifact found and left alone** (their own posted content,
+  never edited): 76 of 128 postings (59%) contain the literal string "SpaceXAI" in a job
+  description — almost certainly an unsubstituted template placeholder in Anysphere's own ATS
+  content, not evidence of a wrong company. `raw_response` is stored verbatim regardless, per this
+  platform's own "never touch raw_response" rule.
 
 | Company | HQ | Sector | Platform (`token`) | Roles |
 |---|---|---|---|---|
 | HelloFresh | DE | Food | greenhouse (`hellofresh`) | 440 |
-| Intercom | IE | Software | greenhouse (`intercom`) | 116 |
+| Anysphere (Cursor) | US | AI Software | ashby (`cursor`) | 128 |
 | SumUp | UK | Fintech | greenhouse (`sumup`) | 365 |
 | SpaceX | US | Aerospace | greenhouse (`spacex`) | 2570 |
 | Databricks | US | Data/AI | greenhouse (`databricks`) | 881 |
