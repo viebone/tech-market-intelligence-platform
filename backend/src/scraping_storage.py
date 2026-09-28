@@ -619,6 +619,34 @@ def get_extraction_for_url(url: str) -> dict | None:
     return {"content_hash": row[0], "model": row[1], "extracted_at": row[2]}
 
 
+def count_market_observations(source: str | None = None) -> int:
+    """
+    Total market_observations rows — for one source (Data Coverage & Quality's
+    "Coverage by source", backend/specs/pipeline-visibility/api.md, to show a
+    scraped source's own native volume without implying comparability to
+    job-posting adapters), or across all sources when `source` is omitted
+    (Technical Data Visibility's Data Footprint, same spec — the category
+    total, not a per-source breakdown).
+    """
+    with get_connection() as conn:
+        if source is None:
+            return conn.execute("SELECT COUNT(*) FROM market_observations").fetchone()[0]
+        return conn.execute(
+            "SELECT COUNT(*) FROM market_observations WHERE source = %s", (source,)
+        ).fetchone()[0]
+
+
+def count_skill_associations() -> int:
+    """
+    Total skill_associations rows, across every source — Technical Data
+    Visibility's Data Footprint (backend/specs/pipeline-visibility/api.md),
+    same "category total, not per-source" scope as count_market_observations()
+    when called with no `source`.
+    """
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM skill_associations").fetchone()[0]
+
+
 def list_scrape_runs() -> list[dict]:
     """
     One row per *registered* scraped-source adapter (backend/specs/

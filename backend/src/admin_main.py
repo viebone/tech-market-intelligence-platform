@@ -680,6 +680,104 @@ def taxonomy_health(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Data Coverage & Quality — added 2026-09-28,
+# changes/2026-09-28-data-insight-coverage-quality-admin-view.md. Same
+# deliberate "live, on-demand query, no stored snapshot" choice as Taxonomy
+# Health above — nothing here is generated or mutated by running it.
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/coverage-quality", dependencies=[Depends(require_admin_session)])
+def coverage_quality(request: Request):
+    return templates.TemplateResponse(
+        request, "coverage_quality.html",
+        {
+            "active_page": "coverage_quality",
+            "coverage": raw_postings.get_coverage_summary(),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Technical Data Visibility — added 2026-09-28,
+# changes/2026-09-28-technical-data-visibility-admin-view.md. Sibling to Data
+# Coverage & Quality above: same "live, on-demand, no snapshot" choice for
+# the Data Footprint half. The Exposure Summary half parses ACCESS.md
+# directly rather than duplicating its per-capability decisions into a
+# second registry (backend/specs/pipeline-visibility/api.md — Business
+# Logic, "Exposure summary — parsing ACCESS.md rather than a second
+# registry") — deliberately fragile, and fails safe, never fabricates a
+# count, if ACCESS.md's shape ever changes underneath it.
+# ---------------------------------------------------------------------------
+
+_ACCESS_MD_SECTION_HEADERS = ("## Market data capabilities", "## Operator-only capabilities")
+
+
+def _parse_access_md() -> dict:
+    """
+    Classify every capability row in ACCESS.md's two capability tables into
+    mcp_reachable / frontend_or_api_only / not_exposed, by whether the
+    Frontend / Backend API / MCP Tool columns (in that fixed order) start
+    with ✅ or ❌. Raises ValueError on any shape it doesn't recognise —
+    callers must treat a parse failure as "unavailable," never silently
+    substitute a wrong count.
+    """
+    path = BASE_DIR.parent.parent / "ACCESS.md"
+    text = path.read_text(encoding="utf-8")
+
+    if not all(header in text for header in _ACCESS_MD_SECTION_HEADERS):
+        raise ValueError("ACCESS.md is missing an expected section header")
+
+    mcp_reachable = frontend_or_api_only = not_exposed = total = 0
+    in_section = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            in_section = stripped in _ACCESS_MD_SECTION_HEADERS
+            continue
+        if not in_section or not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        if cells[0] == "Capability" or set(cells[0]) <= {"-", ":"}:
+            continue  # header row or markdown separator row
+        frontend, backend_api, mcp_tool = cells[1], cells[2], cells[3]
+        total += 1
+        if mcp_tool.startswith("✅"):
+            mcp_reachable += 1
+        elif frontend.startswith("✅") or backend_api.startswith("✅"):
+            frontend_or_api_only += 1
+        elif frontend.startswith("❌") and backend_api.startswith("❌") and mcp_tool.startswith("❌"):
+            not_exposed += 1
+        else:
+            raise ValueError(f"ACCESS.md row has an unrecognized cell format: {stripped!r}")
+
+    if total == 0:
+        raise ValueError("ACCESS.md parse found no capability rows")
+
+    return {
+        "total_capabilities": total,
+        "mcp_reachable": mcp_reachable,
+        "frontend_or_api_only": frontend_or_api_only,
+        "not_exposed": not_exposed,
+    }
+
+
+@app.get("/admin/technical-data", dependencies=[Depends(require_admin_session)])
+def technical_data(request: Request):
+    footprint = raw_postings.get_technical_footprint()
+    try:
+        exposure = _parse_access_md()
+    except Exception as exc:
+        logger.warning("ACCESS.md parse failed for /admin/technical-data: %s", exc)
+        exposure = None
+    return templates.TemplateResponse(
+        request, "technical_data.html",
+        {"active_page": "technical_data", "footprint": footprint, "exposure": exposure},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Feedback — added 2026-09-23, changes/2026-09-23-user-feedback-mechanism.md.
 # Read-only over platform_feedback/story_reactions, owned and written by the
 # two anonymous consumer endpoints in feedback.py — see backend/specs/

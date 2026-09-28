@@ -182,6 +182,16 @@ def get_distinct_countries() -> list[str]:
     return [r[0] for r in rows]
 
 
+def count_events() -> int:
+    """Total employment_events rows — Technical Data Visibility's Data
+    Footprint (backend/specs/pipeline-visibility/api.md). Deliberately not
+    get_summary() reused for this — that function runs three queries and a
+    display-name lookup for its richer Overview block; this needs only the
+    one count."""
+    with get_connection() as conn:
+        return conn.execute("SELECT count(*) FROM employment_events").fetchone()[0]
+
+
 def get_summary() -> dict:
     """Overview's employment_events_summary block — total count, per-source
     breakdown (count, last ingested, cursor position when the source is

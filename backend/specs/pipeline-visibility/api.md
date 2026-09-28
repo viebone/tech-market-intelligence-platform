@@ -718,6 +718,85 @@ new to show.
 **Errors**: none beyond the shared auth redirect — no matches renders "No feedback matches these
 filters" rather than an empty table.
 
+### GET /admin/coverage-quality
+**Added 2026-09-28** (`changes/2026-09-28-data-insight-coverage-quality-admin-view.md`).
+**Purpose**: the four ranked coverage-and-quality lists (by country, by company size, by source,
+by business area), per `design/pipeline-visibility/experience.md` User Flow step 12. A single
+summary page, not List → Detail — same reasoning as `GET /admin/licensing`/`GET /admin/feedback`:
+a fixed cross-cut, not rows to page through.
+**Auth required**: yes
+**Data source**: `raw_postings.get_coverage_summary()` — a **live query, recomputed on every page
+load**, same deliberate choice as `GET /admin/taxonomy-health` (Business Logic, below) — nothing
+here is a snapshot that needs "running."
+**Response**: `coverage_quality.html`, rendered with:
+```json
+{
+  "total_postings": 5105,
+  "by_country": [
+    {"label": "GB", "postings": 2384, "share": 0.467, "tier": "strong"},
+    {"label": "US", "postings": 1197, "share": 0.234, "tier": "strong"},
+    {"label": "DE", "postings": 218, "share": 0.043, "tier": "limited"},
+    {"label": "unknown", "postings": 612, "share": 0.120, "tier": null}
+  ],
+  "by_company_size": [
+    {"label": "51-200", "companies": 22, "postings": 1890, "share": 0.370, "tier": "strong"},
+    {"label": "1-50", "companies": 9, "postings": 210, "share": 0.041, "tier": "limited", "single_company_capped": false},
+    {"label": "unknown", "companies": 14, "postings": 340, "share": 0.067, "tier": null}
+  ],
+  "by_business_area": [
+    {"label": "Fintech", "companies": 18, "postings": 1544, "share": 0.302, "tier": "strong"},
+    {"label": "Climate Tech", "companies": 1, "postings": 96, "share": 0.019, "tier": "limited", "single_company_capped": true},
+    {"label": "unknown", "companies": 3, "postings": 55, "share": 0.011, "tier": null}
+  ],
+  "by_source": {
+    "job_postings": [
+      {"label": "greenhouse", "postings": 2210, "share": 0.433, "tier": "strong", "known_gaps": []},
+      {"label": "personio", "postings": 140, "share": 0.027, "tier": "limited", "known_gaps": ["No salary field", "No country field"]}
+    ],
+    "other": [
+      {"label": "itjobswatch", "unit": "market observations", "count": 3, "known_gaps": []},
+      {"label": "ons_vacancy_survey", "unit": "statistic observations", "count": 7575, "known_gaps": []}
+    ]
+  }
+}
+```
+**Errors**: none beyond the shared auth redirect — a fresh deployment with zero postings renders
+each list's own "No coverage data yet — run the ingestion pipeline to populate this view" empty
+state (Edge Cases, `design/pipeline-visibility/experience.md`).
+
+### GET /admin/technical-data
+**Added 2026-09-28** (`changes/2026-09-28-technical-data-visibility-admin-view.md`).
+**Purpose**: the platform's technical data footprint (table/row counts) and an exposure summary
+(MCP vs. frontend/API vs. neither), per `design/pipeline-visibility/experience.md` User Flow
+step 13. A single summary page, no filtering — same shape as `GET /admin/coverage-quality`.
+**Auth required**: yes
+**Data source**: `raw_postings.get_technical_footprint()` for the footprint half; a fresh parse
+of `ACCESS.md` for the exposure half (both live-computed on every page load — see Business Logic,
+below, for why `ACCESS.md` is parsed rather than duplicated into a second registry).
+**Response**: `technical_data.html`, rendered with:
+```json
+{
+  "footprint": [
+    {"category": "Job Postings", "tables": ["raw_postings", "classifications", "posting_requirements", "posting_requirements_failures"], "row_count": 20416},
+    {"category": "Employment Events", "tables": ["employment_events"], "row_count": 31865},
+    {"category": "Market Benchmark Data", "tables": ["market_observations", "skill_associations"], "row_count": 93},
+    {"category": "Trusted Statistics", "tables": ["statistic_series", "statistic_releases", "statistic_observations"], "row_count": 7601},
+    {"category": "User Feedback", "tables": ["platform_feedback", "story_reactions"], "row_count": 118}
+  ],
+  "excluded_note": "Operational/infrastructure tables (ingestion run logs, batch job tracking, MCP auth tokens, scrape/page caches) are not counted here — they're pipeline bookkeeping, not market-intelligence data, and are already visible individually on their own admin views (Ingestion Runs, Scraped Source Runs, Statistics Sources).",
+  "exposure": {
+    "total_capabilities": 24,
+    "mcp_reachable": 9,
+    "frontend_or_api_only": 10,
+    "not_exposed": 5
+  }
+}
+```
+**Errors**: none beyond the shared auth redirect. If `ACCESS.md` is missing or its tables can't
+be parsed (Business Logic, below), the Exposure Summary section renders "Exposure summary
+unavailable — see ACCESS.md directly" rather than a wrong count or a crash; the Data Footprint
+section is unaffected (the two halves fail independently).
+
 ---
 
 ## Business Logic
@@ -855,6 +934,118 @@ query time — the two tables are never merged at rest, only at read time for th
 `type` and `story_id` filters are applied before the union (as a `WHERE` on whichever source
 table a given filter implies), not after, so pagination counts stay correct.
 
+**Coverage & quality tiering rule (added 2026-09-28)** — one simple, stated rule applied
+uniformly across By Country, By Company Size, and By Business Area, deliberately not a composite
+"quality score" (a fake precision the underlying data doesn't support):
+- **Share** = `row_postings / total_postings` — `total_postings` is the grand total including
+  every postings row regardless of whether this axis could classify it (i.e. the "unknown"
+  bucket's own postings count *toward* the denominator, so every share on the page sums to 1.0
+  and the page never implies more coverage than actually exists).
+- **Tier**: `share >= 0.15` → `"strong"`; `0.03 <= share < 0.15` → `"limited"`; `0 < share <
+  0.03` → `"negligible"`; `share == 0` → omit the row entirely (nothing to show). Percentage-of-
+  total, not a fixed postings count, so the thresholds stay meaningful as total volume grows —
+  the alternative (a fixed number like "100 postings = strong") would silently drift stale as
+  the platform scales.
+- **The "unknown"/"untagged" row is never tiered** (`tier: null`) — it is not a coverage level,
+  it is the honest acknowledgement that this axis couldn't classify that share of the data. It
+  always renders last (Visual Design, `design/pipeline-visibility/experience.md`).
+- **Single-company override** (By Company Size, By Business Area only): a row backed by exactly
+  one company is capped at `"limited"` regardless of its computed share — one employer's hiring
+  volume is not evidence about the size band or industry as a whole, only about that employer.
+  `single_company_capped: true` is included on such a row so the frontend can render the
+  "single-company coverage" caveat from the experience spec's Edge Cases without re-deriving it.
+- **By Source is a special case, not tiered by this same rule** — see the dedicated rule below.
+
+**Coverage by country (added 2026-09-28)** — `raw_postings.get_coverage_summary()`'s country
+list: `SELECT country, COUNT(*) FROM raw_postings GROUP BY country`. `country` is already
+normalized ISO-2 at ingestion time (`sources/base.py`'s `normalize_country()`), never re-parsed
+here. A `NULL` row (no country recorded — every Personio-sourced posting, plus any other
+source's posting whose free-text location didn't resolve) is relabeled `"unknown"` and always
+included, per the tiering rule above.
+
+**Coverage by company size (added 2026-09-28)** — `raw_postings.get_coverage_summary()`'s
+company-size list: `SELECT company, COUNT(*) FROM raw_postings GROUP BY company`, then each
+company is bucketed by `employer_headcount.size_band_for(company)` (an existing lookup,
+`backend/EMPLOYER_SIZE_STANDARDS.md`) — `None` buckets to `"unknown"`. Both the distinct company
+count and the summed posting count are tracked per band, so a band's row shows real numbers on
+both axes, not one number standing in for two different things.
+
+**Coverage by business area (added 2026-09-28)** — same shape as company size, bucketed instead
+by `industries.COMPANY_INDUSTRY.get(company)` (`None` → `"unknown"`).
+
+**Coverage by source (added 2026-09-28)** — deliberately **not comparable across all sources on
+one scale**, because they don't share a unit: job-posting adapters produce `raw_postings` rows,
+while `itjobswatch` produces `market_observations`/`skill_associations` rows and
+`ons_vacancy_survey` produces `statistic_observations` rows — different shapes entirely
+(`DATA_SOURCES.md` §2). Presenting them on one ranked scale would imply a false equivalence (a
+market-benchmark source with 3 rows is not "weaker" than a job-posting adapter with 2,000 — they
+measure different things). So this list splits in two:
+- `job_postings` — `SELECT source, COUNT(*) FROM raw_postings GROUP BY source`, tiered by the
+  same share-of-`total_postings` rule as the other three axes (same unit, genuinely comparable).
+- `other` — one row per non-posting source (today: `itjobswatch`, `ons_vacancy_survey`), each
+  showing its own native count (`market_observations` row count; `statistic_observations` row
+  count) and its own unit label, explicitly **not tiered** — a category of one has nothing to
+  rank against, and forcing a tier onto it would manufacture a signal that doesn't exist yet.
+- Every row in both groups carries `known_gaps` — a static, hand-maintained lookup
+  (`sources.base.SOURCE_DATA_GAPS`, Tech Decisions below) of that source's structural
+  limitations (e.g. Personio: `["No salary field", "No country field"]`) sourced from
+  `DATA_SOURCES.md` §3, not re-derived from the data — these are known facts about what a source
+  *can never* report, not something a query over existing rows could discover on its own.
+
+**Data footprint categorization (added 2026-09-28)** — five categories, deliberately scoped to
+*market-intelligence data* (facts about the job market this platform exists to report on), not
+every table in the schema:
+- Job Postings — `raw_postings`, `classifications`, `posting_requirements`,
+  `posting_requirements_failures`
+- Employment Events — `employment_events`
+- Market Benchmark Data — `market_observations`, `skill_associations`
+- Trusted Statistics — `statistic_series`, `statistic_releases`, `statistic_observations`
+- User Feedback — `platform_feedback`, `story_reactions`
+
+Explicitly **excluded, by name, not silently dropped**: `ingestion_runs`, `batch_jobs`,
+`chat_paid_usage`, `employment_event_cursors`, `statistics_ingestion_runs` (pipeline-run
+bookkeeping), `scrape_robots_cache`, `scrape_page_cache`, `scrape_ingestion_runs`,
+`scrape_extractions` (scraping infrastructure), and `users`/`mcp_clients`/`mcp_connections`/
+`mcp_tokens`/`mcp_auth_codes`/`mcp_usage` (accounts/auth). These are real tables holding real
+rows, but they're operational infrastructure, not market-intelligence facts — counting them
+alongside postings/events/observations would answer a different question than "how much market
+data does this platform hold" and make the page's own numbers harder to reason about. Each is
+already individually visible elsewhere on this dashboard (Ingestion Runs, Scraped Source Runs,
+Statistics Sources) for whoever specifically wants pipeline-operations detail. The response's
+`excluded_note` states this plainly rather than leaving the gap for the operator to notice and
+wonder about.
+
+**Row counts (added 2026-09-28)** — a plain `SELECT COUNT(*)` per table, summed per category.
+Reuses existing count functions where one already exists (`raw_postings.count_postings()`);
+new, equally small functions are added only for tables with no existing count helper (Tech
+Decisions, below) — never a duplicated ad hoc query where a shared one already exists.
+
+**Exposure summary — parsing `ACCESS.md` rather than a second registry (added 2026-09-28)** —
+`ACCESS.md` already holds the real per-capability MCP/frontend/backend-API decision, built and
+kept current by the `mcp-access-review` process (Rule 12). Building a second, structured registry
+just for this page's three numbers would create exactly the two-sources-of-truth problem Rule 12
+exists to prevent — a decision could drift between the registry and `ACCESS.md` with nothing to
+catch it. So this route parses `ACCESS.md`'s markdown directly, live, on every page load:
+- Read every row of the "Market data capabilities" and "Operator-only capabilities" tables (the
+  access-control-layer prose section at the file's end has no table rows and is never parsed).
+- Each row's 2nd/3rd/4th pipe-delimited columns are Frontend / Backend API / MCP Tool, in that
+  fixed order — every existing row's cell starts with either `✅` or `❌` (even a `❌ Not exposed`
+  or `❌ Not applicable` cell starts with `❌`), so classification only ever checks that leading
+  character, never the trailing explanation text.
+- A row counts as `mcp_reachable` if its MCP Tool cell starts `✅`; `frontend_or_api_only` if not
+  MCP-reachable but either Frontend or Backend API starts `✅`; `not_exposed` if all three start
+  `❌`.
+- **This is a genuinely fragile mechanism, stated plainly, not hidden**: it depends on
+  `ACCESS.md`'s table column order and the `✅`/`❌` convention never silently changing. If a
+  future edit to `ACCESS.md` breaks that shape, this route's parse fails safe (Errors, above) —
+  it never renders a wrong count. This tradeoff (fragile-but-single-source-of-truth vs.
+  robust-but-duplicated) was made deliberately, not by default — see Tech Decisions for how a
+  parse failure is detected.
+- **This view has no way to verify `ACCESS.md` itself is accurate** (Edge Cases,
+  `design/pipeline-visibility/experience.md`) — it reports what the file says, not what the
+  running MCP server actually exposes. Keeping the two in sync is what Rule 12's process is for;
+  this page is downstream of that process, not a replacement for it.
+
 ---
 
 ## External Dependencies
@@ -941,3 +1132,50 @@ already produced by the existing pipeline.
   `_due_from_last_run()`'s existing pure comparison logic).
 - **No new tables, no new columns.** This addition is entirely new `/admin/*` read routes over
   data `backend/specs/scraped-data-sources/api.md` already owns and writes — no migration.
+- **`GET /admin/coverage-quality` — new function, live-computed, not cached (added 2026-09-28).**
+  `raw_postings.py` gains `get_coverage_summary()` — one function, four `GROUP BY` queries plus
+  the tiering rule (Business Logic, above) applied in Python over the results (importing
+  `employer_headcount.size_band_for` and `industries.COMPANY_INDUSTRY`, the existing owners of
+  those lookups, rather than duplicating them). Computed fresh on every page load, same reasoning
+  `GET /admin/taxonomy-health` already established: at today's real scale (~5,105 postings, 134
+  companies) four `GROUP BY`s over `raw_postings` cost nothing worth caching, and this dashboard
+  has no live-updating requirement to build a cache-invalidation story for. Revisit only if
+  postings volume grows by an order of magnitude and this route's latency becomes noticeable.
+  `sources/base.py` gains a new constant, `SOURCE_DATA_GAPS: dict[str, list[str]]` — one entry
+  per registered source (job-posting, scraped, and trusted-statistics adapters alike), each a
+  list of plain-language known structural gaps, hand-maintained alongside `DATA_SOURCES.md` §3
+  the same way `COUNTRY_NAME_TO_ISO2` already lives there as curated, hand-maintained data. A
+  source with no known gaps gets an explicit empty list, never an omitted key.
+- **MCP Access Review (run 2026-09-28, per this skill's Step 6)** — `GET /admin/coverage-quality`
+  decided **Not Exposed**, same reasoning as every other row in `ACCESS.md`'s "Operator-only
+  capabilities" table: this is the person operating the platform assessing their own pipeline's
+  data quality, not market data an end user or an external AI acting on a user's behalf would
+  ever ask for. New row added to `ACCESS.md`.
+- **`GET /admin/technical-data` — new function + a markdown parse, both live (added 2026-09-28).**
+  `raw_postings.py` gains `get_technical_footprint()` — five `SELECT COUNT(*)` groups (Business
+  Logic, above), reusing `count_postings()` for the Job Postings category's `raw_postings` count
+  and adding small new one-line count functions alongside it
+  (`count_classifications()`, `count_posting_requirements()`,
+  `count_posting_requirements_failures()`) plus equivalent one-line additions to
+  `employment_events_storage.py` (`count_events()`), `scraping_storage.py`
+  (`count_skill_associations()` — `count_market_observations(source)` already exists, called with
+  no `source` filter for the category total), and `statistics_storage.py`
+  (`count_statistic_series()`, `count_statistic_releases()` —
+  `count_statistic_observations(source)` already exists, same no-filter reuse), and
+  `feedback_storage.py` (`count_platform_feedback()`, `count_story_reactions()`) — one module per
+  table, same convention as every prior addition on this page.
+  A new small module, `admin_main.py`'s own `_parse_access_md()` (co-located with the route, not
+  a shared module — nothing else in the codebase needs to parse `ACCESS.md`), implements the
+  fixed-column parse described in Business Logic; on any parse failure (file missing, expected
+  headers not found, a row with fewer than 5 columns) it raises a caught, logged exception and the
+  route renders the "Exposure summary unavailable" fallback (Errors, above) rather than a
+  fabricated count.
+- **MCP Access Review (run 2026-09-28, per this skill's Step 6)** — `GET /admin/technical-data`
+  decided **Not Exposed**, same reasoning as `GET /admin/coverage-quality` and every other
+  operator-only row: this is the operator's own structural/exposure visibility into their
+  platform, not market data. New row added to `ACCESS.md`. (This route's own existence is itself
+  now one more row in the exposure count it reports — a harmless, expected self-reference, not a
+  paradox: it's a `Not Exposed` admin capability like every sibling row on this page.)
+- **No new tables, no new columns.** This addition is entirely a new `/admin/*` read route over
+  row counts of tables every other spec on this page already owns, plus a read of `ACCESS.md` —
+  no migration.

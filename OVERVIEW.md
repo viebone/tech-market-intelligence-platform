@@ -79,8 +79,13 @@ plus when each scraped source last ran and whether it's due again. _(New, 2026-0
 shows real recurring job titles/specializations the classification taxonomy doesn't have a
 category for yet, so a future revision can be based on real signal rather than a manual check.
 _(New, 2026-09-23.)_ Also shows user feedback — overall satisfaction average, a per-story
-thumbs up/down breakdown, and every individual response with its written comment, if any. Not
-something an end user ever sees or needs.
+thumbs up/down breakdown, and every individual response with its written comment, if any.
+_(New, 2026-09-28.)_ Also shows a data coverage & quality summary — which countries, company
+sizes, sources, and business areas the platform's data supports strong insight for versus which
+are still thin, so the operator can see real gaps at a glance rather than discovering them the
+hard way. Also shows a technical data footprint — how much data each part of the platform holds,
+and how many of its capabilities are reachable by an external AI over MCP versus only from this
+platform's own product. Not something an end user ever sees or needs.
 
 ## How it's built, in one paragraph
 

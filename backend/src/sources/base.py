@@ -112,6 +112,27 @@ def normalize_country(raw: str | None) -> str | None:
     return COUNTRY_NAME_TO_ISO2.get(cleaned.lower())
 
 
+# Known structural gaps per registered source — what a source can *never*
+# report, regardless of how much data it has. Hand-maintained alongside
+# DATA_SOURCES.md §3/§3b/§3c, same curated-not-derived discipline as
+# COUNTRY_NAME_TO_ISO2 above. Used by the Data Coverage & Quality admin view
+# (backend/specs/pipeline-visibility/api.md) to surface these as known facts,
+# not something a query over existing rows could ever discover on its own —
+# a source's absence of a field doesn't show up as "0 rows," it shows up as
+# "there was never a column to populate." Every registered source needs an
+# entry here, even if empty — see backend/tests/test_source_licences.py for
+# the equivalent "every adapter must be registered" discipline this mirrors.
+SOURCE_DATA_GAPS: dict[str, list[str]] = {
+    "greenhouse": [],
+    "lever": [],
+    "ashby": [],
+    "workable": ["No structured salary field"],
+    "personio": ["No salary field", "No country field"],
+    "itjobswatch": [],
+    "ons_vacancy_survey": [],
+}
+
+
 class SourceFetchError(Exception):
     """
     A request to a source's API failed and either wasn't retryable (a

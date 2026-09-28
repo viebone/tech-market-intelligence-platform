@@ -19,8 +19,9 @@ import json
 from datetime import datetime, timezone
 
 from db import get_connection
+from employer_headcount import band_label
 from industries import industry_for, region_for, size_band_for
-from sources.base import FetchedPosting
+from sources.base import SOURCE_DATA_GAPS, FetchedPosting
 
 
 def existing_ids(ids: list[str]) -> set[str]:
@@ -210,6 +211,27 @@ def count_postings() -> int:
     pipeline-visibility/api.md)."""
     with get_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM raw_postings").fetchone()[0]
+
+
+def count_classifications() -> int:
+    """Total classifications row count — Technical Data Visibility's Data
+    Footprint (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM classifications").fetchone()[0]
+
+
+def count_posting_requirements() -> int:
+    """Total posting_requirements row count — Technical Data Visibility's
+    Data Footprint (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM posting_requirements").fetchone()[0]
+
+
+def count_posting_requirements_failures() -> int:
+    """Total posting_requirements_failures row count — Technical Data
+    Visibility's Data Footprint (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM posting_requirements_failures").fetchone()[0]
 
 
 def attach_ingestion_run(run_id: int, started_at: datetime) -> None:
@@ -436,6 +458,247 @@ def get_posting(posting_id: str) -> dict | None:
         ],
         "languages": [{"language": r[0], "requirement_level": r[1]} for r in language_rows],
     }
+
+
+# Data Coverage & Quality tiering thresholds — backend/specs/pipeline-visibility/
+# api.md, Business Logic, "Coverage & quality tiering rule." Percentage-of-total,
+# not a fixed postings count, so the thresholds stay meaningful as total volume
+# grows — see that section's reasoning for why a fixed number was rejected.
+COVERAGE_STRONG_SHARE = 0.15
+COVERAGE_LIMITED_SHARE = 0.03
+
+
+def _coverage_tier(share: float) -> str | None:
+    """None means "nothing to show" (zero rows) — the caller drops such rows
+    entirely, they never render as a zero-share tier."""
+    if share <= 0:
+        return None
+    if share >= COVERAGE_STRONG_SHARE:
+        return "strong"
+    if share >= COVERAGE_LIMITED_SHARE:
+        return "limited"
+    return "negligible"
+
+
+def _grouped_coverage(rows: list[tuple], total_postings: int) -> list[dict]:
+    """
+    Shared shape for By Company Size and By Business Area: `rows` is
+    `(label_or_none, postings, distinct_companies)`. A None label (untagged —
+    no employer_size_band or no COMPANY_INDUSTRY entry) is folded into one
+    "unknown" row, always last, never tiered — same treatment country/source
+    give their own unknown bucket. A row backed by exactly one company is
+    capped at "limited" even if its share alone would read "strong" — one
+    employer's hiring volume is not evidence about the size band or industry
+    as a whole (Business Logic, "Coverage & quality tiering rule").
+    """
+    named: list[dict] = []
+    unknown_postings = 0
+    unknown_companies = 0
+    for label, postings, companies in rows:
+        if label is None:
+            unknown_postings += postings
+            unknown_companies += companies
+            continue
+        share = postings / total_postings if total_postings else 0.0
+        tier = _coverage_tier(share)
+        if companies == 1 and tier == "strong":
+            tier = "limited"
+        named.append({
+            "label": label,
+            "companies": companies,
+            "postings": postings,
+            "share": share,
+            "tier": tier,
+            "single_company_capped": companies == 1,
+        })
+    named.sort(key=lambda r: r["postings"], reverse=True)
+    if unknown_postings or unknown_companies:
+        named.append({
+            "label": "unknown",
+            "companies": unknown_companies,
+            "postings": unknown_postings,
+            "share": unknown_postings / total_postings if total_postings else 0.0,
+            "tier": None,
+        })
+    return named
+
+
+def get_coverage_summary() -> dict:
+    """
+    Data Coverage & Quality admin view — backend/specs/pipeline-visibility/
+    api.md GET /admin/coverage-quality. Live query, recomputed on every page
+    load, same deliberate "no snapshot to run" choice as
+    get_emerging_taxonomy_candidates() (classification.py) — at today's real
+    scale (~5,105 postings, 134 companies) four GROUP BYs cost nothing worth
+    caching.
+
+    Reads raw_postings' own denormalized country/industry/employer_size_band
+    columns, set once at insert time (insert_new_postings(), above) from
+    industries.py/employer_headcount.py — never re-derives those lookups here.
+    'ambiguous' employer_size_band values are folded into the "unknown" bucket
+    alongside NULL: both mean "no confident size band," and this view doesn't
+    need the finer distinction between "never looked up" and "looked up but
+    inconclusive" that the underlying data itself preserves.
+
+    By Source deliberately does not put every registered source on one ranked
+    scale — see Business Logic, "Coverage by source," for why job-posting
+    adapters (raw_postings rows) and market-benchmark/trusted-statistics
+    sources (a different shape entirely) are reported in two separate groups.
+    """
+    with get_connection() as conn:
+        total_postings = conn.execute("SELECT COUNT(*) FROM raw_postings").fetchone()[0]
+
+        country_rows = conn.execute(
+            "SELECT country, COUNT(*) FROM raw_postings GROUP BY country"
+        ).fetchall()
+        size_rows = conn.execute(
+            """
+            SELECT CASE WHEN employer_size_band = 'ambiguous' THEN NULL ELSE employer_size_band END,
+                   COUNT(*), COUNT(DISTINCT company)
+            FROM raw_postings
+            GROUP BY 1
+            """
+        ).fetchall()
+        industry_rows = conn.execute(
+            "SELECT industry, COUNT(*), COUNT(DISTINCT company) FROM raw_postings GROUP BY industry"
+        ).fetchall()
+        source_rows = conn.execute(
+            "SELECT source, COUNT(*) FROM raw_postings GROUP BY source"
+        ).fetchall()
+
+    by_country: list[dict] = []
+    unknown_country_postings = 0
+    for country, postings in country_rows:
+        if country is None:
+            unknown_country_postings += postings
+            continue
+        share = postings / total_postings if total_postings else 0.0
+        by_country.append({
+            "label": country, "postings": postings, "share": share,
+            "tier": _coverage_tier(share),
+        })
+    by_country.sort(key=lambda r: r["postings"], reverse=True)
+    if unknown_country_postings:
+        by_country.append({
+            "label": "unknown",
+            "postings": unknown_country_postings,
+            "share": unknown_country_postings / total_postings if total_postings else 0.0,
+            "tier": None,
+        })
+
+    by_company_size = _grouped_coverage(
+        [(band_label(label) if label else None, postings, companies) for label, postings, companies in size_rows],
+        total_postings,
+    )
+    by_business_area = _grouped_coverage(industry_rows, total_postings)
+
+    job_postings_sources: list[dict] = []
+    for source, postings in source_rows:
+        share = postings / total_postings if total_postings else 0.0
+        job_postings_sources.append({
+            "label": source, "postings": postings, "share": share,
+            "tier": _coverage_tier(share),
+            "known_gaps": SOURCE_DATA_GAPS.get(source, []),
+        })
+    job_postings_sources.sort(key=lambda r: r["postings"], reverse=True)
+
+    other_sources = [
+        {
+            "label": "itjobswatch", "unit": "market observations",
+            "count": _market_observation_count("itjobswatch"),
+            "known_gaps": SOURCE_DATA_GAPS.get("itjobswatch", []),
+        },
+        {
+            "label": "ons_vacancy_survey", "unit": "statistic observations",
+            "count": _statistic_observation_count("ons_vacancy_survey"),
+            "known_gaps": SOURCE_DATA_GAPS.get("ons_vacancy_survey", []),
+        },
+    ]
+
+    return {
+        "total_postings": total_postings,
+        "by_country": by_country,
+        "by_company_size": by_company_size,
+        "by_business_area": by_business_area,
+        "by_source": {"job_postings": job_postings_sources, "other": other_sources},
+    }
+
+
+def _market_observation_count(source: str) -> int:
+    from scraping_storage import count_market_observations
+    return count_market_observations(source)
+
+
+def _statistic_observation_count(source: str) -> int:
+    from statistics_storage import count_statistic_observations
+    return count_statistic_observations(source)
+
+
+# Data categories excluded from get_technical_footprint() — pipeline-run
+# bookkeeping, scraping infrastructure, and accounts/auth, not
+# market-intelligence data. Named here (not just in prose) so the exclusion
+# is a real, checkable list, not a vague claim — see Business Logic, "Data
+# footprint categorization," backend/specs/pipeline-visibility/api.md.
+TECHNICAL_FOOTPRINT_EXCLUDED_NOTE = (
+    "Operational/infrastructure tables (ingestion run logs, batch job tracking, "
+    "MCP auth tokens, scrape/page caches) are not counted here — they're pipeline "
+    "bookkeeping, not market-intelligence data, and are already visible individually "
+    "on their own admin views (Ingestion Runs, Scraped Source Runs, Statistics Sources)."
+)
+
+
+def get_technical_footprint() -> dict:
+    """
+    Technical Data Visibility's Data Footprint half — backend/specs/
+    pipeline-visibility/api.md GET /admin/technical-data. Live query, same
+    "no snapshot to run" reasoning as get_coverage_summary(). Five categories,
+    deliberately scoped to market-intelligence data (Business Logic, "Data
+    footprint categorization") — composes existing per-table count functions
+    rather than querying information_schema, since this platform already
+    knows exactly which tables back each category.
+    """
+    from employment_events_storage import count_events
+    from feedback_storage import count_platform_feedback, count_story_reactions
+    from scraping_storage import count_market_observations, count_skill_associations
+    from statistics_storage import (
+        count_statistic_observations,
+        count_statistic_releases,
+        count_statistic_series,
+    )
+
+    categories = [
+        {
+            "category": "Job Postings",
+            "tables": ["raw_postings", "classifications", "posting_requirements", "posting_requirements_failures"],
+            "row_count": (
+                count_postings() + count_classifications()
+                + count_posting_requirements() + count_posting_requirements_failures()
+            ),
+        },
+        {
+            "category": "Employment Events",
+            "tables": ["employment_events"],
+            "row_count": count_events(),
+        },
+        {
+            "category": "Market Benchmark Data",
+            "tables": ["market_observations", "skill_associations"],
+            "row_count": count_market_observations() + count_skill_associations(),
+        },
+        {
+            "category": "Trusted Statistics",
+            "tables": ["statistic_series", "statistic_releases", "statistic_observations"],
+            "row_count": (
+                count_statistic_series() + count_statistic_releases() + count_statistic_observations()
+            ),
+        },
+        {
+            "category": "User Feedback",
+            "tables": ["platform_feedback", "story_reactions"],
+            "row_count": count_platform_feedback() + count_story_reactions(),
+        },
+    ]
+    return {"footprint": categories, "excluded_note": TECHNICAL_FOOTPRINT_EXCLUDED_NOTE}
 
 
 def get_requirements_reprocess_targets(taxonomy_version: str) -> list[str]:

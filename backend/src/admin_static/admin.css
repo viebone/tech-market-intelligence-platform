@@ -166,6 +166,10 @@ table.data-table tbody tr td a.row-link { display: block; text-decoration: none;
 .badge.success { background: rgba(5, 150, 105, 0.15); color: #34d399; }
 .badge.neutral { background: rgba(217, 119, 6, 0.15); color: #fbbf24; }
 .badge.error   { background: rgba(220, 38, 38, 0.15); color: #f87171; }
+/* Added 2026-09-28 (Data Coverage & Quality) — a genuine fourth state, distinct
+   from success/neutral/error: "negligible coverage" or "not reported," neither
+   a caution nor a failure, just a real gap named plainly. */
+.badge.muted   { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
 
 /* Forms / inputs, design/visual-design.md */
 

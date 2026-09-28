@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Data Coverage & Quality — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Data Coverage & Quality</h1>
+<div class="stat-label" style="margin-bottom: 16px;">
+  Where the platform's captured data supports strong insight versus where it's thin, across
+  {{ coverage.total_postings }} tracked postings. A live query, not a stored report — real counts
+  first, a plain-language tier second. No editing here; see Postings and the other pipeline views
+  to drill into individual records.
+</div>
+
+{% macro legend() %}
+<div class="stat-label" style="margin-bottom: 8px;">
+  <span class="badge success">Strong</span>
+  <span class="badge neutral">Limited</span>
+  <span class="badge muted">Negligible</span>
+  <span class="badge muted">Unknown / not reported</span>
+</div>
+{% endmacro %}
+
+{% macro coverage_bar(row, max_postings, unit_label="postings") %}
+<div class="bar-row">
+  <div class="bar-label">{{ row.label }}</div>
+  <div class="bar-track">
+    <div class="bar-fill {% if row.tier == 'strong' %}success{% elif row.tier == 'limited' %}flag{% else %}neutral{% endif %}"
+         style="width: {{ (row.postings / max_postings * 100) | round(1) if max_postings else 0 }}%;"></div>
+  </div>
+  <div class="bar-count">{{ row.postings }} {{ unit_label }}</div>
+  {% if row.tier == 'strong' %}<span class="badge success">Strong</span>
+  {% elif row.tier == 'limited' %}<span class="badge neutral">Limited</span>
+  {% elif row.tier == 'negligible' %}<span class="badge muted">Negligible</span>
+  {% else %}<span class="badge muted">Unknown</span>
+  {% endif %}
+  <span class="stat-label" style="margin-left: 8px;">{{ "%.1f"|format(row.share * 100) }}% of total</span>
+</div>
+{% endmacro %}
+
+<h2>By Country</h2>
+{{ legend() }}
+{% if coverage.by_country %}
+<div class="card">
+  {% for row in coverage.by_country %}
+    {{ coverage_bar(row, coverage.by_country[0].postings) }}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No coverage data yet — run the ingestion pipeline to populate this view.</div></div>
+{% endif %}
+
+<h2 style="margin-top: 24px;">By Company Size</h2>
+{{ legend() }}
+{% if coverage.by_company_size %}
+<div class="card">
+  {% for row in coverage.by_company_size %}
+    {{ coverage_bar(row, coverage.by_company_size[0].postings) }}
+    <div class="stat-label" style="margin-left: 168px; margin-top: -4px; margin-bottom: 4px;">
+      {{ row.companies }} compan{{ 'y' if row.companies == 1 else 'ies' }}
+      {% if row.get('single_company_capped') %} — single-company coverage, capped at Limited regardless of volume{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No coverage data yet — run the ingestion pipeline to populate this view.</div></div>
+{% endif %}
+
+<h2 style="margin-top: 24px;">By Business Area</h2>
+{{ legend() }}
+{% if coverage.by_business_area %}
+<div class="card">
+  {% for row in coverage.by_business_area %}
+    {{ coverage_bar(row, coverage.by_business_area[0].postings) }}
+    <div class="stat-label" style="margin-left: 168px; margin-top: -4px; margin-bottom: 4px;">
+      {{ row.companies }} compan{{ 'y' if row.companies == 1 else 'ies' }}
+      {% if row.get('single_company_capped') %} — single-company coverage, capped at Limited regardless of volume{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No coverage data yet — run the ingestion pipeline to populate this view.</div></div>
+{% endif %}
+
+<h2 style="margin-top: 24px;">By Source</h2>
+<div class="stat-label" style="margin-bottom: 8px;">
+  Job-posting adapters are ranked on one scale (they share the same "postings" unit). Market
+  benchmark and trusted-statistics sources measure something different entirely — shown separately
+  below with their own native counts, never forced onto the same scale.
+</div>
+{{ legend() }}
+{% if coverage.by_source.job_postings %}
+<div class="card">
+  {% for row in coverage.by_source.job_postings %}
+    {{ coverage_bar(row, coverage.by_source.job_postings[0].postings) }}
+    {% if row.known_gaps %}
+    <div class="stat-label" style="margin-left: 168px; margin-top: -4px; margin-bottom: 4px;">
+      Known gaps: {{ row.known_gaps | join(' · ') }}
+    </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No coverage data yet — run the ingestion pipeline to populate this view.</div></div>
+{% endif %}
+
+<h3 style="margin-top: 16px; font-size: 13px; color: #9ca3af;">Other registered sources (not comparable to the above)</h3>
+<div class="card">
+  {% for row in coverage.by_source.other %}
+  <div class="bar-row">
+    <div class="bar-label">{{ row.label }}</div>
+    <div class="bar-count" style="width: auto; text-align: left;">{{ row.count }} {{ row.unit }}</div>
+  </div>
+  {% if row.known_gaps %}
+  <div class="stat-label" style="margin-left: 168px; margin-top: -4px; margin-bottom: 4px;">
+    Known gaps: {{ row.known_gaps | join(' · ') }}
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

@@ -64,6 +64,24 @@ mismatched specialization, unnoticed, until someone happens to look. The same op
 this outcome already serves for pipeline health applies here too: seeing this without writing a
 one-off SQL query, on a real repeatable cadence rather than remembering to check.
 
+**Extended 2026-09-28** (`changes/2026-09-28-data-insight-coverage-quality-admin-view.md`): as
+the tracked-company list, source count, and country/industry variety have all grown (134
+companies, 5 job-posting adapters, plus employment-event, scraped, and trusted-statistics
+sources), a new operator need surfaced, distinct from "what did the pipeline process" — "where is
+the platform's own data strong enough to support confident insight, and where is it thin." Left
+unanswered, this only shows up indirectly, after the fact, as a weak or missing answer in the
+user-facing Market Health experience. The same "don't make me query the database" pattern this
+outcome already serves applies here too, aimed at coverage and quality rather than processing
+status.
+
+**Extended 2026-09-28** (`changes/2026-09-28-technical-data-visibility-admin-view.md`): a sibling
+need surfaced in the same request, aimed not at insight coverage but at the platform's own
+technical data footprint — how many tables exist, how much data each holds, and which
+capabilities are actually reachable from MCP versus the frontend API versus neither. `ACCESS.md`
+already tracks the exposure side of this per capability; this extension is about giving the
+operator a single place to see it summarized, alongside the data volume side that nothing
+currently tracks at all.
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)
@@ -91,6 +109,13 @@ one-off SQL query, on a real repeatable cadence rather than remembering to check
   documented taxonomy, which real titles are piling up under Job Function's "Other Non-Tech"
   catch-all, and the current `unknown` rate — real signal for the next taxonomy revision,
   never auto-applied (added 2026-09-21)
+- The operator can see, at a glance, which countries, company sizes, sources, and business areas
+  the platform's captured data supports stronger insight for versus weaker — a pragmatic
+  coverage-and-quality summary, not a precision claim beyond what the underlying data actually
+  supports (added 2026-09-28)
+- The operator can see, at a glance, the platform's technical data footprint — how many tables
+  exist and how much data each holds — and a summary of which capabilities are exposed via MCP,
+  the frontend API, or neither (added 2026-09-28)
 - Only the operator — not end users or the public — can access this view
 - Using this view answers "what has the pipeline actually done" faster than writing a
   one-off SQL query would

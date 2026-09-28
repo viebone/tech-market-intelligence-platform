@@ -74,6 +74,20 @@ def insert_story_reaction(story_id: str, reaction: str, comment: str | None) -> 
 # for the routes these serve.
 # ---------------------------------------------------------------------------
 
+def count_platform_feedback() -> int:
+    """Total platform_feedback rows — Technical Data Visibility's Data
+    Footprint (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        return conn.execute("SELECT count(*) FROM platform_feedback").fetchone()[0]
+
+
+def count_story_reactions() -> int:
+    """Total story_reactions rows — Technical Data Visibility's Data
+    Footprint (backend/specs/pipeline-visibility/api.md)."""
+    with get_connection() as conn:
+        return conn.execute("SELECT count(*) FROM story_reactions").fetchone()[0]
+
+
 def get_feedback_summary() -> dict[str, Any]:
     """Overall platform rating aggregate + per-story reaction aggregate, for
     GET /admin/feedback. `by_story` left-joins the live Data Story catalogue

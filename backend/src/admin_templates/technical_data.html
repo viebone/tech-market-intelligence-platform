@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Technical Data Visibility — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Technical Data Visibility</h1>
+<div class="stat-label" style="margin-bottom: 16px;">
+  The platform's own technical data footprint, and where its capabilities are actually reachable
+  from — a structural snapshot, not a coverage judgement (see Data Coverage & Quality for that).
+</div>
+
+<h2>Data Footprint</h2>
+<div class="stat-label" style="margin-bottom: 8px;">{{ footprint.excluded_note }}</div>
+<div class="card-grid">
+  {% for row in footprint.footprint %}
+  <div class="card">
+    <div class="stat-value">{{ row.row_count }}</div>
+    <div class="stat-label">{{ row.category }} — rows</div>
+    <div class="stat-label" style="margin-top: 4px;">{{ row.tables | join(', ') }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2 style="margin-top: 24px;">Exposure Summary</h2>
+{% if exposure %}
+<div class="stat-label" style="margin-bottom: 8px;">
+  {{ exposure.total_capabilities }} capabilities tracked in <code>ACCESS.md</code> — how each is
+  reachable, summarized here (colour-neutral: none of the three states below is "good" or "bad").
+</div>
+<div class="card-grid">
+  <div class="card">
+    <div class="stat-value">{{ exposure.mcp_reachable }}</div>
+    <div class="stat-label">Reachable via MCP — {{ exposure.mcp_reachable }} of {{ exposure.total_capabilities }} capabilities</div>
+  </div>
+  <div class="card">
+    <div class="stat-value">{{ exposure.frontend_or_api_only }}</div>
+    <div class="stat-label">Reachable via frontend/API only — {{ exposure.frontend_or_api_only }} of {{ exposure.total_capabilities }} capabilities</div>
+  </div>
+  <div class="card">
+    <div class="stat-value">{{ exposure.not_exposed }}</div>
+    <div class="stat-label">Not exposed anywhere — {{ exposure.not_exposed }} of {{ exposure.total_capabilities }} capabilities</div>
+  </div>
+</div>
+<div class="stat-label" style="margin-top: 8px;">
+  Full capability-by-capability detail, including the stated reason behind every "not exposed"
+  row, lives in <code>ACCESS.md</code> at the product root.
+</div>
+{% else %}
+<div class="card"><div class="empty-state">Exposure summary unavailable — see ACCESS.md directly.</div></div>
+{% endif %}
+{% endblock %}

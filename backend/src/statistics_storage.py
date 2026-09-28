@@ -332,6 +332,37 @@ def get_statistic(observation_id: str) -> dict | None:
             "history": [{"id": h[0], "value": float(h[1]), "value_status": h[2], "released_on": h[3], "release_id": h[4]} for h in history]}
 
 
+def count_statistic_observations(source: str | None = None) -> int:
+    """
+    Total statistic_observations rows — for one publisher (Data Coverage &
+    Quality's "Coverage by source", backend/specs/pipeline-visibility/api.md,
+    to show a trusted-statistics source's own native volume without implying
+    comparability to job-posting adapters), or across all publishers when
+    `source` is omitted (Technical Data Visibility's Data Footprint, same
+    spec — the category total, not a per-publisher breakdown).
+    """
+    with get_connection() as conn:
+        if source is None:
+            return conn.execute("SELECT COUNT(*) FROM statistic_observations").fetchone()[0]
+        return conn.execute(
+            "SELECT COUNT(*) FROM statistic_observations o "
+            "JOIN statistic_series s ON s.id = o.series_id WHERE s.source = %s",
+            (source,),
+        ).fetchone()[0]
+
+
+def count_statistic_series() -> int:
+    """Total statistic_series rows — Technical Data Visibility's Data Footprint."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM statistic_series").fetchone()[0]
+
+
+def count_statistic_releases() -> int:
+    """Total statistic_releases rows — Technical Data Visibility's Data Footprint."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM statistic_releases").fetchone()[0]
+
+
 def list_statistics_sources() -> list[dict]:
     """Every REGISTERED publisher — not only ones that have produced data — with cadence, licence and collection state."""
     from source_licences import get_licence, overall_status

@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Trusted Statistics, Statistics Sources** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Trusted Statistics, Statistics Sources** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here), **Data Coverage & Quality** (added 2026-09-28 — `changes/2026-09-28-data-insight-coverage-quality-admin-view.md`), **Technical Data Visibility** (added 2026-09-28 — `changes/2026-09-28-technical-data-visibility-admin-view.md`). Always visible. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
@@ -166,6 +166,57 @@ data read directly from the pipeline's own stored results.
     shape as Sources & Licensing, since a source that has never run, or whose last file was
     rejected, is exactly what this view exists to make visible.
 
+12. **(Added 2026-09-28.)** Independently of every pipeline above, the operator can navigate to
+    **Data Coverage & Quality** to see, on one pragmatic summary page, where the platform's
+    captured data supports strong insight versus where it's thin — a single flat page, no
+    filtering or List → Detail drill-down, since the point is an at-a-glance cross-cut, not a
+    per-record inspection tool (the underlying records are already inspectable from Postings,
+    Employment Events, Market Observations, etc.). Four ranked lists, one per axis:
+    - **By Country** — every country with at least one posting, ranked by posting volume, plus an
+      explicit **"Unknown / not reported"** row for postings with no country recorded. This row
+      is never hidden or folded into the ranking silently — some sources (Personio) never report
+      a country at all, so pretending every posting has a known country would misstate coverage
+      rather than reveal it.
+    - **By Company Size** — every `employer_size_band` value present among tracked companies,
+      ranked by number of companies in that band and their combined posting volume. A band held
+      up by very few companies reads as limited, not blended into a false sense of breadth.
+    - **By Source** — every registered source (Greenhouse, Lever, Ashby, Workable, Personio,
+      IT Jobs Watch, ONS Vacancy Survey), ranked by data volume, each paired with that source's
+      own known structural gaps (e.g. "No salary field," "No country field") pulled from
+      `DATA_SOURCES.md` rather than re-derived — this view surfaces those caveats, it doesn't
+      duplicate their source of truth.
+    - **By Business Area** — every `COMPANY_INDUSTRY` tag present among tracked companies, ranked
+      by number of companies and combined posting volume. A tag held up by a single company reads
+      as single-company coverage, not sector-wide insight, since a lone employer's hiring pattern
+      is not a sector trend.
+
+    Each list uses the same three-tier strength language throughout, defined once in Business
+    Logic (deferred to `/new-backend-spec` — see Open Questions): **Strong**, **Limited**, and
+    **Negligible/none**. This page never invents a numeric "quality score" — every row shows its
+    real underlying counts (postings, companies) alongside its tier, so the tier reads as a
+    plain-language summary of real numbers, never as an opaque verdict.
+
+13. **(Added 2026-09-28.)** Independently of every pipeline above, the operator can navigate to
+    **Technical Data Visibility** to see, on one pragmatic summary page, the platform's own
+    technical data footprint — a distinct question from every other view here, which all show
+    *what the pipeline has done* or *how good the result is*; this page answers *how big is this
+    platform, structurally, right now*. Two sections, no filtering or drill-down:
+    - **Data footprint** — one row per storage category the platform holds today (job postings +
+      classifications + requirements, employment events, market benchmark observations + skill
+      associations, trusted statistics series + observations, user feedback), each showing how
+      many tables back it and a total row count. This is a structural inventory, not a coverage
+      judgement — it carries no strength tier, unlike Data Coverage & Quality's lists, because
+      "how much data exists" and "is that data good enough" are different questions answered by
+      two different pages.
+    - **Exposure summary** — a plain count of the platform's capabilities broken down by where
+      they're reachable from: via MCP (an external AI acting on a user's behalf), via the
+      frontend/backend API (this platform's own product), or neither. This reads the same
+      reachability decisions `ACCESS.md` already records capability-by-capability (built for the
+      MCP-exposure-review process) — this page is a summary view of that existing record, not a
+      second, separately-maintained tracking mechanism. Clicking through shows the same
+      capability-by-capability detail `ACCESS.md` already documents, in this page's own layout
+      rather than sending the operator to a raw markdown file.
+
 ---
 
 ## Visual Design
@@ -224,6 +275,23 @@ over unchanged. This is the same visual language, applied to a different layout 
   date" when not yet due, `amber-600` "Due for next run" when the interval has elapsed, and
   `gray-300` "Never run" (a neutral state, not a failure — a source can be registered and simply
   not have run yet).
+- **Data Coverage & Quality page** (added 2026-09-28): four `RankedBarList`-style horizontal
+  ranked lists stacked on one page (same visual family as the existing Classification
+  Distribution charts), each row pairing a bar (length = the row's real count) with a strength
+  badge. Strength badges reuse the dashboard's existing semantic mapping — never a new colour
+  meaning: `emerald-600` "Strong," `amber-600` "Limited" (a caveat, not a failure — the same
+  register as "Not yet confirmed"), `gray-500` "Negligible" (matches Taxonomy Version Progress's
+  "stale" grey, not an error state). The "Unknown / not reported" row (By Country list) always
+  renders last, visually separated by a thin `border-gray-700` rule, so it reads as "outside the
+  ranking" rather than competing with real countries for rank position.
+- **Technical Data Visibility page** (added 2026-09-28): the Data Footprint section uses the
+  same summary-card treatment as Overview's summary numbers (`text-2xl font-semibold`/`gray-100`
+  numeral, `text-xs`/`gray-400` label beneath) — one card per storage category, no bars, since
+  there is no "more/less of the max" comparison to draw, only a flat inventory. The Exposure
+  Summary section uses three summary numbers side by side (MCP-reachable / frontend-reachable /
+  neither), each in the same neutral `gray-300` treatment — never a semantic colour, since a
+  capability being MCP-only, frontend-only, or neither is a design fact, not a status to flag as
+  good or bad.
 
 ---
 
@@ -268,6 +336,61 @@ over unchanged. This is the same visual language, applied to a different layout 
   {relative time} — see Ingestion Runs" / "No batch needed" (backlog below the trigger
   floor). This is the operator's single answer to "is the backlog draining?"
 
+**Coverage by Country / Company Size / Source / Business Area** (Data Coverage & Quality, added
+2026-09-28) — four instances of the same chart shape, one per axis:
+- Type: horizontal ranked bar list, one bar per value on that axis, sorted descending by the
+  list's stated volume metric
+- Title: the axis name — "By Country," "By Company Size," "By Source," "By Business Area"
+- Subtitle: what's counted and its scope, stated in full every time (never assumed from the
+  title alone) — e.g. "Job postings by country, across all tracked sources, as of {last
+  ingestion run time}"
+- Bar length: postings count (By Country, By Business Area) or a stated combination of company
+  count + posting count (By Company Size, By Source — both numbers shown as text alongside the
+  bar, not silently combined into one)
+- Unit: always "postings" or "companies," stated per bar via hover and inline text, never a bare
+  number with no unit
+- Colour / legend: three-tier strength badge per row (`emerald-600` "Strong," `amber-600`
+  "Limited," `gray-500` "Negligible") — a fixed legend renders once above each list, not
+  per-row, naming what each colour means; colour is never the only signal, every badge carries
+  its text label
+- Hover: exact counts (postings, companies as applicable) and the row's %-of-total
+- Loading state: skeleton pulse bars, same as every other chart on this dashboard
+- Empty state: "No coverage data yet — run the ingestion pipeline to populate this view" (By
+  Country / By Source) — mirrors the dashboard's existing "no data yet" pattern
+- By Country only: the "Unknown / not reported" row never carries a strength badge (it isn't a
+  coverage tier, it's the acknowledgement that no country was recorded) — shown in `gray-400`
+  text with its own count and %, visually separated per the Visual Design note above
+- By Source only: each bar's row also shows that source's known structural gaps as small inline
+  text beneath the bar (e.g. "No salary field · No country field" for Personio) — pulled from
+  `DATA_SOURCES.md`, not re-derived from the data itself
+
+**Data Footprint** (Technical Data Visibility, added 2026-09-28)
+- Type: a grid of summary cards, one per storage category — not a chart, a plain inventory
+- Title: the category name (e.g. "Job Postings," "Employment Events," "Market Benchmark Data,"
+  "Trusted Statistics," "User Feedback")
+- Subtitle: which tables back it (e.g. "raw_postings + classifications + posting_requirements")
+  and the total row count across them, as of the current page load
+- Unit: always "rows," stated per card, never a bare number
+- No colour, no hover beyond a plain tooltip repeating the subtitle text — this is a structural
+  fact, not a state to flag
+- Loading state: skeleton pulse cards, same as every other summary-card view on this dashboard
+- Empty state: not applicable — every category always has at least its own tables, even at zero
+  rows; a zero-row category reads as "0 rows," not as a missing card
+
+**Exposure Summary** (Technical Data Visibility, added 2026-09-28)
+- Type: three summary numbers side by side, plus a link through to the full capability list
+- Title: "Reachable via MCP" / "Reachable via frontend/API" / "Not exposed anywhere"
+- Subtitle: "{n} of {total} capabilities," so each number is legible against the whole, not in
+  isolation
+- Unit: always "capabilities"
+- Colour: none — `gray-300` neutral throughout (Visual Design, above); this is a design fact, not
+  a status
+- Hover: not applicable to the summary numbers themselves; the linked-through detail list reuses
+  whatever table treatment `ACCESS.md`'s own capability rows already imply
+- Loading state: skeleton pulse
+- Empty state: not applicable on a product that already has an MCP layer (this page only exists
+  because one does)
+
 ---
 
 ## Interactions
@@ -292,6 +415,10 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator applies a filter on the Skill Associations table (source, role) | Table re-queries and re-renders with the filtered set, same pattern |
 | Operator clicks a Skill Associations row | Navigates to that association's Detail view |
 | Operator opens Scraped Source Runs | Shows one row per registered scraped-source adapter — last run time (or "Never run"), and a due/not-due status badge — no filtering or pagination needed at this scale |
+| Operator opens Data Coverage & Quality | Shows all four ranked lists at once — no filtering, sorting, or drill-down; this page is a fixed cross-cut summary, not an explorable table |
+| Operator hovers a Coverage & Quality bar | Tooltip shows exact counts (postings and/or companies) and %-of-total for that row |
+| Operator opens Technical Data Visibility | Shows the Data Footprint cards and the Exposure Summary numbers at once — no filtering; a fixed structural snapshot |
+| Operator clicks through from the Exposure Summary | Navigates to a flat capability-by-capability list (the same information `ACCESS.md` records), showing each capability's name and its frontend/API/MCP reachability |
 
 ---
 
@@ -376,6 +503,29 @@ over unchanged. This is the same visual language, applied to a different layout 
 - **(Added 2026-09-18.) An observation has no matching `scrape_extractions` row** (predates the
   LLM-extraction rebuild, or the extraction-cache row was since superseded). The Detail view
   shows "Extraction provenance unavailable" rather than a blank or fabricated value.
+- **(Added 2026-09-28.) A posting has no recorded country** (Personio-sourced postings, always —
+  and any other source's posting where the free-text location didn't resolve via
+  `COUNTRY_NAME_TO_ISO2`). Counted in the By Country list's "Unknown / not reported" row, never
+  silently dropped from the total and never guessed at.
+- **(Added 2026-09-28.) A tracked company has no `employer_size_band`** (not yet added to
+  `COMPANY_HEADCOUNT`/`UNKNOWN_HEADCOUNT` per `EMPLOYER_SIZE_STANDARDS.md`). Counted in its own
+  explicit "Unknown" row in By Company Size, same treatment as country.
+- **(Added 2026-09-28.) A company's board resolves but currently lists zero roles** ("returns 0"
+  in `DATA_SOURCES.md` §4) or 404s entirely (e.g. `plaid`). Neither is hidden from this page —
+  both depress that company's contribution to its source/country/industry/size rows exactly as
+  the real data does; this page never back-fills a dead or empty board with an assumed value.
+- **(Added 2026-09-28.) A business area or company-size band has exactly one company in it.**
+  Reads as "Limited" or lower regardless of that one company's own posting volume — a single
+  employer's hiring pattern is never presented as if it were sector- or band-wide insight, no
+  matter how much data that one employer happens to produce.
+- **(Added 2026-09-28.) A storage category has zero rows** (e.g. a fresh deployment before any
+  ingestion has run). Its Data Footprint card reads "0 rows" plainly — not omitted, not shown as
+  an error — since a category can exist structurally before it holds any data.
+- **(Added 2026-09-28.) `ACCESS.md` is out of date relative to the actual code** (a capability
+  was shipped without its MCP-exposure decision being recorded, the exact failure Rule 12 exists
+  to catch). This page has no way to detect that on its own — it can only summarize what
+  `ACCESS.md` currently says, honestly, not verify it against the running MCP server's actual
+  tool list. This is a real limitation, not silently glossed over — see Open Questions.
 
 ---
 
@@ -388,6 +538,8 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Frequency of falling back to direct database queries to answer a pipeline question | Operator self-report | Trends toward zero after adoption |
 | Failure/error discoverability | Observed usage | Every classification or extraction failure — interactive **or batch** — is visible from the dashboard without cross-referencing logs |
 | Time to answer "is the requirements backlog draining or stuck?" | Observed usage / operator self-report | Under 15 seconds from opening Overview |
+| Time to answer "where is our data weakest right now?" | Observed usage / operator self-report | Under 30 seconds from opening Data Coverage & Quality |
+| Time to answer "how big is this platform, structurally, right now?" | Observed usage / operator self-report | Under 20 seconds from opening Technical Data Visibility |
 
 ---
 
@@ -405,3 +557,21 @@ over unchanged. This is the same visual language, applied to a different layout 
 - **Ingestion run detail — inline expand vs. separate page** — left as an implementation
   choice for the frontend spec; this experience only requires that the per-source/company
   breakdown be reachable from the run's row.
+- **(Added 2026-09-28.) Strong / Limited / Negligible thresholds** — the exact numeric cutoffs
+  (e.g. postings-per-country, companies-per-industry) that separate the three tiers are a
+  Business Logic decision, deferred to `/new-backend-spec`. This experience specifies the
+  three-tier language and its visual treatment, not the numbers behind it.
+- **(Added 2026-09-28.) Company-size volume basis** — whether "combined posting volume" per
+  `employer_size_band` should weight by company count too (so one very large board doesn't make
+  a thinly-covered band look strong), or report raw totals with company count shown alongside for
+  the operator to judge themselves. Deferred to `/new-backend-spec`.
+- **(Added 2026-09-28.) `ACCESS.md` parsing mechanism** — how the Exposure Summary reads
+  `ACCESS.md`'s existing markdown tables into the three counts (a runtime parse of the file vs.
+  some other mechanism) is a technical decision, deferred to `/new-backend-spec`. This experience
+  only requires that the three numbers reflect `ACCESS.md`'s current content, whatever the
+  mechanism — never a separately-maintained duplicate of that record.
+- **(Added 2026-09-28.) Staleness detection** — whether this page should ever attempt to flag
+  that `ACCESS.md` might be out of date relative to the real MCP server's tool list (Edge Cases,
+  above), versus accepting that limitation as out of scope for a first version. Deferred to
+  `/new-backend-spec`; leaning toward out-of-scope unless that spec finds a cheap, reliable way to
+  cross-check the two.
