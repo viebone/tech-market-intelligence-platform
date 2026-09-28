@@ -222,6 +222,34 @@ SOURCE_LICENCES: dict[str, SourceLicence] = {
     ),
 }
 
+def category_for_source(source: str) -> str:
+    """
+    Which kind of source this is — "job_posting", "employment_event",
+    "scraped", or "trusted_statistics" — derived from each category's own
+    existing adapter/publisher registry, never a separately-maintained
+    mapping. Added 2026-09-28 for the merged Sources & Licensing admin view
+    (backend/specs/pipeline-visibility/api.md) — decides both the category
+    badge and which cadence shape applies to a source. Raises `KeyError` if
+    `source` isn't found in any of the four registries — that would mean
+    `test_source_licences.py`'s completeness test and this function have
+    drifted, which should never happen silently.
+    """
+    from employment_events import ALL_EMPLOYMENT_EVENT_ADAPTERS
+    from scraping import ALL_SCRAPED_SOURCE_ADAPTERS
+    from sources import ALL_SOURCE_ADAPTERS
+    from trusted_stats.registry import TRUSTED_PUBLISHERS
+
+    if source in {a.name for a in ALL_SOURCE_ADAPTERS}:
+        return "job_posting"
+    if source in {a.name for a in ALL_EMPLOYMENT_EVENT_ADAPTERS}:
+        return "employment_event"
+    if source in {a.name for a in ALL_SCRAPED_SOURCE_ADAPTERS}:
+        return "scraped"
+    if source in TRUSTED_PUBLISHERS:
+        return "trusted_statistics"
+    raise KeyError(f"{source!r} is registered in SOURCE_LICENCES but not found in any source category registry")
+
+
 def get_licence(source: str) -> SourceLicence:
     """
     The one lookup every adapter (scraped or API-based) uses. Raises

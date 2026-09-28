@@ -82,6 +82,16 @@ already tracks the exposure side of this per capability; this extension is about
 operator a single place to see it summarized, alongside the data volume side that nothing
 currently tracks at all.
 
+**Extended 2026-09-28** (`changes/2026-09-28-consolidate-sources-licensing-views.md`): with the
+dashboard now at eight-plus admin views, the operator surfaced the opposite failure mode from the
+two extensions just above — not a missing view, but the same underlying fact (a registered
+source's licence, cadence, and collected volume) split across three separate pages (Sources &
+Licensing, Scraped Source Runs, Statistics Sources) simply because they were added at different
+times, on different days, for different source types. "Don't make me query the database" applies
+equally to "don't make me open three pages to understand one source." This extension merges those
+three into one view — no new fact is added, existing ones are just organized around what the
+operator is actually asking ("tell me about this source"), not around when each fact was added.
+
 ## Success looks like
 - The operator can see, at a glance, high-level counts of what the pipeline has processed and
   indexed (postings fetched, classified, skills-extracted; by run, by source, by status)

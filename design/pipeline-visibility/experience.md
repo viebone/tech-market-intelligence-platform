@@ -53,7 +53,7 @@ not drawn from `design/information-architecture.md`'s Content Taxonomy:
 
 | Zone | Priority | Contains |
 |---|---|---|
-| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`), Market Observations, Skill Associations, Scraped Source Runs (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Trusted Statistics, Statistics Sources** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here), **Data Coverage & Quality** (added 2026-09-28 — `changes/2026-09-28-data-insight-coverage-quality-admin-view.md`), **Technical Data Visibility** (added 2026-09-28 — `changes/2026-09-28-technical-data-visibility-admin-view.md`). Always visible. |
+| Sidebar Nav | Primary | Fixed left-hand navigation: Overview, Postings, Ingestion Runs, Employment Events, Sources & Licensing (added 2026-09-16 — `changes/2026-09-16-admin-licensing-visibility.md`; **merged with Scraped Source Runs and Statistics Sources 2026-09-28** — `changes/2026-09-28-consolidate-sources-licensing-views.md` — this one nav entry now covers every registered source of every kind), Market Observations, Skill Associations (added 2026-09-18 — `changes/2026-09-18-admin-market-benchmark-visibility.md`), Taxonomy Health (added 2026-09-21 — `changes/2026-09-21-emerging-role-detection.md`), **Trusted Statistics** (added 2026-09-24 — `changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`), **Feedback, Feedback Responses** (added 2026-09-23 — `changes/2026-09-23-user-feedback-mechanism.md`, corrected 2026-09-23 — `changes/2026-09-23-feedback-responses-not-visible-in-admin.md`: Feedback Responses was missing from this list on first add, leaving it reachable only via an inline text link on the Feedback summary page instead of its own nav entry, unlike every other list view here), **Data Coverage & Quality** (added 2026-09-28 — `changes/2026-09-28-data-insight-coverage-quality-admin-view.md`), **Technical Data Visibility** (added 2026-09-28 — `changes/2026-09-28-technical-data-visibility-admin-view.md`). Always visible. Two entries retired 2026-09-28: **Scraped Source Runs** and **Statistics Sources**, both folded into Sources & Licensing. |
 | Main Content | Primary | The active view's content — summary cards, charts, tables, or a posting's/event's detail. |
 
 ---
@@ -123,15 +123,40 @@ data read directly from the pipeline's own stored results.
    by source, event type, direction, confidence, or country, and clicks a row to see that
    event's full stored record (including the source's raw response, verbatim) — the same
    List → Detail shape as Postings, applied to a different table.
-9. **(Added 2026-09-16.)** Independently of every pipeline above, the operator can navigate to
-   **Sources & Licensing** from the sidebar to see, at a glance, every registered external data
-   source's licence status: the source's name, its confirmed licence variant (or an honest
-   "not yet confirmed" state), whether commercial use is permitted, the exact attribution text
-   to use if this data is ever shown or republished, and a link to the licence itself. No
-   filtering or drill-down — this is a single flat list, not a List → Detail pattern, since the
-   full detail *is* the list (there's no larger underlying record to drill into, unlike a
-   posting or an event). This view answers "can we actually use this data, and how do we credit
-   it" without opening `LICENSING.md` or reading `scraping/licences.py` directly.
+9. **(Added 2026-09-16; merged 2026-09-28 —
+   `changes/2026-09-28-consolidate-sources-licensing-views.md`.)** Independently of every
+   pipeline above, the operator can navigate to **Sources & Licensing** from the sidebar to see,
+   at a glance, **every registered external data source of every kind** — job-posting adapters,
+   employment-event adapters, scraped sources, and trusted-statistics publishers alike — as one
+   flat list, not four. No filtering or drill-down — the full detail *is* the list, same
+   reasoning as always (there's no larger underlying record per source to drill into). Every row
+   shows the same core facts regardless of source type:
+   - The source's name and its category (Job Posting / Employment Event / Scraped /
+     Trusted Statistics)
+   - Its confirmed licence variant (or an honest "not yet confirmed" state), whether commercial
+     use is permitted, the exact attribution text to use if this data is ever shown or
+     republished, and a link to the licence itself — unchanged from before the merge, since this
+     fact was already tracked identically for every source type
+   - Its cadence, stated honestly for what that source type actually has: a scraped or
+     trusted-statistics source shows whether it's up to date, due for its next run, or has never
+     run (unchanged from the former Scraped Source Runs / Statistics Sources views); a
+     job-posting or employment-event adapter — which has never had an individually-gated cadence,
+     only a shared cron schedule — states that plainly ("Runs on the shared daily ingestion
+     schedule," linking to Ingestion Runs) rather than a fabricated per-source due/not-due state
+   - For a trusted-statistics publisher specifically: its trust-bar sign-off (reviewer, date),
+     how often it's checked, its latest release and period, how many days old that release is
+     (flagged **Overdue** past the normal cadence), how many series and figures it holds, and any
+     release the system refused to accept and why — every fact the former Statistics Sources view
+     showed, now a sub-line on this source's one row here instead of a second page to visit
+   - No source's row is omitted for having never run or produced data yet — a
+     registered-but-silent source is exactly the state this view exists to make visible, the same
+     principle the pre-merge Scraped Source Runs and Statistics Sources views both already
+     followed
+
+   This view answers "can we actually use this data, how do we credit it, and is it current" for
+   *any* registered source, in one place — without opening `LICENSING.md`, reading
+   `scraping/licences.py`, or checking three different admin pages depending on which kind of
+   source it happens to be.
 10. **(Added 2026-09-18.)** Independently of every pipeline above, the operator can navigate to
     **Market Observations** to see every captured demand/salary snapshot from a scraped
     market-benchmark source (role/skill, employment type, location, period, rank, vacancy
@@ -141,11 +166,9 @@ data read directly from the pipeline's own stored results.
     produced these values and whether that extraction was fresh or reused from cache (the same
     "show your provenance" discipline every other detail view here already follows). The
     operator can separately navigate to **Skill Associations** to see the weighted role↔skill
-    graph the same source produced — same List → Detail shape, filtered by source or role, and
-    can navigate to **Scraped Source Runs** to see, for every *registered* scraped-source adapter
-    (not only ones that have produced data yet), when it last ran and whether it's currently due
-    for its next run — a flat list, same shape as Sources & Licensing, since a source that's
-    never run is exactly the state this view exists to make visible, not hide.
+    graph the same source produced — same List → Detail shape, filtered by source or role.
+    (**Scraped Source Runs**, previously a third view reachable from this step, merged into
+    Sources & Licensing 2026-09-28 — see step 9.)
 
 11. **(Added 2026-09-24.)** Independently of every pipeline above, the operator can navigate to
     **Trusted Statistics** to see every stored figure from a trusted external publisher (today:
@@ -158,13 +181,8 @@ data read directly from the pipeline's own stored results.
     row, the series definition (what it counts, what it leaves out, seasonal adjustment, links to
     the publisher's methodology and dataset page), the release it came from and how that release
     was checked, the licence and exact attribution text, and the **version history** for that
-    period ("Never revised" when there is only one). The operator can separately navigate to
-    **Statistics Sources** to see, for every *registered* publisher (not only ones that have
-    produced data), its trust-bar sign-off, licence status, how often it is checked, when it last
-    ran and with what outcome, the latest release and period it holds, how many series and
-    figures are stored, and any release the system refused to accept and why — a flat list, same
-    shape as Sources & Licensing, since a source that has never run, or whose last file was
-    rejected, is exactly what this view exists to make visible.
+    period ("Never revised" when there is only one). (**Statistics Sources**, previously a second
+    view reachable from this step, merged into Sources & Licensing 2026-09-28 — see step 9.)
 
 12. **(Added 2026-09-28.)** Independently of every pipeline above, the operator can navigate to
     **Data Coverage & Quality** to see, on one pragmatic summary page, where the platform's
@@ -251,30 +269,38 @@ over unchanged. This is the same visual language, applied to a different layout 
 - **Detail view**: a single-column stacked layout of labelled fields, using the same
   Surface/card treatment (`gray-800`, `border-gray-700`, `rounded-lg`) as the rest of the
   product.
-- **Sources & Licensing table** (added 2026-09-16): same table tokens as Postings/Ingestion
-  Runs. Two status badges per row, each pairing colour with a plain-language label — never a
-  raw `True`/`False` or the bare word "confirmed":
-  - **Confirmation status**: `emerald-600` "Licence confirmed" vs. `amber-600` "Not yet
-    confirmed" — amber, not red, since an unconfirmed licence is a real, honest, working state
-    in this codebase (per Business Logic — polite scraping), not an error.
-  - **Commercial-use status**: `emerald-600` "Commercial use OK" vs. `red-600` "Non-commercial
-    only" — red here (unlike the confirmation badge) because using non-commercial-licensed data
-    commercially would be a real problem, not a benign pending state. A source that's
-    unconfirmed shows this badge as `amber-600` "Unknown — treat as non-commercial," never a
-    false "OK."
-  - The attribution text and licence link render as plain text/link beneath the two badges, not
-    hidden behind a further click — per `data-legibility`'s Provenance rule, this is exactly
-    the kind of caveat that must be visible, not buried.
+- **Sources & Licensing table** (added 2026-09-16; **merged with Scraped Source Runs and
+  Statistics Sources 2026-09-28** — `changes/2026-09-28-consolidate-sources-licensing-views.md`):
+  same table tokens as Postings/Ingestion Runs. One row per registered source, of every kind, in
+  one list. Each row carries:
+  - A neutral `gray-300` category label (Job Posting / Employment Event / Scraped / Trusted
+    Statistics) — never a semantic colour, since a source's category is a fact, not a status
+  - Two licence status badges, each pairing colour with a plain-language label — never a raw
+    `True`/`False` or the bare word "confirmed": **Confirmation status** (`emerald-600` "Licence
+    confirmed" vs. `amber-600` "Not yet confirmed" — amber, not red, since an unconfirmed licence
+    is a real, honest, working state per Business Logic — polite scraping, not an error) and
+    **Commercial-use status** (`emerald-600` "Commercial use OK" vs. `red-600` "Non-commercial
+    only" — red here because using non-commercial-licensed data commercially would be a real
+    problem, not a benign pending state; an unconfirmed source shows `amber-600` "Unknown — treat
+    as non-commercial," never a false "OK")
+  - A cadence badge, unchanged in meaning from the pre-merge Scraped Source Runs/Statistics
+    Sources views: `emerald-600` "Up to date," `amber-600` "Due for next run," `gray-300` "Never
+    run" (neutral, not a failure) for a scraped or trusted-statistics source; a plain `gray-300`
+    "Runs on shared schedule" label (no due/not-due state at all) for a job-posting or
+    employment-event adapter, since those were never individually cadence-gated — inventing a
+    due/not-due state for them would fabricate a distinction that doesn't exist
+  - For a trusted-statistics publisher only: a sub-line beneath the main row carrying its
+    trust-bar sign-off, check interval, latest release/period, an `amber-600` **Overdue** badge
+    when past the normal cadence, series/figure counts, and any rejected release — the same facts
+    the pre-merge Statistics Sources view showed, unchanged, just relocated
+  - The attribution text and licence link render as plain text/link beneath the badges, not
+    hidden behind a further click — per `data-legibility`'s Provenance rule, unchanged from
+    before the merge
 - **Market Observations / Skill Associations tables** (added 2026-09-18): same table tokens as
   every other List view here — no new tokens needed. One addition: the Detail view's extraction
   provenance line pairs a `gray-300` "Fresh extraction" or "Reused from cache" label with the
   model name and timestamp — informational, not a warning state, so neither uses a semantic
   colour (unlike the licence badges above, where colour carries real meaning).
-- **Scraped Source Runs table** (added 2026-09-18): same table tokens as Sources & Licensing.
-  One status badge per row, colour + label together, never colour alone: `emerald-600` "Up to
-  date" when not yet due, `amber-600` "Due for next run" when the interval has elapsed, and
-  `gray-300` "Never run" (a neutral state, not a failure — a source can be registered and simply
-  not have run yet).
 - **Data Coverage & Quality page** (added 2026-09-28): four `RankedBarList`-style horizontal
   ranked lists stacked on one page (same visual family as the existing Classification
   Distribution charts), each row pairing a bar (length = the row's real count) with a strength
@@ -414,7 +440,7 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator clicks a Market Observations row | Navigates to that observation's Detail view, including its raw scraped fragment and — when available — its extraction provenance (model, fresh vs. cached) |
 | Operator applies a filter on the Skill Associations table (source, role) | Table re-queries and re-renders with the filtered set, same pattern |
 | Operator clicks a Skill Associations row | Navigates to that association's Detail view |
-| Operator opens Scraped Source Runs | Shows one row per registered scraped-source adapter — last run time (or "Never run"), and a due/not-due status badge — no filtering or pagination needed at this scale |
+| Operator opens Sources & Licensing | Shows one row per registered source of every kind (job-posting, employment-event, scraped, trusted-statistics) — licence badges, category label, and cadence badge (or "Runs on shared schedule" for job-posting/employment-event sources); a trusted-statistics row also shows its trust-bar/release sub-line — no filtering or pagination needed at this scale (merged 2026-09-28, folding in the former Scraped Source Runs and Statistics Sources interactions) |
 | Operator opens Data Coverage & Quality | Shows all four ranked lists at once — no filtering, sorting, or drill-down; this page is a fixed cross-cut summary, not an explorable table |
 | Operator hovers a Coverage & Quality bar | Tooltip shows exact counts (postings and/or companies) and %-of-total for that row |
 | Operator opens Technical Data Visibility | Shows the Data Footprint cards and the Exposure Summary numbers at once — no filtering; a fixed structural snapshot |
@@ -495,11 +521,18 @@ over unchanged. This is the same visual language, applied to a different layout 
   pattern as every other view here — not an error, just nothing to show yet.
 - **(Added 2026-09-18.) No market observations or skill associations have been captured yet.**
   Same "No data yet" empty-state pattern.
-- **(Added 2026-09-18.) A registered scraped-source adapter has never run.** Scraped Source Runs
-  shows it with "Never run" (neutral, `gray-300`), not an error and not omitted from the list —
-  this view's whole purpose is making a never-run source visible, unlike the Employment Events
-  summary's "only sources present in data" convention (a deliberate difference, not an
-  inconsistency — see `changes/2026-09-18-admin-market-benchmark-visibility.md`'s Decision Log).
+- **(Added 2026-09-18; view merged into Sources & Licensing 2026-09-28.) A registered scraped or
+  trusted-statistics source has never run.** Its cadence badge reads "Never run" (neutral,
+  `gray-300`), not an error and not omitted from the list — this view's whole purpose is making a
+  never-run source visible, unlike the Employment Events summary's "only sources present in data"
+  convention (a deliberate difference, not an inconsistency — see
+  `changes/2026-09-18-admin-market-benchmark-visibility.md`'s Decision Log). A job-posting or
+  employment-event source is never shown "Never run" — it always shows "Runs on shared schedule,"
+  since it was never individually cadence-gated in the first place (Business Logic).
+- **(Added 2026-09-28.) A trusted-statistics publisher's latest release is older than its normal
+  cadence.** Its sub-line shows an `amber-600` "Overdue" badge with the day count, distinct from
+  "Never run" (which means no release has ever been ingested at all, a different, earlier state)
+  — carried over unchanged from the pre-merge Statistics Sources view.
 - **(Added 2026-09-18.) An observation has no matching `scrape_extractions` row** (predates the
   LLM-extraction rebuild, or the extraction-cache row was since superseded). The Detail view
   shows "Extraction provenance unavailable" rather than a blank or fabricated value.

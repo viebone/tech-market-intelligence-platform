@@ -3,8 +3,11 @@
 {% block content %}
 <h1>Sources &amp; Licensing</h1>
 <div class="stat-label" style="margin-bottom: 8px;">
-  What we're actually allowed to do with each external data source's data. Full detail:
-  <code>LICENSING.md</code> at the product root.
+  Every registered external data source — job-posting, employment-event, scraped, and
+  trusted-statistics alike — in one place: what we're allowed to do with its data, and how
+  current it is. Full licence detail: <code>LICENSING.md</code> at the product root. (Merged
+  2026-09-28 from this page plus the former Scraped Source Runs and Statistics Sources pages —
+  <code>changes/2026-09-28-consolidate-sources-licensing-views.md</code>.)
 </div>
 
 <div class="card" style="margin-bottom: 16px;">
@@ -22,10 +25,12 @@
   <thead>
     <tr>
       <th>Source</th>
+      <th>Category</th>
       <th>What we take</th>
       <th>Licence</th>
       <th>Status</th>
       <th>Commercial use</th>
+      <th>Cadence</th>
       <th>Attribution</th>
     </tr>
   </thead>
@@ -33,6 +38,7 @@
     {% for s in sources %}
     <tr>
       <td>{{ s.source }}</td>
+      <td><span class="badge muted">{{ s.category | replace('_', ' ') | title }}</span></td>
       <td>{{ s.data_summary }}</td>
       <td>{% if s.licence_url %}<a href="{{ s.licence_url }}" target="_blank" rel="noopener">{{ s.licence }}</a>{% else %}{{ s.licence }}{% endif %}</td>
       <td>
@@ -45,8 +51,38 @@
         {% elif s.permits_commercial_use %}<span class="stat-label">Licence permits it</span>
         {% else %}<span class="stat-label">Licence says non-commercial only{% if s.status == 'licensed' %} — not yet rejected, but worth reviewing{% endif %}</span>{% endif %}
       </td>
+      <td>
+        {% if s.cadence.type == 'shared_schedule' %}
+        <span class="stat-label">{{ s.cadence.schedule_label }}</span>
+        {% else %}
+        {% if s.cadence.last_run_at is none %}<span class="stat-label">Never run</span>
+        {% elif s.cadence.is_due %}<span class="badge neutral">Due for next run</span>
+        {% else %}<span class="badge success">Up to date</span>{% endif %}
+        {% endif %}
+      </td>
       <td>{{ s.attribution_text }}</td>
     </tr>
+    {% if s.statistics_detail %}
+    <tr>
+      <td colspan="8">
+        <div class="card" style="margin: 4px 0 8px;">
+          <div class="field-row"><div class="field-label">Publisher / programme</div><div class="field-value">{{ s.statistics_detail.publisher }} — {{ s.statistics_detail.programme }}</div></div>
+          <div class="field-row"><div class="field-label">Trust bar</div><div class="field-value">Signed off {{ s.statistics_detail.trust_bar_reviewed_on }} — {{ s.statistics_detail.trust_bar_reviewed_by }}</div></div>
+          <div class="field-row"><div class="field-label">Checked at most every</div><div class="field-value">{{ '%g' % s.statistics_detail.min_check_interval_hours }} hours (enforced before any request)</div></div>
+          <div class="field-row"><div class="field-label">Latest release held</div><div class="field-value">
+            {{ s.statistics_detail.latest_release_date or '—' }}{% if s.statistics_detail.latest_period_label %} — newest period {{ s.statistics_detail.latest_period_label }}{% endif %}
+            {% if s.statistics_detail.overdue %}<span class="badge neutral">Overdue</span> no new release ingested for {{ s.statistics_detail.days_since_latest_release }} days — releases normally arrive every 4–5 weeks (flagged after {{ s.statistics_detail.overdue_after_days }} days)
+            {% elif s.statistics_detail.days_since_latest_release is not none %}<span class="stat-label">({{ s.statistics_detail.days_since_latest_release }} days ago)</span>{% endif %}
+          </div></div>
+          <div class="field-row"><div class="field-label">Stored</div><div class="field-value">{{ s.statistics_detail.series_count }} series, {{ s.statistics_detail.observation_count }} figures (all versions)</div></div>
+          <div class="field-row"><div class="field-label">Last refused release</div><div class="field-value">
+            {% if s.statistics_detail.last_rejected_release %}<span class="badge neutral">Refused</span> {{ s.statistics_detail.last_rejected_release.release_date }} — {{ s.statistics_detail.last_rejected_release.validation_summary }}
+            {% else %}None{% endif %}
+          </div></div>
+        </div>
+      </td>
+    </tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>

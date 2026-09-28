@@ -376,40 +376,86 @@ stored, per `design/pipeline-visibility/experience.md`'s Edge Cases. Each row li
 | 404 | No employment event with that id |
 
 ### GET /admin/licensing
-**Added 2026-09-16** (`changes/2026-09-16-admin-licensing-visibility.md`).
-**Purpose**: Every registered external data source's licence status, per
-`design/pipeline-visibility/experience.md` User Flow step 9. A flat list, not a List → Detail
-pattern — there's no larger underlying record per source to drill into (unlike a posting or an
-event), so the full detail is the list itself.
+**Added 2026-09-16** (`changes/2026-09-16-admin-licensing-visibility.md`); **merged with
+`GET /admin/scrape-runs` and `GET /admin/statistics-sources` 2026-09-28**
+(`changes/2026-09-28-consolidate-sources-licensing-views.md`).
+**Purpose**: every registered external data source — of every kind — with its licence status,
+category, and cadence, per `design/pipeline-visibility/experience.md` User Flow step 9 (merged).
+A flat list, not a List → Detail pattern — there's no larger underlying record per source to
+drill into (unlike a posting or an event), so the full detail is the list itself. **This one
+route now answers what three separate routes used to** — the URL and route name are unchanged
+from before the merge (this route already covered every source's licence; it's cadence and
+trusted-statistics collection detail that are newly folded in here).
 **Auth required**: yes
-**Data source**: reads `source_licences.SOURCE_LICENCES` directly — an in-memory Python
-registry, **not** a database table (see Tech Decisions, below, for why this is a deliberate
-difference from every other route on this page). Covers every adapter in the codebase, not only
-scraped ones — 8 sources as of 2026-09-16 (`greenhouse`/`lever`/`ashby` job postings,
-`sec_edgar_8k`/`companies_house_insolvency`/`eurofound_erm`/`us_warn` employment events,
-`itjobswatch` scraped) — enforced complete by `backend/tests/test_source_licences.py`. No
-filtering, sorting, or pagination — the registry is small and every entry matters equally.
+**Data source**: `source_licences.SOURCE_LICENCES` (the licence half, unchanged) joined against a
+new small category lookup (`sources.ALL_SOURCE_ADAPTERS`, `employment_events.ALL_EMPLOYMENT_EVENT_ADAPTERS`,
+`scraping.ALL_SCRAPED_SOURCE_ADAPTERS`, `trusted_stats.registry.TRUSTED_PUBLISHERS` — each
+adapter/publisher's own `name` key, already identical to its `SOURCE_LICENCES` key, enforced by
+`backend/tests/test_source_licences.py`'s existing completeness test) and, for scraped/
+trusted-statistics sources only, the same cadence/collection queries the two now-removed routes
+used (`scraping_storage`'s due-calculation logic; `statistics_storage.list_statistics_sources()`
+for the richer trusted-statistics sub-detail). 11 sources as of 2026-09-28 (5 job-posting, 4
+employment-event, 1 scraped, 1 trusted-statistics). No filtering, sorting, or pagination — same
+"small registry, every entry matters equally" reasoning as before the merge.
 **Response**: `licensing.html`, rendered with one row per registered source:
 ```json
 {
   "sources": [
     {
       "source": "itjobswatch",
+      "category": "scraped",
       "licence": "CC BY-NC-SA 4.0",
       "status": "licensed",
       "confirmed": true,
       "permits_commercial_use": false,
       "attribution_text": "Source: IT Jobs Watch (itjobswatch.co.uk)",
       "licence_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
-      "data_summary": "Aggregate UK IT market stats only — demand rank, vacancy share, salary percentiles, weighted role/skill associations. No individual postings, no PII."
+      "data_summary": "Aggregate UK IT market stats only — demand rank, vacancy share, salary percentiles, weighted role/skill associations. No individual postings, no PII.",
+      "cadence": {"type": "gated", "last_run_at": "2026-09-18T09:02:21Z", "min_run_interval_days": 7, "next_due_at": "2026-09-25T09:02:21Z", "is_due": false}
+    },
+    {
+      "source": "ons_vacancy_survey",
+      "category": "trusted_statistics",
+      "licence": "Open Government Licence v3.0",
+      "status": "licensed",
+      "confirmed": true,
+      "permits_commercial_use": true,
+      "attribution_text": "Source: Office for National Statistics — Vacancy Survey. Contains public sector information licensed under the Open Government Licence v3.0.",
+      "licence_url": "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+      "data_summary": "Published UK vacancy estimates by industry and business size — no individual postings, no PII.",
+      "cadence": {"type": "gated", "last_run_at": "2026-09-24T09:02:21Z", "min_run_interval_days": null, "next_due_at": null, "is_due": false},
+      "statistics_detail": {
+        "publisher": "Office for National Statistics", "programme": "Vacancy Survey",
+        "trust_bar_reviewed_on": "2026-09-24", "trust_bar_reviewed_by": "…",
+        "min_check_interval_hours": 20, "latest_release_date": "2026-09-15",
+        "latest_period_label": "Jun-Aug 2026", "days_since_latest_release": 10,
+        "overdue": false, "overdue_after_days": 45,
+        "series_count": 25, "observation_count": 9012, "last_rejected_release": null
+      }
+    },
+    {
+      "source": "greenhouse",
+      "category": "job_posting",
+      "licence": "None required — public API, no reuse restriction",
+      "status": "licensed",
+      "confirmed": true,
+      "permits_commercial_use": true,
+      "attribution_text": null,
+      "licence_url": null,
+      "data_summary": "Job postings from this adapter's tracked companies.",
+      "cadence": {"type": "shared_schedule", "schedule_label": "Runs on the shared daily ingestion schedule"}
     }
   ],
   "commercial_mode": false
 }
 ```
-`commercial_mode` is `source_licences.is_commercial_mode()`'s current value, rendered once at
-the top of the page — so the operator immediately sees whether `TMIP_COMMERCIAL_MODE` is
-actually on, not just what each source's licence says in isolation.
+`commercial_mode` is `source_licences.is_commercial_mode()`'s current value, rendered once at the
+top of the page, unchanged from before the merge. `cadence.type` is `"gated"` for a scraped or
+trusted-statistics source (the same due-calculation every pre-merge route already used — never
+recomputed with different logic) or `"shared_schedule"` for a job-posting/employment-event source
+(no due/not-due state exists for these, so none is fabricated — Business Logic, below).
+`statistics_detail` is present only for a trusted-statistics source, carrying every field the
+former `GET /admin/statistics-sources` response held, unchanged.
 **Errors**: none beyond the shared auth redirect — an empty registry renders the page's own
 "No sources registered yet" empty state, not an error (Edge Cases,
 `design/pipeline-visibility/experience.md`).
@@ -486,36 +532,12 @@ pagination controls. Each row links to `/admin/skill-associations/{id}`.
 |---|---|
 | 404 | No skill association with that id |
 
-### GET /admin/scrape-runs
-**Added 2026-09-18**. **Purpose**: Every registered scraped-source adapter's run cadence
-status, per `design/pipeline-visibility/experience.md` User Flow step 10. A flat list, not a
-List → Detail pattern — same reasoning as `GET /admin/licensing`, and deliberately shows every
-*registered* adapter (`scraping.ALL_SCRAPED_SOURCE_ADAPTERS`), not only ones with a
-`scrape_ingestion_runs` row yet — a never-run source is exactly the state this view exists to
-surface, not hide (a deliberate difference from the Employment Events summary's "present in
-data only" convention — see the change request's Decision Log).
-**Auth required**: yes
-**Data source**: `scraping_storage.list_scrape_runs()` — joins `scrape_ingestion_runs` against
-`scraping.ALL_SCRAPED_SOURCE_ADAPTERS`/`scraping.MIN_RUN_INTERVAL_DAYS`. No filtering, sorting,
-or pagination — same "small registry, every entry matters equally" reasoning as Licensing.
-**Response**: `scrape_runs.html`, rendered with one row per registered adapter:
-```json
-{
-  "runs": [
-    {
-      "source": "itjobswatch",
-      "last_run_at": "2026-09-18T09:02:21Z",
-      "min_run_interval_days": 7,
-      "next_due_at": "2026-09-25T09:02:21Z",
-      "is_due": false
-    }
-  ]
-}
-```
-`last_run_at` is `null` and `is_due` is `true` for a registered adapter with no
-`scrape_ingestion_runs` row at all — rendered as "Never run" (Business Logic, below).
-**Errors**: none beyond the shared auth redirect — an empty adapter registry renders the page's
-own "No scraped sources registered yet" empty state.
+~~### GET /admin/scrape-runs~~ **Removed 2026-09-28**
+(`changes/2026-09-28-consolidate-sources-licensing-views.md`) — merged into `GET /admin/licensing`
+(above). Its cadence fields (`last_run_at`, `min_run_interval_days`, `next_due_at`, `is_due`) now
+appear as `cadence` on that route's per-source rows, computed by the same
+`scraping_storage`-owned logic, unchanged. Struck through, not erased, per this product's
+convention (`DATA_SOURCES.md`'s own precedent).
 
 ### GET /admin/statistics
 **Added 2026-09-24; IMPLEMENTED 2026-09-25** (`changes/2026-09-24-uk-lmi-and-ons-vacancy-sources.md`; verified with a `TestClient` against the live database — all three routes 200, ONS named on every page, 404 for an unknown id, "Never revised" shown when one vintage exists). **Purpose**: Filterable, sortable, paginated view of `statistic_observations` (with
@@ -558,53 +580,16 @@ so ("Never revised") rather than showing an empty table.
 |---|---|
 | 404 | No observation with that id |
 
-### GET /admin/statistics-sources
-**Added 2026-09-24**. **Purpose**: Every *registered* trusted-statistics publisher — its trust
-bar, licence, cadence and collection state — per User Flow step 11. A flat list, not List →
-Detail, same reasoning as `GET /admin/licensing` and `GET /admin/scrape-runs`, and like the
-latter it shows every **registered** source (`trusted_stats.registry.TRUSTED_PUBLISHERS`), not
-only ones that have produced data — a never-run source is exactly the state this view exists to
-surface.
-**Auth required**: yes
-**Data source**: `statistics_storage.list_statistics_sources()` — joins `TRUSTED_PUBLISHERS`,
-`source_licences.SOURCE_LICENCES` / `overall_status()`, `statistics_ingestion_runs`,
-`statistic_releases` and counts of `statistic_series` / `statistic_observations`. No filtering or
-pagination (small registry, every entry matters equally). Reuses the same `is_due` helper the
-ingestion script itself uses, so the view can never disagree with the script.
-**Response**: `statistics_sources.html`, one row per registered source:
-```json
-{
-  "sources": [
-    {
-      "source": "ons_vacancy_survey",
-      "publisher": "Office for National Statistics", "publisher_type": "national_statistics_office",
-      "programme": "Vacancy Survey", "datasets": ["VACS02", "VACS03"],
-      "licence": "Open Government Licence v3.0", "licence_status": "licensed", "licence_confirmed": true,
-      "permits_commercial_use": true,
-      "attribution_text": "Source: Office for National Statistics — Vacancy Survey. Contains public sector information licensed under the Open Government Licence v3.0.",
-      "trust_bar_reviewed_on": "2026-09-24", "trust_bar_reviewed_by": "…",
-      "min_check_interval_hours": 20, "release_settle_days": 2,
-      "last_run_at": "2026-09-24T09:02:21Z", "last_run_outcome": "new_release_ingested",
-      "is_due": false,
-      "latest_release_date": "2026-09-15", "latest_period_label": "Jun-Aug 2026",
-      "days_since_latest_release": 10, "overdue": false, "overdue_after_days": 45,
-      "series_count": 25, "observation_count": 9012,
-      "last_rejected_release": null
-    }
-  ]
-}
-```
-`overdue` (added 2026-09-25, `changes/2026-09-25-periodic-source-ingestion-in-job-sync.md`) is `true` when the newest release held is more than
-`overdue_after_days` (45) days old — releases normally arrive every 4–5 weeks — and renders an "Overdue" badge with the day count; a source
-that has never ingested a release is *not* "overdue" (it shows "Never run"). The page also states that the source is scheduled by the
-daily `job-sync` run and how long a release waits before ingestion.
-`last_run_at` is `null` and `is_due` is `true` for a registered source with no run row —
-rendered "Never run". `last_rejected_release`, when present, carries the release date and its
-`validation_summary` so a refused file is visible, not only logged. A source whose licence is not
-confirmed shows the visible "not yet confirmed" state (the same treatment `/admin/licensing`
-gives it).
-**Errors**: none beyond the shared auth redirect — an empty registry renders the page's own "No
-trusted statistics sources registered yet" empty state.
+~~### GET /admin/statistics-sources~~ **Removed 2026-09-28**
+(`changes/2026-09-28-consolidate-sources-licensing-views.md`) — merged into `GET /admin/licensing`
+(above). Every field this route used to return (`trust_bar_reviewed_on/by`,
+`min_check_interval_hours`, `release_settle_days`, `last_run_outcome`, `latest_release_date`,
+`latest_period_label`, `days_since_latest_release`, `overdue`, `overdue_after_days`,
+`series_count`, `observation_count`, `last_rejected_release`) now appears unchanged as
+`statistics_detail` on that route's `ons_vacancy_survey` row. `statistics_storage.
+list_statistics_sources()` — the function that computed all of it — is unchanged and still the
+data source; only the route that exposed it changed. Struck through, not erased, per this
+product's convention.
 
 ### GET /admin/taxonomy-health
 **Added 2026-09-21** (`changes/2026-09-21-emerging-role-detection.md`). **Purpose**: surfaces
@@ -908,7 +893,8 @@ and reused a prior extraction (`backend/specs/scraped-data-sources/api.md` — B
 rule 11). This is purely informational for the operator — it changes nothing about how the row
 was stored, only how its provenance reads on this page.
 
-**Scrape run cadence status (added 2026-09-18)** — `scraping_storage.list_scrape_runs()`:
+**Scrape run cadence status (added 2026-09-18; consumed by the merged Sources & Licensing route
+since 2026-09-28)** — `scraping_storage.list_scrape_runs()`:
 for every adapter in `scraping.ALL_SCRAPED_SOURCE_ADAPTERS`, look up its
 `scrape_ingestion_runs` row (if any) and its `MIN_RUN_INTERVAL_DAYS` entry (falling back to
 `DEFAULT_MIN_RUN_INTERVAL_DAYS`, same lookup `ingest_scraped_sources.py` itself already does).
@@ -917,7 +903,34 @@ next_due_at`, or `true` unconditionally when no run has ever happened (mirrors
 `scraping_storage.is_due()`'s own `last_run_at is None → True` rule exactly — this view must
 never disagree with what the ingestion script itself would decide). This function reuses that
 existing pure comparison logic rather than reimplementing it, so the dashboard and the pipeline
-can never drift apart on what "due" means.
+can never drift apart on what "due" means. Unchanged by the 2026-09-28 merge — only the route
+that surfaces its output changed.
+
+**Merging Sources & Licensing with Scraped Source Runs and Statistics Sources (added
+2026-09-28)** — `GET /admin/licensing`'s query function gains a category lookup, built once from
+each source category's own existing registry (`sources.ALL_SOURCE_ADAPTERS`,
+`employment_events.ALL_EMPLOYMENT_EVENT_ADAPTERS`, `scraping.ALL_SCRAPED_SOURCE_ADAPTERS`,
+`trusted_stats.registry.TRUSTED_PUBLISHERS`) rather than a new, separately-maintained mapping —
+every adapter's/publisher's own `name`/key is already identical to its `SOURCE_LICENCES` key,
+enforced by the existing `test_source_licences.py` completeness test, so this lookup can never
+silently drift from the licence registry it's joined against. For each source in
+`SOURCE_LICENCES` (still the iteration driver, unchanged):
+- `category` — `"job_posting"`, `"employment_event"`, `"scraped"`, or `"trusted_statistics"`,
+  from the lookup above.
+- `cadence` — for `scraped`/`trusted_statistics` sources: the same gated cadence shape
+  `scraping_storage.list_scrape_runs()`/`statistics_storage.list_statistics_sources()` already
+  compute (`type: "gated"`, `last_run_at`, `is_due`, etc.), called exactly as before, not
+  recomputed. For `job_posting`/`employment_event` sources: a fixed `{"type": "shared_schedule",
+  "schedule_label": "Runs on the shared daily ingestion schedule"}` — these adapters have never
+  had an individually-gated cadence (they run on `job-sync`'s/the employment-events service's own
+  cron), so no due/not-due state is computed or implied for them. This is a real, stated
+  distinction, not a gap: fabricating a due/not-due state for a source type that was never gated
+  that way would misrepresent how ingestion actually works for it.
+- `statistics_detail` — present only for the one `trusted_statistics` source today, carrying
+  every field `GET /admin/statistics-sources` used to return verbatim, from the same
+  `list_statistics_sources()` call.
+No new query logic for licence itself — that half of the merge is a pure route consolidation,
+not a behavior change.
 
 **Feedback summary aggregation (added 2026-09-23)** — `feedback_storage.get_feedback_summary()`:
 `average_rating`/`distribution` are a plain `GROUP BY rating` over `PlatformFeedback`; when the
@@ -1179,3 +1192,27 @@ already produced by the existing pipeline.
 - **No new tables, no new columns.** This addition is entirely a new `/admin/*` read route over
   row counts of tables every other spec on this page already owns, plus a read of `ACCESS.md` —
   no migration.
+- **Merging `GET /admin/scrape-runs` and `GET /admin/statistics-sources` into
+  `GET /admin/licensing` (added 2026-09-28,
+  `changes/2026-09-28-consolidate-sources-licensing-views.md`).** `admin_main.py`'s
+  `licensing()` route function gains the category lookup and cadence branch described in
+  Business Logic; the two now-removed route functions (`scrape_runs()`, `statistics_sources()`)
+  and their templates (`scrape_runs.html`, `statistics_sources.html`) are deleted outright, not
+  kept as dead code — every fact they rendered is now reachable from the merged route. No
+  underlying query function is deleted: `scraping_storage.list_scrape_runs()` and
+  `statistics_storage.list_statistics_sources()` are both still called, just from inside
+  `licensing()` instead of their own route handlers. `base.html`'s sidebar loses the "Scraped
+  Source Runs" and "Statistics Sources" nav links; "Sources & Licensing" keeps its existing
+  `/admin/licensing` path and label. `licensing.html` gains the category badge, the cadence
+  branch (gated vs. shared-schedule), and the trusted-statistics sub-detail block, matching
+  `design/pipeline-visibility/experience.md`'s merged Visual Design notes.
+- **MCP Access Review (run 2026-09-28, per this skill's Step 6)** — corrected an assumption made
+  during triage: `/admin/scrape-runs` and `/admin/statistics-sources` were never their own
+  separate `ACCESS.md` rows to begin with — they were already bundled into the "Market-benchmark
+  data admin visibility" and "Trusted statistics admin visibility" rows respectively, alongside
+  `/admin/market-observations`/`/admin/skill-associations` and
+  `/admin/statistics`/`/admin/statistics/{id}`. So no row collapses; three rows each lose a
+  now-nonexistent route from their route list, and the "Data source licensing status" row's note
+  is extended to state it now also covers cadence for every source type, not licence alone. Same
+  `Not Exposed` decision throughout — nothing about *what* is exposed changed, only how many
+  admin routes it takes to see it.

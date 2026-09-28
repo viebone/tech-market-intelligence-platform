@@ -43,7 +43,7 @@ import requirements
 import scraping_storage
 import statistics_storage
 from employment_events.base import EVENT_TYPES, SOURCE_DISPLAY_NAMES
-from source_licences import SOURCE_LICENCES, is_commercial_mode, overall_status
+from source_licences import SOURCE_LICENCES, category_for_source, is_commercial_mode, overall_status
 from requirements import BATCH_STUCK_AFTER_HOURS, REQUIREMENTS_BATCH_MIN_BACKLOG
 from admin_auth import (
     SESSION_COOKIE_NAME,
@@ -397,9 +397,50 @@ def employment_event_detail(request: Request, event_id: str):
 
 @app.get("/admin/licensing", dependencies=[Depends(require_admin_session)])
 def licensing(request: Request):
-    sources = [
-        {
+    """
+    Every registered source of every kind — job-posting, employment-event,
+    scraped, and trusted-statistics — in one list. Merged 2026-09-28
+    (changes/2026-09-28-consolidate-sources-licensing-views.md) from this
+    route plus the former GET /admin/scrape-runs and GET /admin/statistics-
+    sources, which are now removed outright. See backend/specs/
+    pipeline-visibility/api.md — Business Logic, "Merging Sources & Licensing
+    with Scraped Source Runs and Statistics Sources."
+    """
+    scrape_cadence_by_source = {r["source"]: r for r in scraping_storage.list_scrape_runs()}
+    statistics_by_source = {s["source"]: s for s in statistics_storage.list_statistics_sources()}
+
+    sources = []
+    for licence in sorted(SOURCE_LICENCES.values(), key=lambda l: l.source):
+        category = category_for_source(licence.source)
+
+        if category in ("job_posting", "employment_event"):
+            # Never gated individually — these adapters run on job-sync's /
+            # the employment-events service's own shared cron, not a
+            # per-source due/not-due cadence. Fabricating one would
+            # misrepresent how ingestion actually works for them.
+            cadence = {"type": "shared_schedule", "schedule_label": "Runs on the shared daily ingestion schedule"}
+        elif category == "scraped":
+            run = scrape_cadence_by_source.get(licence.source)
+            cadence = {
+                "type": "gated",
+                "last_run_at": run["last_run_at"] if run else None,
+                "min_run_interval_days": run["min_run_interval_days"] if run else None,
+                "next_due_at": run["next_due_at"] if run else None,
+                "is_due": run["is_due"] if run else True,
+            }
+        else:  # trusted_statistics
+            stat = statistics_by_source.get(licence.source)
+            cadence = {
+                "type": "gated",
+                "last_run_at": stat["last_run_at"] if stat else None,
+                "min_run_interval_days": None,
+                "next_due_at": None,
+                "is_due": stat["is_due"] if stat else True,
+            }
+
+        row = {
             "source": licence.source,
+            "category": category,
             "licence": licence.licence,
             "status": overall_status(licence.source),  # "pending" | "licensed" | "rejected"
             "confirmed": licence.confirmed,
@@ -408,9 +449,28 @@ def licensing(request: Request):
             "attribution_text": licence.attribution_text,
             "licence_url": licence.licence_url,
             "data_summary": licence.data_summary,
+            "cadence": cadence,
+            "statistics_detail": None,
         }
-        for licence in sorted(SOURCE_LICENCES.values(), key=lambda l: l.source)
-    ]
+        if category == "trusted_statistics" and licence.source in statistics_by_source:
+            stat = statistics_by_source[licence.source]
+            row["statistics_detail"] = {
+                "publisher": stat["publisher"],
+                "programme": stat["programme"],
+                "trust_bar_reviewed_on": stat["trust_bar_reviewed_on"],
+                "trust_bar_reviewed_by": stat["trust_bar_reviewed_by"],
+                "min_check_interval_hours": stat["min_check_interval_hours"],
+                "latest_release_date": stat["latest_release_date"],
+                "latest_period_label": stat["latest_period_label"],
+                "days_since_latest_release": stat["days_since_latest_release"],
+                "overdue": stat["overdue"],
+                "overdue_after_days": stat["overdue_after_days"],
+                "series_count": stat["series_count"],
+                "observation_count": stat["observation_count"],
+                "last_rejected_release": stat["last_rejected_release"],
+            }
+        sources.append(row)
+
     return templates.TemplateResponse(
         request, "licensing.html",
         {
@@ -575,12 +635,10 @@ def skill_association_detail(request: Request, association_id: str):
     )
 
 
-@app.get("/admin/scrape-runs", dependencies=[Depends(require_admin_session)])
-def scrape_runs(request: Request):
-    return templates.TemplateResponse(
-        request, "scrape_runs.html",
-        {"active_page": "scrape_runs", "runs": scraping_storage.list_scrape_runs()},
-    )
+# ~~GET /admin/scrape-runs~~ removed 2026-09-28
+# (changes/2026-09-28-consolidate-sources-licensing-views.md) — merged into
+# GET /admin/licensing above. scraping_storage.list_scrape_runs() is still
+# called from there, unchanged.
 
 
 # ---------------------------------------------------------------------------
@@ -639,12 +697,11 @@ def statistics_list(
     )
 
 
-@app.get("/admin/statistics-sources", dependencies=[Depends(require_admin_session)])
-def statistics_sources(request: Request):
-    return templates.TemplateResponse(
-        request, "statistics_sources.html",
-        {"active_page": "statistics_sources", "sources": statistics_storage.list_statistics_sources()},
-    )
+# ~~GET /admin/statistics-sources~~ removed 2026-09-28
+# (changes/2026-09-28-consolidate-sources-licensing-views.md) — merged into
+# GET /admin/licensing above, as each trusted-statistics source's
+# `statistics_detail`. statistics_storage.list_statistics_sources() is still
+# called from there, unchanged.
 
 
 @app.get("/admin/statistics/{observation_id:path}", dependencies=[Depends(require_admin_session)])
