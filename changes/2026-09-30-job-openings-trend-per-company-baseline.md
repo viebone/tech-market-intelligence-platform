@@ -4,7 +4,7 @@ date: 2026-09-30
 trigger-type: user-feedback
 change-type: bug-fix
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: Job openings trend counts a new company's bulk-loaded roles as a hiring spike
@@ -152,8 +152,16 @@ frontend (`JobOpeningsChart.tsx` reads the same `data`/`summary` shape), and the
   expansion's bulk-loaded rows. Also ran the real `get_openings()` endpoint end-to-end
   post-fix — six-month weekly view now reads as a normal, flat-ish series with no artificial
   spike, and the generated summary text still renders correctly
-- [ ] Step 5: Commit and deploy; note in `DATA_SOURCES.md` or `EMPLOYER_PANEL.md` if useful
-      context for future batches (future batches need no code change, but worth a pointer)
+- [x] ✅ Step 5a: Committed locally (`fa33e07`) — spec update, `market_openings.py` fix,
+      regression test, this change request, and the signal file
+- [x] ✅ Step 5b: Pushed to `origin/main`. Correction: `DEPLOYMENT.md` §"Service: `api`" —
+      auto-deploy has been **on** for `api` since 2026-08-16 (this session's earlier note that it
+      was off was wrong; that gotcha describes a resolved `job-sync` history, not `api`'s current
+      state). The push alone triggered deployment `854c039d` automatically — confirmed `SUCCESS`
+      via Railway MCP, `commitHash` matches `fa33e07`. Verified live against production:
+      `GET https://api-production-df13.up.railway.app/api/market-health/openings?range=six_months&granularity=week`
+      now returns the corrected series (Sep 14/21 weeks back in the normal 150–210 range, no
+      spike), confirming the fix is live for real users
 
 ## Decision Log
 - 2026-09-30: Classified `bug-fix`, not `api-change` — the response contract, endpoint, and
