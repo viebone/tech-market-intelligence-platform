@@ -742,12 +742,22 @@ identically for `week` and `month` granularity. `range=all_time` returns every b
 ingestion started — there is no earlier data, since the source APIs cannot answer "what was
 live in the past" (see Business Logic below).
 
-**Collection baseline (corrected 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`).**
-The baseline is the **earliest calendar date** any posting was observed —
-`min(raw_postings.fetched_at::date)`. Every posting `fetched_at` on that date is excluded from
-trend counts: the first crawl is a one-time bulk load of whatever the sources had open at that
-moment (collection setup), not market activity in that period. The earliest bucket returned
-therefore starts on the day after the baseline date.
+**Collection baseline (corrected 2026-09-04 — `changes/2026-09-04-chart-baseline-and-render-fixes.md`;
+generalized to per-company 2026-09-30 — `changes/2026-09-30-job-openings-trend-per-company-baseline.md`).**
+The baseline is **each company's own earliest calendar date** any posting was observed —
+`min(raw_postings.fetched_at::date)`, grouped by `company` — not one date for the whole table.
+Every posting whose `fetched_at` falls on *that company's* baseline date is excluded from trend
+counts: a company's first crawl is a one-time bulk load of whatever it had open at that moment
+(collection setup), not market activity in that period. This applies identically whether it's
+the platform's original launch day (every company tracked since the start shares that as its
+own baseline, so nothing changes for them) or a company added to the tracked panel later (its
+own first crawl, whenever that happened, is excluded the same way — see the 2026-09-30 change
+for the concrete case this was missing: a wave of newly onboarded companies read as a hiring
+spike because only the platform-wide launch day was ever excluded). Join on `company` using
+`IS NOT DISTINCT FROM`, not `=` — `company` is `NULL` for legacy Adzuna rows, and plain equality
+would silently drop every `NULL` row from the join. The earliest bucket returned still starts
+the day after the *platform's* baseline date (the eligibility check below is unaffected — see
+"Complete periods only" and `_bucket_eligible_for_trend`).
 
 This replaces the previous rule, which keyed the baseline on
 `raw_postings.ingestion_run_id` matching "the earliest ingestion run with `total_inserted > 0`".
@@ -1443,8 +1453,9 @@ runs daily with dedupe-by-id (`ON CONFLICT (id) DO NOTHING`, so `fetched_at` is 
 first-seen time and never moves), each posting is counted exactly once, in the bucket it was
 first captured.
 
-Postings whose `fetched_at::date` equals the baseline date (`min(fetched_at::date)` across
-`raw_postings`) are excluded before bucketing — see the Collection baseline note under
+Postings whose `fetched_at::date` equals **that posting's own company's** baseline date
+(`min(fetched_at::date)` grouped by `company`, not one date across all of `raw_postings`) are
+excluded before bucketing — see the Collection baseline note under
 `GET /api/market-health/openings` above. The aggregation never references
 `ingestion_run_id`. Range filtering is applied after bucketing: compare the bucket key to a
 cutoff derived from today, and make the cutoff and the bucket key the same shape (both

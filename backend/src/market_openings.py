@@ -15,9 +15,11 @@ in that bucket, not "total open positions" at any point in time: none of the
 source platforms' APIs support a historical date-range query, so there is no
 earlier data than when this pipeline started.
 
-Postings first seen on the baseline date (the earliest fetched_at date) are
-excluded — that first crawl is a one-time bulk load, not market activity — so
-the first bucket returned starts the day after. See
+Postings first seen on a company's own baseline date (the earliest fetched_at
+date for that company, not one date for the whole table) are excluded — a
+company's first crawl is a one-time bulk load of whatever it had open at that
+moment, not market activity, whether that's the platform's original launch
+day or a company added to the tracked panel months later. See
 backend/specs/market-health/api.md — Business Logic — Trend aggregation.
 """
 
@@ -57,12 +59,19 @@ def _fetch_counts(granularity: str) -> tuple[dict[str, dict[str, int]], date | N
     Product Manager, Engineer). Weekly buckets start on Monday, matching
     PostgreSQL's date_trunc('week') behavior.
 
-    Postings first observed on the baseline date — min(fetched_at::date), the
-    earliest day the platform saw any posting — are excluded. That first crawl is
-    a one-time bulk load of whatever the sources had open at the time, not market
-    activity for that day, so counting it would read as a hiring surge. The
-    baseline is identified purely by date; ingestion_run_id is never referenced
-    (it is NULL on most historical rows). See backend/specs/market-health/api.md —
+    Postings first observed on their own company's baseline date — that
+    company's min(fetched_at::date), not one date for the whole table — are
+    excluded. A company's first crawl is a one-time bulk load of whatever it
+    had open at that moment, not market activity for that day, so counting it
+    would read as a hiring surge. This applies the same way whether it's the
+    platform's original launch day (every company tracked since the start
+    shares that as its own baseline too, so behavior there is unchanged) or a
+    company added to the tracked panel later (its own first crawl, whenever
+    that happened, is excluded the same way). `company IS NOT DISTINCT FROM`
+    is used rather than `=` because `company` is NULL for legacy Adzuna rows,
+    which would otherwise be dropped by the join entirely. The baseline is
+    identified purely by date; ingestion_run_id is never referenced (it is
+    NULL on most historical rows). See backend/specs/market-health/api.md —
     Business Logic — Trend aggregation.
     """
     bucket = "week" if granularity == "week" else "month"
@@ -75,16 +84,19 @@ def _fetch_counts(granularity: str) -> tuple[dict[str, dict[str, int]], date | N
 
         rows = conn.execute(
             f"""
-            WITH baseline AS (
-                SELECT min(fetched_at::date) AS day FROM raw_postings
+            WITH company_baseline AS (
+                SELECT company, min(fetched_at::date) AS day
+                FROM raw_postings
+                GROUP BY company
             )
             SELECT to_char(date_trunc('{bucket}', rp.fetched_at), '{period_format}') AS period,
                    c.role_category,
                    count(DISTINCT rp.id) AS n
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
+            JOIN company_baseline cb ON cb.company IS NOT DISTINCT FROM rp.company
             WHERE c.role_category IN ('Designer', 'Product Manager', 'Engineer')
-              AND rp.fetched_at::date > (SELECT day FROM baseline)
+              AND rp.fetched_at::date > cb.day
             GROUP BY period, c.role_category
             ORDER BY period
             """
