@@ -4,7 +4,7 @@ date: 2026-09-30
 trigger-type: user-feedback
 change-type: new-feature
 outcome: understand-market-health-before-searching
-status: triaged
+status: in-progress
 ---
 
 # Change Request: Coverage-over-time companion chart (tracked companies + tracked roles)
@@ -62,14 +62,25 @@ already carries three role-category lines.
 
 ## Execution Plan
 
-- [ ] Step 1: `/new-experience` — update `design/market-health/experience.md` (or
-      `data-stories.md`): define the question this chart answers, its placement relative to the
-      openings chart, chart form, legend, and the data-legibility basics (title, subtitle/scope,
-      units — "companies" and "roles" are different units on what should likely be a dual-axis or
-      two-panel view, not one shared axis — Rule 10)
-- [ ] Step 2: Confirm IA — no-change expected (existing Market Health page, no new zone)
-- [ ] Step 3: Confirm Visual Design — no-change expected if an existing chart form fits;
-      `/new-visual-design` only if not
+- [x] ✅ Step 1: `/new-experience` — updated `design/market-health/experience.md`. New
+      **"Coverage Chart"** section (placed right after Written Summary Specification, before
+      Interactions): two small stacked line charts (Companies tracked, Roles tracked — both
+      cumulative), sharing the trend chart's own X axis/granularity/time-range controls so the
+      two charts line up visually. Deliberately **no baseline exclusion** in this chart — the
+      whole point is to surface the bulk-load jumps the trend chart above deliberately excludes.
+      Fixed caption: "A step up here usually means more companies were added to tracking, not a
+      change in hiring." Interactions and Edge Cases updated to match (switching range/
+      granularity updates both charts; a no-change week renders as an honest flat line, not a
+      no-data state)
+- [x] ✅ Step 2: Confirmed IA — no-change. Same "Tech market hiring status" pinned task
+      (`design/information-architecture.md` Task Panel entry, unchanged), no new zone or nav
+      entry — the chart is new content inside an existing task's opening message, not a new
+      destination
+- [x] ✅ Step 3: Confirmed Visual Design — no-change. The Coverage Chart reuses the trend chart's
+      own line-chart visual language (same type scale, same axis/tooltip treatment, same
+      charting library per `design/visual-design.md`'s Charting library note) at smaller scale
+      with no legend (one line per panel, panel title names it) — a compositional variant of the
+      existing Line chart form, not a new chart type. No new tokens or catalogue entry needed
 - [ ] Step 4: `/new-backend-spec` — update `backend/specs/market-health/api.md` with the new
       read (cumulative distinct `company` count and distinct `raw_postings.id` count per bucket,
       same `week`/`month` bucketing as `_fetch_counts`). Runs `/mcp-access-review` automatically —
@@ -87,4 +98,13 @@ already carries three role-category lines.
   opening question maybe"). Overlay/annotation is recorded as explicitly out of scope, revisit
   only if a separate chart proves insufficient.
 - 2026-09-30: Data Surface Review judged not-applicable — no new table or new kind of fact, only
-  a new read over already-captured `raw_postings` columns.
+  a new read over already-captured `raw_postings`/`classifications` columns.
+- 2026-10-01: **Refined per follow-up signal.** Panel 2 changed from "Roles tracked" (cumulative
+  distinct `raw_postings`) to **"Job postings classified"** (cumulative distinct postings with a
+  `classifications` row) — the user's stated goal is showing how much data the platform
+  genuinely captures *and understands*, not just holds. This also makes the chart's purpose
+  broader than the original spike-explainer framing alone: it's now also a plain, honest record
+  of data growth and processing, which the spike-explainer use case still benefits from (a
+  classification backlog lagging behind raw capture is itself a real, visible signal here, not
+  hidden). `design/market-health/experience.md`'s Coverage Chart section updated accordingly —
+  see Step 1 below.

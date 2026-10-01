@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-09-11
+updated: 2026-09-30
 ---
 
 # Market Health — Experience Spec
@@ -551,15 +551,67 @@ concentrated in the first half of the year — the last three months have been f
 
 ---
 
+## Coverage Chart
+
+Added 2026-09-30, refined 2026-10-01 — `changes/2026-09-30-coverage-over-time-chart.md`. Sits
+directly below the Written Summary in the "Tech market hiring status" opening message — same
+task, same opening message, no new Task Panel entry.
+
+**Goal (stated 2026-10-01):** show the evolution of how much data this platform actually
+captures and understands — companies tracked against job postings **classified** — so a viewer
+can understand the data itself, not only use it as a spike-explainer for the trend chart above
+(that remains true too, but is no longer the only framing).
+
+**Why this exists.** The trend chart above answers "is hiring demand changing." This chart
+answers a distinct, narrower question: "has *the platform's own coverage* changed" — so a
+viewer can tell the two apart in the same place, without leaving the task or reading a change
+log. Prompted by a real case: `changes/2026-09-30-job-openings-trend-per-company-baseline.md`,
+where a wave of newly tracked companies (the `us-eu-employer-panel-expansion` change, 56 → 170
+companies in a few days) read as an unexplained hiring spike on the trend chart above before the
+underlying counting bug was found and fixed. This chart makes that kind of coverage jump visible
+on sight instead of requiring a bug report to surface it.
+
+Deliberately a **second, separate** chart — never merged into the trend chart's lines, never
+drawn as markers or an overlay on it. Companies and roles are a different kind of thing entirely
+from job openings, at a different scale; forcing them onto the trend chart's own axis would
+misrepresent both. See also "Coverage is a curated set of companies, not the whole market" under
+Edge Cases, below — that edge case is about how *complete* coverage is; this chart is about how
+coverage has *changed over time*, a related but distinct honesty concern.
+
+**Shares the trend chart's own X axis** — same granularity (Week/Month) and time range
+selection as the trend chart immediately above it, so the two charts line up visually: a viewer
+can scan straight down from a bump in the trend chart to see whether that same period shows a
+step up in coverage. Switching the trend chart's time range or granularity updates this chart
+identically (see Interactions).
+
+| Property | Value |
+|---|---|
+| Chart type | Two small line charts, stacked vertically, sharing one X axis. Continuous lines, no bar fill — visually the same family as the trend chart above, just smaller (roughly quarter-height each) and with no legend needed (one line per panel, the panel title names it). |
+| **Chart title** | "Platform coverage" — same type treatment as the trend chart's title, one size smaller. |
+| **Chart subtitle** | Dynamic per granularity, mirroring the trend chart's own subtitle pattern — "How many companies this platform tracks and job postings it has classified, by week" / "...by month". |
+| **Fixed caption** (always shown, directly below the subtitle) | "A step up here usually means more companies were added to tracking, not a change in hiring." Fixed copy, never varies — this is the one sentence doing the job of the chart's original, narrower purpose (explaining a trend-chart jump); the chart itself now also stands on its own as a plain record of how much data the platform has captured and processed. |
+| Panel 1 — **Companies tracked** | Cumulative distinct companies with at least one posting captured by that bucket or earlier. Y axis label "Companies" (`text-[10px] fill-gray-500`), absolute count. |
+| Panel 2 — **Job postings classified** (refined 2026-10-01 — was "Roles tracked") | Cumulative distinct postings that have been through classification (a `classifications` row exists) by that bucket or earlier — **not** every raw posting captured, deliberately. A posting can sit in `raw_postings` for a time before classification catches up to it (see `backend/*` — classification backlog); showing "captured" instead of "classified" would overstate how much of the data the platform actually understands yet, not just holds. Y axis label "Postings classified" (`text-[10px] fill-gray-500`), absolute count, formatted (e.g. 5k, 10k). |
+| X axis | Same ticks, same thinning rule, same granularity as the trend chart above (shared, not independently configurable) — this is what makes visual alignment between the two charts possible. |
+| Hover | Vertical cursor (synced to the trend chart's own cursor position when hovering either chart) + tooltip with the exact cumulative count for that bucket, per panel. No period-over-period Δ — this chart is about level, not rate of change; the trend chart above already owns rate-of-change framing. |
+| Loading state | Skeleton lines pulse in place, same treatment as the trend chart. |
+| No-data state | If the platform has no postings yet, both panels show the same "not collected yet" treatment as the Opening Welcome's Stat Tiles — never `0` presented as a real reading. |
+| Complete periods only | Same rule as the trend chart — the in-progress week/month is never plotted, since it shares the trend chart's own bucket set. |
+| Baseline | **No baseline exclusion here** — unlike the trend chart, this chart's entire point is to show the bulk-load jumps the trend chart excludes. Every bucket's true cumulative count is shown, unfiltered. |
+| Flat / staircase data | A period with no newly tracked companies renders as a flat cumulative line (both panels), which is the normal, expected shape — most weeks have no coverage change. Never a blank chart; a flat line is a real, honest reading here, not a no-data state. |
+
+---
+
 ## Interactions
 
 | User action | System response |
 |---|---|
 | Open Market Health | "About this platform" is selected by default; its welcome resolves instantly (no model call). |
-| Open Market Health, then select "Tech market hiring status" | Opening message generates: trend chart (6 Months default, Week granularity default), then written summary. |
+| Open Market Health, then select "Tech market hiring status" | Opening message generates: trend chart (6 Months default, Week granularity default), written summary, then the Coverage Chart (same default range/granularity, sharing the trend chart's X axis). |
+| Hover over either chart in the Coverage Chart panel | Vertical cursor + tooltip with the exact cumulative count for that bucket. |
 | Tap a catalogue shortcut in "About this platform" (added 2026-09-04) | Task Panel selects that story's own task, exactly as if the user had clicked it directly — the same instant, no-model answer that task always gives. Works the same for any number of catalogue entries. |
-| Switch time range | Chart updates. If the current granularity isn't available at the new range, granularity falls back to that range's coarsest option. Written summary regenerates for the new window. |
-| Switch granularity (added 2026-08-22) | Chart updates — X axis re-buckets, horizontal scroll engages/disengages as needed. Written summary regenerates for the new bucket size. Time range selection is unaffected. |
+| Switch time range | Trend chart and Coverage Chart both update (they share one X axis). If the current granularity isn't available at the new range, granularity falls back to that range's coarsest option. Written summary regenerates for the new window. |
+| Switch granularity (added 2026-08-22) | Trend chart and Coverage Chart both update — X axis re-buckets, horizontal scroll engages/disengages as needed. Written summary regenerates for the new bucket size. Time range selection is unaffected. |
 | Hover over chart | Vertical cursor + tooltip with count + M-o-M Δ for each line. |
 | Ask a question in chat (typed or via a suggested-question chip) from any task | **Each task is its own conversation.** The question and its answer appear in the current task's thread, below that task's opening content (its welcome, its story answer, or its chart + summary). Switching tasks switches the conversation; the chat input always queries the task you are looking at. It never redirects you elsewhere (added 2026-09-06 — `changes/2026-09-06-chat-input-dead-on-non-conversation-tasks.md`). |
 | Ask a question in chat, answerable from the platform's data | AI analyses the platform's data specifically for that question (not a fixed canned summary), states the answer's time window, and the accordion shows what was queried. |
@@ -625,6 +677,12 @@ concentrated in the first half of the year — the last three months have been f
   the rest. A half-answer is never presented as if it were the whole answer, and its
   drill-down reflects that it was truncated. This holds regardless of which AI model is in
   use — completeness is a product guarantee, not a model setting.
+- **Coverage Chart: no companies added in the selected window (added 2026-09-30):** Both panels
+  render as flat cumulative lines — the normal case, since most weeks see no panel change. Not a
+  no-data state; nothing to call out.
+- **Coverage Chart: a time range that predates the platform's own launch:** Same "insufficient
+  data for a time range" treatment as the trend chart above — show what exists, note the
+  earliest available date, do not pad or invent history.
 - **Coverage is a curated set of companies, not the whole market:** Postings come from a
   maintained list of companies whose job boards are hosted on Greenhouse, Lever, or Ashby — not
   a survey of every employer. This is a real, honest limit, not a bug: large organisations
