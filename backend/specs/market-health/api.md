@@ -1527,6 +1527,21 @@ The design gives the model three tools and a fixed decision order:
    plausibly-tracked population, unlike `"other"` — but a caller can filter them out
    explicitly if a question calls for it. Rows with `country IS NULL` are excluded whenever
    `country` is used as a filter or `group_by` dimension — never guessed in to pad a count.
+
+   **Baseline exclusion on `month` grouping only (added 2026-10-01 —
+   `changes/2026-10-01-mcp-trend-baseline-gap.md`).** When `group_by` includes `"month"`, this
+   becomes a time-trend question, and the same per-company baseline rule the trend chart applies
+   (Collection baseline, above; `market_openings.py`) applies here too: rows on a company's own
+   first-observed day are excluded, so a newly onboarded company's entire current board never
+   reads as a demand spike in whichever month it joined. **Every other grouping is unaffected**
+   — `role_category`/`specialization`/`level`/`track`/`country` alone are stock questions ("how
+   many X are tracked right now"), where a bulk-loaded posting is still a real, currently-open
+   role and correctly counts. `total_matching` (below) also stays unfiltered regardless of
+   `group_by`, per its own existing contract — it is the stock total; the month-grouped `rows`
+   are the organic-flow view, and the gap between the two after a coverage expansion is itself
+   informative, not a discrepancy to hide. This was previously missing entirely (not even the
+   single-platform-wide version the trend chart had before 2026-09-30) — the "matching the
+   trend-aggregation rule" claim above was only ever true for the `"other"`-exclusion half.
    Returns:
    ```json
    {

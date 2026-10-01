@@ -93,6 +93,13 @@ def query_market_data(
         date_from: ISO date (YYYY-MM-DD). Only postings first observed on or after this date.
         date_to: ISO date (YYYY-MM-DD). Only postings first observed on or before this date.
 
+    Note on group_by=["month"] (trend questions): each tracked company's own first-observed
+    day is excluded from the counted rows, so a company newly added to tracking never reads as
+    a hiring spike in whichever month it joined. This means total_matching (always unfiltered)
+    can legitimately be larger than the sum of the monthly rows -- that gap is coverage growth,
+    not missing data, and is safe to mention as such if asked about it. No other group_by
+    combination is affected by this exclusion.
+
     Returns:
         A dict with:
         - rows: one row per unique combination of the group_by fields, each with a "count"
@@ -155,11 +162,36 @@ def query_market_data(
     select_columns = [_select_for(g) for g in valid_group_by]
     group_by_sql = ", ".join("month" if g == "month" else g for g in valid_group_by)
 
+    # Grouping by month turns this into a time-trend view, not a stock
+    # snapshot -- the same "a company's first crawl is a one-time bulk load,
+    # not market activity" rule the dedicated trend chart already enforces
+    # (market_openings.py / backend/specs/market-health/api.md -- Collection
+    # baseline) must hold here too, or a newly onboarded company's entire
+    # current board reads as a demand spike in whichever month it joined.
+    # Scoped to the month grouping only -- a role_category/specialization/
+    # etc. breakdown with no month dimension is a stock question ("how many
+    # X are tracked right now"), where every currently-open posting
+    # legitimately counts, bulk-loaded or not. total_matching (below) stays
+    # unfiltered by this for the same reason -- see its own docstring.
+    trend_by_month = "month" in valid_group_by
+    baseline_cte = (
+        "WITH company_baseline AS ("
+        "SELECT company, min(fetched_at::date) AS day FROM raw_postings GROUP BY company"
+        ")" if trend_by_month else ""
+    )
+    baseline_join = (
+        "JOIN company_baseline cb ON cb.company IS NOT DISTINCT FROM rp.company"
+        if trend_by_month else ""
+    )
+    baseline_where = "AND rp.fetched_at::date > cb.day" if trend_by_month else ""
+
     query = f"""
+        {baseline_cte}
         SELECT {", ".join(select_columns)}, count(*) AS count
         FROM raw_postings rp
         JOIN classifications c ON c.posting_id = rp.id
-        WHERE {where_sql}
+        {baseline_join}
+        WHERE {where_sql} {baseline_where}
         GROUP BY {group_by_sql}
         ORDER BY count DESC
     """

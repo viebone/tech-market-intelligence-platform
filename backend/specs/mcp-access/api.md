@@ -362,6 +362,13 @@ the registered trusted `publisher` keys — so a calling AI can pass valid param
 `country`, `month`), `role_category`, `specialization`, `level`, `track`, `country`,
 `date_from`, `date_to` — identical to the existing tool's own parameters, same closed-set
 validation.
+**Baseline exclusion on `month` grouping (added 2026-10-01 —
+`changes/2026-10-01-mcp-trend-baseline-gap.md`).** A `group_by` call that includes `"month"` —
+i.e. any trend question asked through this tool — excludes each tracked company's own
+first-observed day from the counted rows, the same rule `backend/specs/market-health/api.md`'s
+`query_market_data` entry now documents, so a newly onboarded company's bulk-loaded board never
+reads as a demand spike through MCP. Every other `group_by` combination (no `month`) is
+unaffected — those are stock counts, not trend counts.
 **Response** (self-describing, per Part 2's binding contract — see "Response envelope," below):
 ```json
 {
