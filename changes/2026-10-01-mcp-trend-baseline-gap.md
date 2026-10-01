@@ -4,7 +4,7 @@ date: 2026-10-01
 trigger-type: user-feedback
 change-type: bug-fix
 outcome: understand-market-health-before-searching
-status: in-progress
+status: complete
 ---
 
 # Change Request: query_market_data's month-trend grouping had no baseline exclusion at all
@@ -117,7 +117,8 @@ No backfill needed — live query, corrects immediately on deploy, same as yeste
 - [x] ✅ Step 6: Called the real `get_job_demand` wrapper (`mcp_access/tools.py`) directly against
       production — returns the corrected `{2026-08: 766, 2026-09: 1060, 2026-10: 100}`,
       `total_matching: 7368` (correctly unfiltered, the stock total)
-- [ ] Step 7: Commit, push, confirm deploy (auto-deploy is on for `api` — confirmed yesterday)
+- [x] ✅ Step 7: Committed (`85ef389`), pushed, auto-deploy picked it up automatically — deployment
+      `d3bea650` confirmed `SUCCESS`. Live production sanity-checked post-deploy (`/api/market-health/openings` healthy)
 
 ## Decision Log
 - 2026-10-01: Classified `bug-fix`, not `api-change` — `query_market_data`'s contract (inputs,
