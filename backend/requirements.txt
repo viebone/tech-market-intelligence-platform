@@ -33,6 +33,13 @@ bcrypt>=4.0.0
 # is newest, which itself then conflicts with the pinned starlette.
 mcp==1.9.4
 sse-starlette==3.0.3
+# pydantic pinned 2026-10-11: it was only a transitive dependency (fastapi, google-genai, mcp),
+# so every rebuild took the newest release. pydantic 2.14 removed the private
+# `_typing_extra.eval_type_backport` that mcp 1.9.4's FastMCP imports, and the `api` service
+# failed its healthcheck on deploy (ImportError at `app.mount("/mcp", ...)`). 2.13.5 is verified
+# with a fresh install of this file: the full api app imports and test_mcp_access.py passes.
+# Revisit together with the mcp pin, never on its own.
+pydantic==2.13.5
 
 # Scraped market-benchmark sources (scraping/) — see backend/specs/
 # scraped-data-sources/api.md. First HTML-parsing need in this codebase —

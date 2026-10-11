@@ -173,3 +173,17 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
   changed; a repeat-work tripwire on every paid per-item pipeline). `/new-backend-spec` gains
   a steady-state step (new Step 9) and two anti-patterns. `/change-request` gains a matching
   anti-pattern for changes that touch a recurring job without going through `/new-backend-spec`.
+- 2026-10-11: ⚠ **The `api` service failed both of today's deploys (healthcheck)**, unrelated to
+  this CR's code. `job-sync`, `web`, `employment-events` and `romantic-presence` deployed fine.
+  - **Cause:** dependency drift. `pydantic` was unpinned (transitive via fastapi, google-genai
+    and mcp). A fresh build took pydantic 2.14.1, which removed the private
+    `_typing_extra.eval_type_backport` that `mcp==1.9.4`'s FastMCP imports, so `main.py` crashed
+    at `app.mount("/mcp", ...)`. The last good `api` deploy (10-01) predates that release and
+    stays live, so production `api` was not down. Any `api` deploy from today on would have
+    failed regardless of what changed.
+  - **Fix:** pin `pydantic==2.13.5` in `backend/requirements.txt`. Verified on a fresh install of
+    the whole file: `pip check` is clean, the full `main` app imports, `test_mcp_access.py` 9/9
+    and `test_reprocessing_steady_state.py` 6/6 pass.
+  - Logged here, not as its own CR: it blocks this CR's deploy, is a one-line pin, and changes no
+    behaviour. Same lesson as Rule 15 in spirit: an unpinned transitive dependency is a
+    recurring job (every rebuild) with no steady-state guarantee.
