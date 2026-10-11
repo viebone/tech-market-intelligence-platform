@@ -210,6 +210,16 @@ Two labelled movements. Fixed order; values live; headings fixed.
    real grouped bar chart (`SkillDemandChart`, `design/visual-design.md` — Charting library),
    two named series with an explicit legend, replacing the original single Ranked bar list
    that only distinguished must-have via bar opacity.
+   **Revised 2026-10-10** (`changes/2026-10-10-requirements-extraction-sampling.md`): the
+   unit changes from a count of postings to **% of postings**. Subtitle: "Estimated share of
+   Design, Product and Engineering postings mentioning each skill group, must-have vs.
+   nice-to-have." Value labels read "42%". Qualifier: "Estimated from {n} of {N} postings we
+   read in full · ±{m} pts. Skills are our reading of each job description, not a checklist
+   the employer filled in." How-to-read line, once: "± pts: the real figure across all {N}
+   postings is very likely within this many points of the figure shown." If every
+   posting in the window was read, the qualifier becomes "Based on all {N} postings" and the
+   margin and how-to-read line are dropped. Thresholds and wording follow
+   `design/market-health/experience.md` — Requirements estimates.
 4. **Pay transparency** — subtitle: "Postings that state a salary range vs. those that don't."
    **Revised 2026-09-22** (`changes/2026-09-22-nivo-pie-charts.md`) — a real 2-slice donut
    (`SharePieChart`, `design/visual-design.md` — Charting library), disclosed vs. undisclosed,
@@ -287,7 +297,7 @@ external search, or unstated market assumptions to fill a value.
 | Sources | `count(distinct raw_postings.source)` and source names | Source adapters that contributed rows |
 | Role distribution | Classified rows grouped by `role_category` | Classification coverage and sample size |
 | Titles/specializations | Classified rows grouped by raw title and specialization | Only classified postings; unknown/other remain visible as coverage limits |
-| Skills | `posting_skills` grouped by `skill_group` and `requirement_level` | Posting sample size; mentions are interpreted extraction, not verified facts |
+| Skills | `posting_skills` grouped by `skill_group` and `requirement_level`. **Revised 2026-10-10:** a share of postings estimated across sampling groups, never a raw count of sampled rows. The backend spec defines the aggregate. | n read in full, N tracked, margin (or "all postings read"); mentions are interpreted extraction, not verified facts |
 | Compensation | `salary_confidence` grouped by `structured` and `parsed` | Structured and parsed figures are never blended |
 | Geography | Non-null `country` and `city` grouped separately | Normalized-location coverage; null locations are not guessed |
 | **Year-on-year shift** (role_category, level, track, specialization) | The admin's per-dimension distribution (`classification.get_classification_distribution`) computed for two windows: `[now − 12mo, now]` and `[now − 24mo, now − 12mo]`, keyed on `raw_postings.fetched_at`. Per category: current share, prior share, delta in percentage points. | Both window date ranges stated; shares carry their denominators; the two windows are never blended into one number. Windowed on `fetched_at` (when we observed the posting), which is the only date this platform can trust — same rule as the trend chart. |
@@ -297,6 +307,12 @@ external search, or unstated market assumptions to fill a value.
 
 - Counts are current as of the response's query time and carry a data-freshness label.
 - Percentages use the relevant denominator and state the sample size.
+- **Requirements figures (skills, education, experience, work arrangement, languages) are
+  estimates whenever their slice was sampled** (added 2026-10-10). They follow
+  `design/market-health/experience.md` — Requirements estimates for the n-of-N qualifier,
+  margin, thresholds and wording. Every story and every future catalogue entry that shows a
+  requirements figure inherits this. A requirements figure is never shown as a raw count of
+  sampled postings.
 - A section with too little data says **"Not enough data yet"** and explains what coverage is
   missing. It does not disappear silently and it does not borrow from external sources.
 - **A year-on-year shift block before the prior window exists** is a distinct state from "not

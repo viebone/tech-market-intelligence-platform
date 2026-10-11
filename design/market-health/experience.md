@@ -4,7 +4,7 @@ outcome: understand-market-health-before-searching
 directive: low
 status: ready
 created: 2026-06-13
-updated: 2026-09-30
+updated: 2026-10-10
 ---
 
 # Market Health — Experience Spec
@@ -129,8 +129,14 @@ openings/skills/pay):
 > Designer, each labelled with its name and share.}
 >
 > This is a growing sample of the market, not every job out there — it reflects the companies
-> and roles we follow today. For most of these we also have the skills employers mention, and
-> pay figures where they're shared.
+> and roles we follow today. For a representative share of these we also read the full job
+> description to see which skills employers ask for, and we show pay figures where they're
+> shared.
+
+(Skills sentence revised 2026-10-10 — `changes/2026-10-10-requirements-extraction-sampling.md`.
+It previously said "for most of these we also have the skills employers mention". That was
+already untrue in practice, and it becomes untrue by design once extraction samples
+Engineering and Product Management postings. See Requirements estimates, below.)
 >
 > **{E}** employment events tracked · **{R}** official registries — {registry names} · **{C}**
 > countries covered
@@ -368,6 +374,10 @@ The user interprets and decides what to do with it.
    Rust-family skills appear in the tracked postings and at what requirement level, then
    reasoning from that. If the sample is too small to support a confident judgment, the AI
    says so and gives the data alone rather than a shaky recommendation.
+   **Added 2026-10-10:** "too small" now has a fixed meaning: fewer than 30 postings read in
+   full for that slice. Requirements figures are also usually *estimates from a sample*, not
+   counts of every posting, and must say so in the answer itself. See Requirements
+   estimates, below.
 7c. **An instant answer to a common question is held to exactly the same bar.** It analyses
    the platform's own data for that specific question, states the time window, and obeys the
    Compensation, Requirements, and Layoff Signal honesty rules (7a, 7b, 7d) — the numbers are
@@ -443,9 +453,10 @@ When expanded, it shows:
   update it reflects a real, normalized value per posting, not a placeholder.
 - **Context sent to Claude** — the market signal verdict and trend direction, demand signal count,
   compensation signal count (and, when a compensation question was asked, how many of those
-  postings had disclosed vs. inferred salary data), requirements signal count (and, when a
-  synthesis question was asked, the sample size the judgment was built on — see User Flow
-  7b), layoff event count, and the model used. For an instant answer this says plainly that
+  postings had disclosed vs. inferred salary data), requirements signal sample as "{n} read in
+  full of {N} postings" (revised 2026-10-10, was a single count; when a synthesis question
+  was asked, this is the sample the judgment was built on — see User Flow 7b and
+  Requirements estimates), layoff event count, and the model used. For an instant answer this says plainly that
   no model was used — the user can always tell what produced their answer.
 - **Sources** — for the opening briefing, the data source description — now potentially more
   than one, since postings are ingested from several company job boards rather than a single
@@ -602,6 +613,92 @@ identically (see Interactions).
 
 ---
 
+## Requirements estimates
+
+Added 2026-10-10 — `changes/2026-10-10-requirements-extraction-sampling.md`.
+
+### What changes for the user, and what doesn't
+
+Every posting is still collected and sorted into its role, specialization and level. So
+every count of postings stays a full count: the trend chart, the welcome figures, roles,
+seniority, pay transparency and locations. **Only figures about what a posting asks for**
+(skills, education, years of experience, work arrangement, languages) come from reading the
+full job description. For Engineering and Product Management, we read a fixed-size sample of
+descriptions per role, specialization and month. For Design, we read every description.
+
+For these requirements figures, the reader must always be able to tell two cases apart:
+
+- **Every posting read.** The figure describes all postings in that slice. Nothing is
+  estimated, though skills are still our reading of the description text (User Flow 7b).
+- **A sample read.** The figure is an estimate for all postings in that slice, built from the
+  ones we read. It comes with a margin.
+
+The visible wording carries this difference. A footnote or the reasoning panel alone is not
+enough (`data-legibility` — Provenance).
+
+### The terms used, everywhere
+
+| Term | Meaning | Shown as |
+|---|---|---|
+| **n** | Postings in this slice whose full description we read | "{n}" |
+| **N** | All postings in this slice that we track | "{N}" |
+| **Margin** | How far the true share across all N postings could plausibly be from the figure shown, either way, at 95% confidence. One margin per chart or answer: the widest it can be for that sample, not a separate one per bar. Whole percentage points. | "±{m} pts" |
+
+### Thresholds
+
+| Situation | What the reader sees |
+|---|---|
+| n = N (every posting read) | Shares as normal. Qualifier: "Based on all {N} postings." No margin. |
+| n < N and n ≥ 30 | Shares as estimates. Qualifier: "Estimated from {n} of {N} postings we read in full · ±{m} pts." |
+| n < N and 10 ≤ n < 30 | Shares shown, marked "small sample, treat as a rough guide". The AI gives the data but no judgment (User Flow 7b). |
+| n < 10, sample | No shares. "Not enough postings read yet to estimate this ({n} of {N} so far)." |
+| n < 10, every posting read | Plain counts, no percentages ("3 of 8 postings mention Figma"). Shares of a handful of postings read as more precise than they are. |
+| n = 0 | Existing "No extracted requirements data" edge case, unchanged. |
+
+**The unit changes from counts to shares.** Once a slice is sampled, a raw count of postings
+that mention a skill would understate it. 20 mentions in a sample of 50 does not mean 20 out
+of 712. So every requirements figure is expressed as **% of postings in the slice**. This
+includes Story 1's skill block, which today shows counts (see
+`design/market-health/data-stories.md`). The only exception is the n < 10 full-read case
+above.
+
+### Wording, per surface
+
+Copy follows `end-user-content`: plain words, no statistics jargon. "Sample", "estimated" and
+"read in full" are fine. "Stratified", "weighted", "confidence interval" and "extraction" never
+appear in user-facing text.
+
+- **Story blocks and charts.** The qualifier line under the chart carries the n-of-N line from
+  Thresholds. The first time a margin appears in a view, one how-to-read line explains it:
+  "± pts: the real figure across all {N} postings is very likely within this many points of
+  the figure shown."
+- **Chat answers.** The estimate and its basis appear in the same sentence as the number,
+  never only in the accordion. For example: "About 42% of Backend Engineer postings ask for
+  Kubernetes (estimated from 50 of 712 postings we read in full, give or take 13 points)."
+  A slice where every posting was read keeps the existing phrasing ("based on 38 Senior UX
+  Designer postings").
+- **Synthesis questions.** The judgment half of the two-part answer (User Flow 7b) is only
+  given when n ≥ 30. Below that, the AI gives the data and says plainly the sample is too
+  small to recommend from.
+- **Instant answers** (curated, no model). The same qualifier, rendered from the same n, N
+  and margin. No separate wording.
+- **"How this was generated."** The requirements line reads "{n} read in full of {N}
+  postings", plus "sample" or "every posting read".
+- **External AI tools (MCP).** Requirements figures always reach the external AI together
+  with n, N, the margin, and whether it is an estimate. The tool tells the AI to state the
+  estimate and its basis whenever it quotes the number. See `design/mcp-access/experience.md`
+  — Data Legibility for self-contained responses.
+
+### Breakdowns finer than the sample
+
+Samples are drawn per role × specialization × month. A question that slices across these,
+such as "Senior Backend Engineers in Germany", uses whatever sampled postings fall into that
+slice. These slices are often small, so the thresholds above decide what is shown. The AI
+never fills a thin slice by borrowing from a broader one without saying so. If the broader
+figure is more useful, it says which slice it is answering for.
+
+---
+
 ## Interactions
 
 | User action | System response |
@@ -619,7 +716,7 @@ identically (see Interactions).
 | A composed answer is cut off before it finishes (length limit, dropped stream) | The turn never ends on a sentence that just stops. The answer continues to a natural end, or ends with a plain note that it was cut short and can be continued. A partial answer is never presented as the whole answer. |
 | Ask a compensation question in chat (e.g. "What should I expect to earn as a Senior Backend Engineer?") | AI answers using disclosed-salary postings first, states how many postings the figure is based on, and — if a lower-confidence, inferred-from-text estimate is included at all — labels it explicitly as an estimate rather than blending it into the headline range. States plainly if no postings in that slice disclose compensation. |
 | Ask a narrower demand question (sub-specialization, seniority, track, or location) | AI filters the platform's data to that slice and answers the same way it does for role-category-level questions — same provenance and time-window discipline, just a narrower cut. |
-| Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. |
+| Ask a requirements question (e.g. "What skills are Senior UX Designer postings asking for?") | AI reports proportions from extracted requirements data, states the sample size, and never phrases a proportional finding as an absolute claim. Where the slice was sampled, the number is presented as an estimate, with "{n} of {N} postings we read in full" and its margin in the same sentence (revised 2026-10-10 — see Requirements estimates). |
 | Ask a synthesis question that asks for a judgment (e.g. "Should I learn to code as a UX Designer?") | AI answers in two clearly separated parts: the underlying data first, then its judgment built on that data — never blended into one undifferentiated statement. If the sample is too small to support a confident judgment, gives the data alone and says so. |
 | Ask a Layoff Signal question (e.g. "Has Company X had layoffs recently?", "Is the SaaS sector contracting?") (added 2026-09-11) | AI reports the company's or sector's employment-event history over the relevant window, states each event's source. Never cross-references the platform's own job-posting/hiring data — see User Flow 7d. |
 | Ask a pattern-vs-isolated-event question (e.g. "Is Company X's restructuring part of a pattern?") (added 2026-09-11) | AI answers in two clearly separated parts, same shape as a synthesis question: the event history first, then its judgment on pattern vs. isolated event, built only on event count and spacing — a coincidence in timing with anything else is never stated as causal. A single event with no history is called "too early to call a pattern," not dressed up as a trend. |
@@ -713,6 +810,15 @@ identically (see Interactions).
   underlying data (even a small amount) but explicitly declines to draw a recommendation
   from it, rather than reasoning confidently over too few postings (e.g. "Only 4 postings
   match this slice — not enough to draw a reliable conclusion, but here's what they show...").
+- **The slice was sampled and fewer than 10 of its postings were read (added 2026-10-10):**
+  No percentages. The AI says how many were read out of how many exist and that it is not
+  enough to estimate from yet. It then offers the nearest broader slice that does clear the
+  threshold, clearly named as broader (e.g. "all Backend Engineers" instead of "Senior Backend
+  Engineers in Germany"). See Requirements estimates — Thresholds.
+- **A requirements figure and a count-based figure appear in the same answer (added
+  2026-10-10):** e.g. "712 Backend Engineer openings, about 42% asking for Kubernetes". The
+  opening count is a full count and the share is an estimate. The answer keeps them visibly
+  distinct and never implies 42% of 712 is an exact count of postings.
 - **A requirement doesn't map to any tracked skill/education/language value:** Captured in
   the freeform catch-all (`design/market-health/job-classification.md` — Other requirements)
   rather than forced into the nearest standard value or dropped. If a user's question depends
@@ -758,6 +864,8 @@ identically (see Interactions).
 | Confidence comprehension | Post-task question, after a compensation answer: "Was this figure based on disclosed salary data, an estimate, or a mix?" | ≥ 85% correct |
 | Requirements question rate | Analytics — % of sessions that include at least one skills/requirements or synthesis question | Track, no target yet |
 | Data-vs-judgment comprehension | Post-task question, after a synthesis answer: "Which part was factual data, and which part was the AI's opinion?" | ≥ 85% correct |
+| Estimate comprehension (added 2026-10-10) | Post-task question, after a sampled requirements figure: "Was this share counted from every posting, or estimated from some of them?" | ≥ 85% correct |
+| Estimate labelling coverage (added 2026-10-10) | Automated test across stories, instant answers and MCP responses: % of sampled requirements figures carrying n, N and margin | 100% |
 | Instant-answer coverage | Analytics — % of follow-up questions answered by the curated no-model path | Track; expected to rise as the catalogue grows |
 | Degraded-state recovery | Analytics — % of "assistant unavailable" turns followed by a successful answer (retry or common question) in the same session | ≥ 90% |
 | Layoff Signal question rate (added 2026-09-11) | Analytics — % of sessions that include at least one employment-event or pattern-vs-isolated-event question | Track, no target yet |
@@ -766,6 +874,16 @@ identically (see Interactions).
 ---
 
 ## Open Questions
+
+- (Added 2026-10-10) How should "small sample, treat as a rough guide" look on a bar in
+  `SkillDemandChart`? `design/visual-design.md` already has a hollow-marker treatment with a
+  legend line for small samples on the range chart, but nothing for bars. The default for
+  now: label the bar in text, never rely on colour or opacity alone. The frontend spec
+  (Step 5 of the change request) decides whether that is enough, or whether
+  `design/visual-design.md` needs a bar treatment first.
+- (Added 2026-10-10) Thresholds of 30 (judgment) and 10 (show anything) are starting values.
+  Revisit after a month of sampled data, using Estimate comprehension and the share of chat
+  questions that land on a slice below 10.
 
 - Should the Y axis show absolute counts or index-normalised values? Absolute is more concrete;
   indexed makes cross-range trend comparison easier but feels less grounded.

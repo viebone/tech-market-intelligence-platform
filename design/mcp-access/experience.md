@@ -255,6 +255,14 @@ Access, Never Raw):
   roughly how it was derived (a count, a computed trend, a classification) — so an external AI
   that's asked "how do you know that?" has something honest to relay back, in keeping with
   `outcomes/ai-reasoning-transparency.md`'s bar, even without a Reasoning Panel to expand.
+- **An estimate always arrives labelled as one** (added 2026-10-10 —
+  `changes/2026-10-10-requirements-extraction-sampling.md`). Requirements figures (skills,
+  education, experience, work arrangement, languages) for a sampled slice are returned with
+  whether they are an estimate, n (postings read in full), N (postings tracked in the slice)
+  and the margin in percentage points. The tool's own description tells the external AI to
+  state that it is an estimate, and its basis, whenever it quotes the number. Slices below the
+  minimum sample return no shares, only a plain reason. Same thresholds and meaning as
+  `design/market-health/experience.md` — Requirements estimates.
 - **A curated shape, never a raw one** — every response is built from this platform's own
   defined operations (Principle 9), so its shape is something this platform chose because it's
   helpful, not an accidental byproduct of an internal query. If an operation can't answer what

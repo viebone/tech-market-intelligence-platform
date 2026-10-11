@@ -103,11 +103,26 @@ bill the user explicitly said they need to be certain cannot happen.
   it cannot silently draw down an existing workload's headroom
 - Spend accounting reflects real provider-side billing, including hidden costs
   like failed-but-billed attempts and multi-call model fallbacks
+- Adding more job sources does not make per-posting LLM work grow in step with posting
+  volume. Requirements extraction (the one per-posting LLM workload) is bounded per
+  role × specialization × month group, so its monthly cost is set by how many groups the
+  market has, not by how many postings were collected. Every posting is still ingested and
+  classified, so counts, trends and coverage stay complete. *(Added 2026-10-10,
+  `changes/2026-10-10-requirements-extraction-sampling.md`.)*
+- Wherever a figure comes from a sample rather than every posting, it says so where it is
+  shown (sample size, population size, margin), and a sample too small to support it is
+  suppressed or flagged. Cost savings never come from quietly presenting an estimate as a
+  full count. *(Added 2026-10-10, same change.)*
 
 ## Out of scope
 - Reducing the *quality* or *coverage* of classification to save money — this
   outcome is about bounding spend, not minimising it; quality trade-offs belong
-  to the classification outcomes
+  to the classification outcomes. **Narrowed 2026-10-10
+  (`changes/2026-10-10-requirements-extraction-sampling.md`):** this exclusion still
+  covers ingestion and classification, which stay complete. It does not exclude
+  *requirements extraction* using a stratified sample, as long as every figure built
+  on the sample is honestly labelled as an estimate (see the 2026-10-10 success
+  criteria above). Silently degrading quality to save money remains out of scope.
 - Choosing which specific model or provider each workload uses — that stays an
   explicit call-site decision under `ai-provider-flexibility`
 - Automatic switching between providers/models based on price or load (routing

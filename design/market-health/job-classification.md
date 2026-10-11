@@ -454,6 +454,30 @@ absolute claims ("all postings require X"), and must always disclose how many po
 answer is based on — the same discipline already established for Compensation Signal
 (`design/market-health/experience.md`, User Flow 7a).
 
+### Which postings are read (added 2026-10-10)
+
+`changes/2026-10-10-requirements-extraction-sampling.md`. Reading a full description is the
+one per-posting AI cost in this taxonomy. Unlike classification, it cannot be shared across
+postings with the same title. So it is not run on every posting:
+
+- **Only tracked Role Categories are read** (Designer, Product Manager, Engineer). Unchanged:
+  `other`/`unknown` postings never had requirements extracted.
+- **Designer: every posting is read.** It is the product's core audience and a small volume.
+- **Product Manager and Engineer: up to 50 postings per Specialization per month are read.**
+  Groups at or under 50 are read in full. Above that, which postings are read is a fixed,
+  repeatable choice that does not depend on order of arrival or on anything about the
+  posting's content. That keeps the sample representative of the group. A posting already
+  read is never discarded.
+- **Postings that repeat an already-read posting** (same company, same role, same
+  description) reuse that reading instead of being read again.
+- The per-role limits are settings, not part of the taxonomy. Changing them never needs a
+  change to this spec, only a change request.
+
+Classification (above) is unaffected: every posting is still classified. That is why every
+count-based figure stays a full count, while requirements figures become estimates.
+`design/market-health/experience.md` — Requirements estimates defines how those estimates
+are shown.
+
 ---
 
 ## Classification Method
