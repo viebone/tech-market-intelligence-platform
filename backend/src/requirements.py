@@ -570,9 +570,10 @@ def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
     up by the normal backlog on the next run. One-time use only, by the
     2026-08-11 taxonomy reprocessing pass — see backend/specs/market-health/
     api.md — Business Logic — Taxonomy reprocessing. Callers must only pass
-    ids whose classification row has already been reprocessed onto the
-    current taxonomy_version (raw_postings.get_requirements_reprocess_targets)
-    — deleting a posting's requirements before its classification is
+    ids whose classification was just reprocessed AND actually changed
+    (reclassify_all()'s `changed_posting_ids` — 2026-10-10; passing "every
+    posting on the current version" here caused a daily paid re-extraction
+    loop) — deleting a posting's requirements before its classification is
     reprocessed would let it be re-extracted against stale
     role_category/track/specialization, reintroducing the exact bug this
     revision fixes.

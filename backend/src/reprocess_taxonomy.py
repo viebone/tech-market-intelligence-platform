@@ -19,12 +19,14 @@ Run manually:
     python reprocess_taxonomy.py
 
 Two phases, in order every invocation — the order matters (see api.md):
-  1. Classification reprocessing — reclassifies every raw_posting from its
-     title onto the current TAXONOMY_VERSION.
+  1. Classification reprocessing — reclassifies every posting still on a stale
+     taxonomy_version from its title onto the current TAXONOMY_VERSION.
   2. Requirements reprocessing — deletes posting_requirements/posting_skills/
-     posting_languages rows for postings whose classification has already
-     landed on the current taxonomy_version, so the normal ingest.py backlog
+     posting_languages rows only for postings whose role_category/track/
+     specialization actually changed in step 1, so the normal ingest.py backlog
      query picks them back up and re-extracts them under the new taxonomy.
+     (Corrected 2026-10-10 — it used to delete every extracted posting on the
+     current version; changes/2026-10-10-requirements-re-extraction-loop.md.)
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from classification import DAILY_REQUEST_BUDGET, TAXONOMY_VERSION, reclassify_all
 from db import init_schema
 from ingestion_runs import get_requests_used_today, record_run
-from raw_postings import get_all_for_reclassification, get_requirements_reprocess_targets
+from raw_postings import get_stale_for_reclassification
 from requirements import delete_requirements_for_reprocess
 
 logging.basicConfig(level=logging.INFO)
@@ -52,9 +54,9 @@ async def run() -> None:
     init_schema()
     started_at = datetime.now(timezone.utc)
 
-    all_postings = get_all_for_reclassification()
+    all_postings = get_stale_for_reclassification(TAXONOMY_VERSION)
     logger.info(
-        "reprocess_taxonomy: %d total postings to check against taxonomy_version=%s",
+        "reprocess_taxonomy: %d postings on a stale taxonomy_version (current: %s)",
         len(all_postings), TAXONOMY_VERSION,
     )
     already_used_today = get_requests_used_today()
@@ -66,15 +68,14 @@ async def run() -> None:
     classify_stats = await reclassify_all(all_postings, already_used_today=already_used_today)
     logger.info("reprocess_taxonomy: classification phase done: %s", classify_stats)
 
-    # Ordering dependency (api.md — Business Logic — Taxonomy reprocessing):
-    # only reprocess requirements for postings whose classification has
-    # already landed on the current taxonomy_version — never against a
-    # still-stale one, since skill_group selection depends on it.
-    reprocess_targets = get_requirements_reprocess_targets(TAXONOMY_VERSION)
+    # Ordering dependency (api.md — Business Logic — Taxonomy reprocessing): the
+    # delete runs after the rewrite, and only for postings whose role_category/
+    # track/specialization actually changed — never "everything on the current
+    # version" (changes/2026-10-10-requirements-re-extraction-loop.md).
+    reprocess_targets = classify_stats.pop("changed_posting_ids", [])
     logger.info(
-        "reprocess_taxonomy: %d postings with existing requirements are ready for reprocessing "
-        "(classification already on the current taxonomy_version)",
-        len(reprocess_targets),
+        "reprocess_taxonomy: %d reprocessed postings changed classification; clearing their "
+        "requirements for re-extraction", len(reprocess_targets),
     )
     delete_requirements_for_reprocess(reprocess_targets)
 

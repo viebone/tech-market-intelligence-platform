@@ -1395,6 +1395,38 @@ are summed into the run's existing `total_classified`/`cache_hits`/`heuristic_fi
 `reprocess_taxonomy.py` itself is kept, unchanged, as a manual escape hatch for checking
 progress mid-day without waiting for the next cron tick.
 
+**Corrected 2026-10-10 (`changes/2026-10-10-requirements-re-extraction-loop.md`). The paragraph
+above was internally inconsistent, and the code followed the wrong half.** It promised "one fast,
+empty query on the vast majority of days when nothing is stale", but named
+`get_all_for_reclassification()`, which the 2026-08-11 bullet defines as returning *every*
+posting. Combined with the 2026-08-11 requirements-delete rule ("delete requirements for every
+posting whose classification is already on the new version"), every daily run since 2026-09-21
+deleted *all* extracted requirements. The batch lane then paid to re-read the same oldest 500
+postings each day. The binding rules are now:
+
+- **Stale means an older `taxonomy_version`, nothing else.** Both the daily step and
+  `reprocess_taxonomy.py` select only postings whose classification row's `taxonomy_version`
+  differs from `TAXONOMY_VERSION` (`raw_postings.get_stale_for_reclassification`). Unclassified
+  postings are `classify_postings()`'s job, not this one. On a steady-state day this returns
+  zero rows and the step does no work, paid or destructive. A taxonomy bump makes every row
+  stale automatically, so no "select everything" helper is needed. The whole-corpus helpers
+  `get_all_for_reclassification()` and `get_requirements_reprocess_targets()` are **removed**,
+  not kept for convenience, so they cannot be reused in a recurring path.
+- **Every selected posting is actually rewritten.** A stale posting whose title is already
+  classified on the current version takes that cached result *and is written*. Previously
+  such postings were counted as cache hits but never updated, so they stayed stale forever
+  (54 rows were still on `2026-08-11` on 2026-10-10).
+- **Requirements are cleared only for postings whose classification actually changed.**
+  `reclassify_all()` compares each rewritten posting's `role_category` / `track` /
+  `specialization` with its previous values and returns the ids that differ
+  (`changed_posting_ids`). Only those postings' requirements are deleted for re-extraction,
+  because only they would get a different skill-group list. A posting reclassified to the same
+  values keeps its requirements. The 2026-08-11 ordering rule (classification before
+  requirements) still holds: the delete runs after the rewrite, for exactly the rewritten
+  postings that changed.
+- Guardrails against any future cause of paid repeat work (a repeat-work circuit breaker, a
+  bulk-delete cap, admin visibility) are specified under that change request's Step 3.
+
 **Description-assisted recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
 A one-time reprocessing pass, separate from taxonomy reprocessing, that re-classifies every
 posting with **any** `'unknown'` classification field — `role_category`, `specialization`,

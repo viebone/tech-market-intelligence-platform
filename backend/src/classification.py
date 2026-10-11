@@ -731,7 +731,7 @@ def _get_title_cache_for_version(titles: list[str], taxonomy_version: str) -> di
             """
             SELECT DISTINCT ON (rp.title)
                 rp.title, c.role_category, c.specialization, c.level, c.track,
-                c.classification_confidence
+                c.classification_confidence, c.job_function, c.model
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
             WHERE rp.title = ANY(%s) AND c.taxonomy_version = %s
@@ -739,10 +739,13 @@ def _get_title_cache_for_version(titles: list[str], taxonomy_version: str) -> di
             """,
             (titles, taxonomy_version),
         ).fetchall()
+    # job_function and model are carried so reclassify_all() can write a cache
+    # hit without blanking them (2026-10-10).
     return {
         row[0]: {
             "role_category": row[1], "specialization": row[2], "level": row[3],
             "track": row[4], "classification_confidence": row[5],
+            "job_function": row[6], "model": row[7],
         }
         for row in rows
     }
@@ -788,11 +791,41 @@ def update_classifications(classifications: list[dict]) -> None:
             )
 
 
+# The classification fields requirements extraction depends on (skill_group
+# selection — requirements.applicable_skill_groups). A reprocessed posting whose
+# values for these are unchanged keeps its extracted requirements.
+REQUIREMENTS_RELEVANT_FIELDS = ("role_category", "track", "specialization")
+
+
+def _get_requirements_relevant_fields(posting_ids: list[str]) -> dict[str, tuple]:
+    if not posting_ids:
+        return {}
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT posting_id, role_category, track, specialization "
+            "FROM classifications WHERE posting_id = ANY(%s)",
+            (posting_ids,),
+        ).fetchall()
+    return {row[0]: tuple(row[1:]) for row in rows}
+
+
+def changed_posting_ids(prior: dict[str, tuple], rewritten_rows: list[dict]) -> list[str]:
+    """
+    Ids of rewritten postings whose requirements-relevant classification
+    differs from `prior` — the only postings whose requirements need clearing
+    for re-extraction (changes/2026-10-10-requirements-re-extraction-loop.md).
+    A posting with no prior row counts as changed.
+    """
+    return [
+        row["id"] for row in rewritten_rows
+        if prior.get(row["id"]) != tuple(row.get(f) for f in REQUIREMENTS_RELEVANT_FIELDS)
+    ]
+
+
 async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> dict:
     """
-    Reprocess an arbitrary-length list of {id, title} postings onto the
-    current TAXONOMY_VERSION, regardless of whether they already have a
-    classification. Mirrors classify_postings()'s structure closely
+    Reprocess a list of stale {id, title} postings onto the current
+    TAXONOMY_VERSION. Mirrors classify_postings()'s structure closely
     (in-run title dedup, denylist pre-filter, batching, cross-run daily
     budget) with two deliberate differences: (1) the cross-run cache lookup
     is scoped to this taxonomy_version only (_get_title_cache_for_version),
@@ -800,19 +833,26 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
     update_classifications() (UPDATE), never insert_classifications()
     (INSERT ... ON CONFLICT DO NOTHING), since every posting already has a
     row. `postings` is expected oldest-first
-    (raw_postings.get_all_for_reclassification()). Shares the same
+    (raw_postings.get_stale_for_reclassification()). Shares the same
     DAILY_REQUEST_BUDGET/GEMINI_API_KEY_CLASSIFICATION as ongoing daily
     classification — this is a larger-than-usual backlog on the same budget,
     not a separately budgeted concern the way requirements extraction is.
-    Returns the same stats shape as classify_postings().
+    Returns the same stats shape as classify_postings(), plus
+    `changed_posting_ids`: the rewritten postings whose role_category/track/
+    specialization actually changed — the only ones whose requirements the
+    caller should clear (2026-10-10).
     """
     empty_stats = {
         "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
         "other_count": 0, "total_classified": 0,
         "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+        "changed_posting_ids": [],
     }
     if not postings:
         return empty_stats
+
+    prior = _get_requirements_relevant_fields([p["id"] for p in postings])
+    changed: list[str] = []
 
     postings_by_title: dict[str, list[dict]] = {}
     for p in postings:
@@ -842,8 +882,15 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
     def _count_other(rows: list[dict]) -> int:
         return sum(1 for r in rows if r["role_category"] == "other")
 
+    # Stale postings whose title is already classified on this version take the
+    # cached result AND are written — previously they were only counted, so they
+    # stayed on the old version forever (2026-10-10).
     already_current_titles = [t for t in unique_titles if t in cache]
-    cache_hits = sum(len(postings_by_title[t]) for t in already_current_titles)
+    cache_rows = _rows_for(already_current_titles, cache)
+    update_classifications(cache_rows)
+    cache_hits = len(cache_rows)
+    other_count = _count_other(cache_rows)
+    changed += changed_posting_ids(prior, cache_rows)
 
     denylisted_results = {
         t: {
@@ -856,7 +903,8 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
     heuristic_rows = _rows_for(denylisted_titles, denylisted_results)
     update_classifications(heuristic_rows)
     heuristic_filtered = len(heuristic_rows)
-    other_count = _count_other(heuristic_rows)
+    other_count += _count_other(heuristic_rows)
+    changed += changed_posting_ids(prior, heuristic_rows)
 
     llm_classified = 0
     stopped_early = False
@@ -895,6 +943,7 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
         update_classifications(fresh_rows)
         llm_classified += len(fresh_rows)
         other_count += _count_other(fresh_rows)
+        changed += changed_posting_ids(prior, fresh_rows)
         batches_attempted += 1
         logger.info("reclassified batch %d/%d (%d unique titles)", batch_num, num_batches, len(title_batch))
         if batch_num < num_batches and batches_attempted < effective_batch_cap:
@@ -909,6 +958,7 @@ async def reclassify_all(postings: list[dict], already_used_today: int = 0) -> d
         "stopped_early": stopped_early,
         "budget_reached": budget_reached,
         "llm_requests_used": request_counter["requests"],
+        "changed_posting_ids": changed,
     }
 
 

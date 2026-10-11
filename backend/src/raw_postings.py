@@ -190,18 +190,27 @@ def get_postings_by_ids(posting_ids: list[str]) -> list[dict]:
     ]
 
 
-def get_all_for_reclassification() -> list[dict]:
+def get_stale_for_reclassification(taxonomy_version: str) -> list[dict]:
     """
-    Every raw_postings row, oldest-first, regardless of whether it already
-    has a classification — used only by the one-time 2026-08-11 taxonomy
-    reprocessing pass (see backend/specs/market-health/api.md — Business
-    Logic — Taxonomy reprocessing). Distinct from get_all_unclassified(),
-    which only returns postings with no classification row at all and is
-    what the ongoing daily pipeline still uses.
+    Classified postings whose classification row is on a taxonomy_version
+    other than `taxonomy_version`, oldest-first. Empty on a steady-state day —
+    the daily taxonomy-reprocessing step does nothing when this is empty.
+    Unclassified postings are excluded on purpose: they belong to
+    get_all_unclassified()/classify_postings(). A taxonomy bump makes every
+    row stale automatically, so there is deliberately no "every posting"
+    variant (see backend/specs/market-health/api.md — Taxonomy reprocessing —
+    Corrected 2026-10-10; changes/2026-10-10-requirements-re-extraction-loop.md).
     """
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, title FROM raw_postings ORDER BY fetched_at ASC"
+            """
+            SELECT rp.id, rp.title
+            FROM raw_postings rp
+            JOIN classifications c ON c.posting_id = rp.id
+            WHERE c.taxonomy_version <> %s
+            ORDER BY rp.fetched_at ASC
+            """,
+            (taxonomy_version,),
         ).fetchall()
     return [{"id": row[0], "title": row[1]} for row in rows]
 
@@ -701,24 +710,3 @@ def get_technical_footprint() -> dict:
     return {"footprint": categories, "excluded_note": TECHNICAL_FOOTPRINT_EXCLUDED_NOTE}
 
 
-def get_requirements_reprocess_targets(taxonomy_version: str) -> list[str]:
-    """
-    Posting ids that already have a posting_requirements row AND whose
-    classification has already been reprocessed onto `taxonomy_version` —
-    the ordering dependency from Business Logic — Taxonomy reprocessing:
-    a posting's requirements must never be reprocessed against a still-stale
-    classification, since skill_group selection depends on
-    role_category/track/specialization. One-time use only, same as
-    get_all_for_reclassification().
-    """
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT pr.posting_id
-            FROM posting_requirements pr
-            JOIN classifications c ON c.posting_id = pr.posting_id
-            WHERE c.taxonomy_version = %s
-            """,
-            (taxonomy_version,),
-        ).fetchall()
-    return [row[0] for row in rows]

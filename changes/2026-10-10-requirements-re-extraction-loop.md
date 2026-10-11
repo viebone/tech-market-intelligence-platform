@@ -1,0 +1,163 @@
+---
+id: requirements-re-extraction-loop
+date: 2026-10-10
+trigger-type: bug
+change-type: bug-fix, api-change
+outcome: llm-spend-is-bounded-and-isolated
+status: in-progress
+---
+
+# Change Request: Stop the daily requirements re-extraction loop, and guard against paid repeat work
+
+## Signal
+See: `research/2026-10-10-requirements-re-extraction-loop.md`
+
+## Outcome
+See: `outcomes/llm-spend-is-bounded-and-isolated.md`. Directly relevant success criterion: "A
+bug, an infinite loop, a retry storm, or an unusually large ingestion event cannot produce spend
+beyond the ceiling". This loop is that bug. The ceiling held only because of the daily request
+budgets and the $1-per-batch cap, not because anything noticed the work was pointless.
+
+## Change Type
+- `bug-fix`: the daily taxonomy-reprocessing step treats every posting as stale and deletes
+  every requirements row. Root cause is **spec and code both**. `backend/specs/market-health/api.md`
+  — Taxonomy reprocessing says the daily check is "one fast, empty query on the vast majority of
+  days", but names `get_all_for_reclassification()`, which its own 2026-08-11 bullet defines as
+  returning *every* posting. Its requirements-delete rule ("classification already on the new
+  version") becomes "everything" once a migration finishes. The spec gets fixed first.
+- `api-change`: new guardrails, so repeat paid work is blocked and visible whatever the cause,
+  not just this one cause.
+
+## Scope
+
+### 1. The fix
+- **Stale means stale.** The daily reprocessing check selects only postings whose
+  classification is on an older `taxonomy_version` than `TAXONOMY_VERSION`. On a steady-state
+  day that is zero rows, and the step does nothing. `get_all_for_reclassification()` stays
+  available only to the manual `reprocess_taxonomy.py` escape hatch, renamed or documented so it
+  can't be mistaken for a stale query again.
+- **Clear requirements only where the classification actually changed.** Reprocessing records
+  which postings' `role_category` / `track` / `specialization` changed in this pass. Only those
+  postings' requirements are cleared, because only they would get a different skill-group list.
+  A posting whose classification came back identical keeps its requirements.
+- **Rewriting an unchanged classification is not "classified".** `reclassify_all` stops counting
+  cache-identical rewrites in `total_classified`. Ideally it doesn't rewrite them at all.
+
+### 2. Guardrails (so this class of bug can't silently recur)
+- **Repeat-work circuit breaker (both extraction lanes).** Before submitting a batch or running
+  the interactive lane, count how many selected postings have *already been extracted before*.
+  That needs a small append-only record of successful extractions which deletes never touch,
+  because `posting_requirements` itself is what gets deleted. If repeats exceed a threshold
+  (default: >10% of the selection, or >50 postings) and there is no explicitly recorded
+  reprocess request for them, **do not spend**. Record
+  `requirements_phase = repeat_work_blocked`, log a warning, and leave the postings alone.
+- **Bulk-delete cap.** `delete_requirements_for_reprocess()` refuses, in the daily path, to delete
+  more than a small cap per run (default 200). A larger reprocess must go through the manual
+  script with an explicit flag and a change request, which is how taxonomy migrations are meant
+  to work anyway. The refusal is recorded on the run, not swallowed.
+- **Admin visibility** (`backend/specs/pipeline-visibility/api.md`): per run, show postings
+  re-extracted (repeats), requirements rows deleted, and any blocked phase, with a plain warning
+  state when the breaker fires. Also show the existing batch history as distinct postings
+  ÷ slots, so "500 slots, 12 new" is visible at a glance.
+- **Regression tests** (plain asserts, same style as `backend/tests/test_curated_match.py`):
+  - a steady-state day (every classification current) selects nothing to reprocess, deletes
+    nothing, and re-extracts nothing;
+  - a reprocess where 3 of 100 classifications change clears exactly those 3;
+  - the circuit breaker blocks a selection made of already-extracted postings;
+  - the delete cap refuses an oversized daily delete.
+
+### Explicitly out of scope
+- The app-level dollar spend ledger (real `actual_cost_usd`, monthly ceiling enforced before
+  each call). Still the right long-term backstop and still unplanned. This CR adds a cheap,
+  cause-agnostic tripwire, not the ledger.
+- Sampling (`changes/2026-10-10-requirements-extraction-sampling.md`, paused at Step 4). It
+  resumes after this ships, with real cost data.
+
+## Specs Affected
+
+| Layer | File | Action |
+|---|---|---|
+| Outcome | `outcomes/llm-spend-is-bounded-and-isolated.md` | no-change (existing criterion covers it; logged as an instance below) |
+| Design Foundations | `design/foundations.md` | no-change |
+| Information Architecture | `design/information-architecture.md` | no-change |
+| Visual Design | `design/visual-design.md` | no-change |
+| Experience Spec | `design/pipeline-visibility/experience.md` | update. The admin dashboard gains the repeat-work / deleted-rows / blocked-phase state. Operator-facing, but the admin surface has an experience spec, so it changes first. |
+| Experience Spec | `design/market-health/*` | no-change. No end-user-visible change, beyond requirements data surviving more than one day. |
+| Backend Spec | `backend/specs/market-health/api.md` | update. Fix the Taxonomy reprocessing section (stale query, changed-only clearing), and add the circuit breaker, delete cap and extraction record. |
+| Backend Spec | `backend/specs/pipeline-visibility/api.md` | update. New per-run fields and batch distinct-vs-slots. |
+| Frontend Spec | `frontend/specs/*` | no-change. The admin dashboard is server-rendered by the backend (`admin_templates`); confirm in Step 3. |
+| Backend Implementation | `backend/src/` | update (`ingest.py`, `raw_postings.py`, `classification.py`, `requirements.py`, `batch_jobs.py`/`ingest._maybe_submit_batch`, `db.py`, `ingestion_runs.py`, admin dashboard, `backend/tests/`) |
+| Frontend Implementation | `frontend/src/` | no-change |
+| Plain-Language Overview | `OVERVIEW.md` | no-change (bug-fix plus an operator-only safeguard) |
+| MCP Access Review | `ACCESS.md` | no-change. No new or changed user-facing capability. The admin run fields are operator telemetry and were never MCP-exposed. Confirmed explicitly, not assumed. |
+| Polite Scraping Review | `DATA_SOURCES.md` | not-applicable |
+| Data Surface Review | — | not-applicable. The extraction record is pipeline bookkeeping, not a new kind of market fact. |
+
+## Execution Plan
+
+- [x] ✅ Step 1: **Stop the bleeding first, with the owner's go-ahead.** Ship the minimal fix
+      (stale-only selection plus changed-only clearing) before the next 06:00 UTC cron. Otherwise
+      tomorrow's run deletes today's results again, including batch job 31's. The spec edit for
+      this part is done in the same step and is small, but it comes first.
+- [ ] Step 2: Update `design/pipeline-visibility/experience.md` (admin states for repeat work,
+      deletes, blocked phase).
+- [ ] Step 3: `/new-backend-spec`. Update `backend/specs/market-health/api.md` (circuit breaker,
+      delete cap, extraction record) and `backend/specs/pipeline-visibility/api.md`. Confirm the
+      admin dashboard is backend-rendered (no frontend spec).
+- [ ] Step 4: `/implement-backend`. Guardrails, admin fields, regression tests.
+- [ ] Step 5: Verify in production over two runs:
+      - 0 reprocess deletes on a steady-state day;
+      - `posting_requirements` grows day over day (no more resets to ~500);
+      - distinct postings per batch job = slots;
+      - the backlog actually falls.
+- [ ] Step 6: Resume `changes/2026-10-10-requirements-extraction-sampling.md` Step 4 with the
+      owner, re-deciding urgency and cap using real post-fix numbers.
+- [ ] Step 7 (framework, needs the owner's go-ahead): propose a framework-level rule so "a
+      steady-state recurring run does no paid and no destructive work" is checked for every
+      product, not only remembered in this one. See Decision Log.
+
+## Decision Log
+- 2026-10-10: Classified `bug-fix` with the spec also wrong (it names a whole-corpus helper as
+  the daily stale check), plus `api-change` for the guardrails. The owner asked explicitly that
+  "things like this don't happen again". A fix alone would only prevent this one path, so the
+  guardrails are cause-agnostic: they detect paying twice for the same posting, whatever caused
+  it.
+- 2026-10-10: Anchored to `llm-spend-is-bounded-and-isolated` with no outcome change. Its
+  "infinite loop … cannot produce spend beyond the ceiling" criterion already covers this.
+- 2026-10-10: **Why nothing caught it.**
+  - The daily request budgets and the $1-per-batch cap bounded the rate of spend, not the
+    usefulness of it. They worked as designed while the money bought nothing.
+  - Nothing compares "postings paid for" with "new postings gained". `batch_collected = 500`
+    looked healthy every day.
+  - `actual_cost_usd` is never filled in.
+  - A one-time helper (`get_all_for_reclassification`) was reused in a recurring job without its
+    semantics being re-read. Its name says "all", and its docstring says "one-time".
+- 2026-10-10: Note for memory and docs: the monthly ceiling was raised to **$10** on 2026-09-27
+  (`changes/2026-09-27-llm-budget-raised-to-10.md`), close to when this loop began repeating
+  daily. Real headroom was spent on repeat work.
+- 2026-10-10: Framework-level proposal for Step 7: a new Rule 15 in the workspace `CLAUDE.md`
+  ("recurring jobs are idempotent: a steady-state run performs zero paid work and zero
+  destructive work, proven by a test; one-time helpers are never reused in recurring jobs
+  without re-review; every paid per-item pipeline has a repeat-work tripwire"), plus a matching
+  check in `/change-request` and `/new-backend-spec`. Not done yet. It changes the framework,
+  which the owner decides.
+- 2026-10-11: ✅ Step 1 hotfix done (owner approved "fix + push to main").
+  - **Spec:** `backend/specs/market-health/api.md` — Taxonomy reprocessing gains a "Corrected
+    2026-10-10" block: stale means older version only; every selected posting is written;
+    requirements are cleared only for changed postings; the whole-corpus helpers are removed.
+  - **Code:**
+    - `raw_postings.get_stale_for_reclassification()` replaces `get_all_for_reclassification()`;
+      `get_requirements_reprocess_targets()` is deleted.
+    - `classification.reclassify_all()` now writes cache hits. Before, they were counted but
+      never written, which is the second bug that left 54 postings stuck on `2026-08-11`.
+      The title cache now carries `job_function` and `model`, so a cache write doesn't blank
+      them. It returns `changed_posting_ids` via the pure `changed_posting_ids()` helper.
+    - `ingest.run_taxonomy_reprocessing_phase()` and `reprocess_taxonomy.py` delete
+      requirements only for those ids.
+  - **Tests:** `backend/tests/test_reprocessing_steady_state.py`, 6 passing. A steady-state day
+    deletes nothing and makes no model call; only changed postings are cleared; level and
+    confidence changes don't count; cache hits are written with their fields intact.
+    `test_ingest_isolation.py` still 4/4.
+  - **Dry run against production (read-only):** the next run selects 54 stale postings, all
+    with titles already cached on the current version. So: 0 model calls, at most 54
+    requirements cleared, then 0 on every day after.

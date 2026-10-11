@@ -41,11 +41,10 @@ from llm import providers
 from raw_postings import (
     attach_ingestion_run,
     count_needing_requirements,
-    get_all_for_reclassification,
     get_all_needing_requirements,
     get_all_unclassified,
     get_postings_by_ids,
-    get_requirements_reprocess_targets,
+    get_stale_for_reclassification,
     insert_new_postings,
 )
 from requirements import REQUIREMENTS_DAILY_REQUEST_BUDGET, extract_requirements
@@ -113,7 +112,7 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
     ingest.md) so a future taxonomy revision never again needs a human to remember to
     manually re-trigger reprocess_taxonomy.py for several days in a row — this runs every
     day, forever, on the same permanent cron ingest.py already has, and does nothing at
-    all on the overwhelming majority of days when nothing is stale (get_all_for_
+    all on the overwhelming majority of days when nothing is stale (get_stale_for_
     reclassification() returning empty is the fast, common case, checked first).
 
     `already_used_today` must already include THIS run's own classify_postings() spend
@@ -124,10 +123,11 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
     research/2026-08-05-cross-run-daily-budget-gap.md, just within one run instead of
     across runs).
 
-    Deletes now-stale posting_requirements rows for anything actually reclassified this
-    call, so the SAME run's requirements phase (which runs right after this) picks them
-    back up immediately — an improvement over reprocess_taxonomy.py's original two-script
-    version, which had to wait for a later run to notice.
+    Deletes posting_requirements rows only for postings whose role_category/track/
+    specialization actually changed in this call (2026-10-10), so the SAME run's
+    requirements phase (which runs right after this) picks them back up immediately — an
+    improvement over reprocess_taxonomy.py's original two-script version, which had to
+    wait for a later run to notice.
 
     Returns the same stats shape as classify_postings()/reclassify_all(), all-zero/False
     when there was nothing stale to do.
@@ -137,7 +137,7 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
         "other_count": 0, "total_classified": 0,
         "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
     }
-    stale_backlog = get_all_for_reclassification()
+    stale_backlog = get_stale_for_reclassification(TAXONOMY_VERSION)
     if not stale_backlog:
         return empty_stats
 
@@ -148,12 +148,16 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
     stats = await reclassify_all(stale_backlog, already_used_today=already_used_today)
     logger.info("reclassify: done: %s", stats)
 
-    if stats["total_classified"] > 0:
-        reprocess_targets = get_requirements_reprocess_targets(TAXONOMY_VERSION)
-        reqs.delete_requirements_for_reprocess(reprocess_targets)
+    # Only postings whose role_category/track/specialization actually changed get
+    # their requirements cleared — never "everything on the current version", which
+    # wiped every extracted posting daily from 2026-09-21 to 2026-10-10
+    # (changes/2026-10-10-requirements-re-extraction-loop.md).
+    changed = stats.pop("changed_posting_ids", [])
+    if changed:
+        reqs.delete_requirements_for_reprocess(changed)
         logger.info(
-            "reclassify: %d postings' requirements cleared for re-extraction this same "
-            "run's requirements phase", len(reprocess_targets),
+            "reclassify: %d of %d reprocessed postings changed classification; their "
+            "requirements are cleared for re-extraction", len(changed), stats["total_classified"],
         )
     return stats
 
