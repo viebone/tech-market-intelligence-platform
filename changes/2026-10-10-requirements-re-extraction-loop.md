@@ -112,7 +112,7 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
       - the backlog actually falls.
 - [ ] Step 6: Resume `changes/2026-10-10-requirements-extraction-sampling.md` Step 4 with the
       owner, re-deciding urgency and cap using real post-fix numbers.
-- [ ] Step 7 (framework, needs the owner's go-ahead): propose a framework-level rule so "a
+- [x] ✅ Step 7 (framework, owner approved 2026-10-11): propose a framework-level rule so "a
       steady-state recurring run does no paid and no destructive work" is checked for every
       product, not only remembered in this one. See Decision Log.
 
@@ -161,3 +161,15 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
   - **Dry run against production (read-only):** the next run selects 54 stale postings, all
     with titles already cached on the current version. So: 0 model calls, at most 54
     requirements cleared, then 0 on every day after.
+- 2026-10-11: Deployed. `job-sync` deployment `596ad90b` is live on commit `f3db13c` (SUCCESS
+  20:53 UTC). Too late for this morning's run 95 (06:03 UTC), which wiped requirements once
+  more, down to 95 rows, and submitted batch job 32 (500 postings). Batch jobs 30 and 31 both
+  `failed` provider-side; check why as part of Step 5. Tomorrow's run is the first on the
+  fixed code. Expect: 54 stale postings rewritten from cache, 0 classification model calls,
+  job 32 collected and *kept*.
+- 2026-10-11: ✅ Step 7 done in the framework repo. Workspace `CLAUDE.md` gains **Rule 15**
+  (recurring jobs: a stated steady state with no paid and no destructive work, proven by a
+  test; no unreviewed one-time helpers in recurring paths; destructive steps scoped to what
+  changed; a repeat-work tripwire on every paid per-item pipeline). `/new-backend-spec` gains
+  a steady-state step (new Step 9) and two anti-patterns. `/change-request` gains a matching
+  anti-pattern for changes that touch a recurring job without going through `/new-backend-spec`.
