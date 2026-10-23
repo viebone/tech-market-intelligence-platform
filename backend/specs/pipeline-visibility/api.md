@@ -161,6 +161,17 @@ is unchanged); it only makes past failures visible instead of silent. The failur
 deleted the moment extraction finally succeeds — `Extracted` and `Failed` are mutually
 exclusive, never shown as both.
 
+**Revised 2026-10-23 — a fifth state, `Not sampled`**
+(`changes/2026-10-10-requirements-extraction-sampling.md`;
+`design/pipeline-visibility/experience.md` — User Flow 14, Edge Cases):
+
+| Requirements Status | Meaning | Derived from |
+|---|---|---|
+| `Not sampled` | Tracked role, but outside the sample: full details not kept, never read. **Expected, not a fault.** Never counted in the backlog. | `posting_samples.decision = 'not_kept'` |
+
+Precedence: `extracted` > `not_eligible` > `not_sampled` > `failed` > `pending`. A pending
+sampling decision (no `posting_samples` row yet) reads `pending`.
+
 ---
 
 ## API Endpoints
@@ -246,6 +257,40 @@ breakdown, requirements coverage, and the most recent ingestion run, per
   while `submitted`/`running` so a genuinely stuck job (long past `expected_by`)
   is visually obvious.
 
+**Paid work check (added 2026-10-23 — `changes/2026-10-10-requirements-re-extraction-loop.md`,
+Step 3; `design/pipeline-visibility/experience.md` — User Flow 15, Paid work check).** Overview
+gains:
+```json
+"paid_work_check": {
+  "run_id": 107, "started_at": "2026-10-23T06:00:00Z",
+  "paid": 500, "new": 500, "repeats": 0, "removed": 0,
+  "guard": "ok",
+  "guard_detail": {},
+  "thresholds": { "count": 50, "share": 0.10 }, "delete_cap": 200,
+  "last_unresolved_guard": null
+}
+```
+- `paid` / `new` / `repeats` / `removed` come from the latest run's `requirements_paid` /
+  `requirements_new` / `requirements_repeats` / `requirements_deleted`
+  (`backend/specs/market-health/api.md` — Data Models — IngestionRun). They are not
+  recomputed here, so the dashboard and the pipeline can't disagree.
+- `guard` / `guard_detail` come from that run's `requirements_guard` / `guard_detail`.
+- `last_unresolved_guard` is the most recent run whose `requirements_guard != 'ok'`, **if no later
+  run has `requirements_guard = 'ok'` with `requirements_paid > 0`**. It is
+  `{run_id, guard, started_at}` or `null`. That's what keeps a pause on the Overview line until
+  a later run reads normally (experience Edge Cases).
+- `thresholds` and `delete_cap` are read from `requirements_guard.py`'s constants, never
+  duplicated.
+- Template states: neutral when `repeats = 0` and `removed = 0`. `amber-600` number-only when
+  `repeats > 0` and `guard = ok`. `amber-600` "Paused" / "Removal stopped" badge plus the
+  experience spec's sentences when the guard fired. The existing `red-600` stays for real
+  failures. `batch_submit_incomplete` renders "Batch submit did not complete (batch
+  {batch_job_id})".
+
+`requirements_backlog.batch` gains `distinct_count` (`batch_jobs.distinct_count`, or computed
+from `posting_ids` for legacy rows), rendered "{distinct_count} distinct postings in
+{item_count} slots", with the gap sentence when they differ.
+
 ### GET /admin/postings
 **Purpose**: Filterable, sortable, paginated postings table, per
 `design/pipeline-visibility/experience.md` User Flow steps 3–4 and Interactions.
@@ -260,7 +305,9 @@ breakdown, requirements coverage, and the most recent ingestion run, per
 | `job_function` | `str` | none | **Added 2026-09-21.** Exact match; only ever populated for `role_category = "other"` rows (`job-classification.md` — Job Function) — lets an operator drill from a Taxonomy Health/Overview number straight into the real postings behind it, same "drill down from any high-level number" promise `outcomes/pipeline-processing-visibility.md` already makes for every other dimension here |
 | `classification_confidence` | `str` | none | Exact match |
 | `taxonomy_version` | `str` | none | Exact match |
-| `requirements_status` | `"extracted" \| "pending" \| "failed" \| "not_eligible"` | none | See "Requirements Status" above |
+| `requirements_status` | `"extracted" \| "pending" \| "failed" \| "not_eligible" \| "not_sampled"` | none | See "Requirements Status" above (`not_sampled` added 2026-10-23) |
+| `full_details` | `"kept" \| "not_kept" \| "kept_before_sampling" \| "pending"` | none | **Added 2026-10-23.** From `posting_samples.decision`; `pending` = no row yet. Also rendered as a column. |
+| `group_month` | `str` (`YYYY-MM`) | none | **Added 2026-10-23.** Used by the Sampling by group drill-down together with `role_category` and `specialization`. |
 | `source` | `str` | none | `"greenhouse" \| "lever" \| "ashby" \| "adzuna"` |
 | `search` | `str` | none | `ILIKE` against `raw_postings.title` and `company`, debounced client-side before the GET fires |
 | `sort` | `str` | `"fetched_at"` | Whitelisted closed set: `fetched_at`, `company`, `role_category`, `level`, `classification_confidence`, `taxonomy_version` — same "validate against a closed set" discipline as `role_category` itself, to keep the column name out of raw SQL construction |
@@ -286,6 +333,14 @@ active filter chips, total match count, and pagination controls. Each row links 
   "languages": [{ "language": "English", "requirement_level": "required" }]
 }
 ```
+**Added 2026-10-23:** the payload is `COALESCE(posting_details.raw_response,
+raw_postings.raw_response)`. The response also carries `"sample": { "decision", "reason",
+"group_role", "group_specialization", "group_month", "rate" }` from `posting_samples`, or
+`null` while pending. When the decision is `not_kept`, `posting.raw_response` is `null` and the
+template renders "Full details not kept: outside the {Month YYYY} sample for {role} ·
+{specialization}" (reason `ceiling`: "…: this group reached its monthly ceiling"; reason
+`unavailable`: "…: the posting left its board before it could be sampled"). It never renders
+an empty JSON box.
 `ingested_by_run` is `null` for rows predating `ingestion_run_id` (see Data Models addition)
 — rendered as "predates run tracking," never approximated. `requirements` is `null` when
 `status` is `"pending"` or `"not_eligible"`; when `status` is `"failed"` it instead carries
@@ -310,6 +365,16 @@ activity** cell derived from `batch_collected` / `batch_submitted_id`: e.g.
 `batch_collect_failed`. A run whose `requirements_phase` is `interactive_failed`
 shows that as a failure marker next to `status`. Each row links to
 `/admin/runs/{run_id}`.
+
+**Paid work columns (added 2026-10-23).** Every `/admin/runs` row adds `requirements_paid`,
+`requirements_new`, `requirements_repeats`, `requirements_deleted` and `requirements_guard`
+(warning badge naming the guard when not `ok`). `/admin/runs/{run_id}` adds the run's
+`guard_detail`, rendered in words:
+- for a repeat-work block: selected, unexplained, explained, the thresholds, and up to 200
+  `unexplained_ids`, each linking to `/admin/postings/{id}`;
+- for a delete-cap block: attempted vs. cap;
+- for an incomplete submit: the batch id;
+- each batch the run touched as distinct vs. slots.
 
 ### GET /admin/runs/{run_id}
 **Purpose**: Per-source/per-company breakdown for a single run, per
@@ -749,6 +814,47 @@ here is a snapshot that needs "running."
 each list's own "No coverage data yet — run the ingestion pipeline to populate this view" empty
 state (Edge Cases, `design/pipeline-visibility/experience.md`).
 
+### GET /admin/sampling
+**Added 2026-10-23** (`design/pipeline-visibility/experience.md` — User Flow 14, Chart
+Specification — Sampling panel / Sampling by group).
+**Purpose**: Sampling by group for one month. The Overview's Sampling panel uses the same
+function, so the two can't disagree.
+**Auth required**: yes
+**Query params**: `month` (`YYYY-MM`, default the current UTC month).
+**Data source**: `sampling_admin.month_summary(month)`. One grouped query over
+`raw_postings` + `classifications` + `posting_samples` + `posting_requirements`, by the
+group's `created_at` month. Groups come from `posting_samples.group_*` for decided postings
+and from the current classification for pending ones.
+**Response**: `sampling.html`, rendered with:
+```json
+{
+  "month": "2026-11",
+  "rule_line": "Up to 50 per role and specialization per month · Designer: all · unknown: kept until resolved",
+  "panel": { "seen": 6900, "kept": 1280, "read": 610, "not_kept": 5560, "pending": 60 },
+  "groups": [
+    { "role": "Engineer", "specialization": "Software Engineer", "seen": 1000, "kept": 54, "limit": 50, "status": "sampled" },
+    { "role": "Designer", "specialization": "Product Designer", "seen": 41, "kept": 41, "limit": null, "status": "under_limit" }
+  ]
+}
+```
+- `read` = kept postings with a `posting_requirements` row (tracked roles only).
+- `status`: `under_limit` (every decided posting kept with rate 1, or no limit); `sampled`;
+  `over_limit` when `kept > 1.5 × limit`, **not counting** postings kept as `unknown_role` that
+  were later reclassified into the group (Edge Case in the experience spec). The 1.5× tolerance
+  covers the normal spread of rate-based sampling, about ±2.5 standard deviations at K = 50.
+  The 2 × K hard ceiling (market-health Business Logic — Sampling) means `over_limit` should
+  only appear if the rule itself misbehaves.
+- `rule_line` comes from `method_text.render_rule_line()`, with the same live settings as the
+  public method text.
+- Empty month: `panel` is all zeros and `groups` is `[]`. The template shows "No postings seen
+  yet this month", never zeros presented as a reading.
+- Overview gains `sampling_panel` (the same `panel` + `rule_line` for the current month).
+  `latest_run` and every `/admin/runs` row gain `postings_kept`, `postings_not_kept`,
+  `postings_pending` and `requirements_reused` (market-health Data Models — IngestionRun).
+- **Technical data** footprint: the Job Postings row adds `posting_samples` and
+  `posting_details` to `tables` and gains `"storage_split": { "kept_in_full": n,
+  "short_record_only": m }`. `kept_in_full` counts `kept` + `kept_before_sampling`.
+
 ### GET /admin/technical-data
 **Added 2026-09-28** (`changes/2026-09-28-technical-data-visibility-admin-view.md`).
 **Purpose**: the platform's technical data footprint (table/row counts) and an exposure summary
@@ -795,6 +901,7 @@ filter):
 ```
 if posting_requirements row exists for posting_id → "extracted"
 elif classifications.role_category in ("other", "unknown") → "not_eligible"
+elif posting_samples.decision == "not_kept" → "not_sampled"      # added 2026-10-23
 elif posting_requirements_failures row exists for posting_id → "failed"
 else → "pending"
 ```
@@ -821,7 +928,7 @@ Classification table), not duplicated as a separate constant. A row's `taxonomy_
 `"current"` iff it equals that constant at request time.
 
 **Requirements coverage %** — `extracted / eligible`, where `eligible` = count of
-`classifications` rows with `role_category NOT IN ('other', 'unknown')` — same eligibility
+`classifications` rows with `role_category NOT IN ('other', 'unknown')` **and, from 2026-10-23, not `not_sampled`.** Sampling-aware coverage is "of the postings we chose to read, how many are read"; the share of all postings read is on the Sampling panel — same eligibility
 rule as Requirements Status above, not a separate calculation.
 
 **Requirements backlog & batch status (added 2026-09-01)** — the Overview

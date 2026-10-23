@@ -355,6 +355,13 @@ plain-language label this platform already uses for it.
 `{ "value": "J", "label": "Information and communication" }`), the five `size_band` values, and
 the registered trusted `publisher` keys — so a calling AI can pass valid parameters to
 `get_trusted_statistics` without guessing.
+**Extended 2026-10-23** (`changes/2026-10-10-requirements-extraction-sampling.md`;
+`design/mcp-access/experience.md` — The method travels with the data): also returns
+`method: { "one_line": ..., "full": [{heading, text}, ...], "company_count": ..., "limit_per_group": ... }`.
+This is the same object `GET /api/market-health/welcome` returns, rendered by `method_text.py`,
+so a calling AI asked "does this track every job?" relays the same words a person reads on
+the welcome. The MCP server's own `instructions` string (sent at initialize) carries the
+`one_line` text, plus one sentence pointing at `get_taxonomy.method` for the full version.
 
 ### `get_job_demand`
 **Scope**: `jobs.read`. **Wraps**: `query_market_data`.
@@ -379,10 +386,16 @@ unaffected — those are stock counts, not trend counts.
     "time_window": { "from": "2026-07-20", "to": "2026-07-22", "label": "Jul 20–22, 2026" },
     "source": "Company job boards on Greenhouse, Lever, and Ashby — classified by this platform",
     "taxonomy_version": "2026-08-11",
-    "total_matching": 297
+    "total_matching": 297,
+    "coverage": "Full count of every job posted by the 210 companies this platform follows — not an estimate, and not the whole market."
   }
 }
 ```
+**`meta.coverage` (added 2026-10-23)** is rendered from `method_text.py`. Counts are full counts
+of the followed companies, so this tool **never** carries an `estimate` object. Sampling
+doesn't change any number this tool returns (`backend/specs/market-health/api.md` — Sampling
+across the other response surfaces — Unchanged and checked). `get_salary_stats` and
+`get_job_function_breakdown` carry the same `meta.coverage` line for the same reason.
 
 ### `get_salary_stats`
 **Scope**: `compensation.read` (**Premium only**). **Wraps**: `query_compensation_data`.
@@ -400,6 +413,25 @@ than presenting every number with equal confidence.
 `total_matching` as the real denominator, carrying forward the wrapped function's own "the
 denominator is postings-with-extraction, not all postings" honesty rule into `meta` explicitly,
 so the calling AI can't accidentally compute a percentage against the wrong base.
+**Revised 2026-10-23 (sampling — `changes/2026-10-10-requirements-extraction-sampling.md`).**
+The unit becomes `"estimated % of postings in the slice"`, and each item carries `share_pct`.
+Raw counts of sampled rows are no longer returned except under `confidence: "full_small"`.
+`meta` gains:
+- **`estimate`**: the shared object from `backend/specs/market-health/api.md` — Business Logic
+  — Sampling — Estimates (`is_estimate`, `sample_n`, `population_n`, `unread_n`,
+  `margin_pts`, `confidence`, `qualifier`).
+- **`method`**: the `method_text` one-line text plus the sampling rule in words.
+- `total_matching` stays as an alias of `estimate.sample_n` for one release.
+
+Under `too_few`, `data` carries no shares, only `meta.estimate` and a plain reason.
+
+The tool's docstring, which the external AI reads, tells it to:
+- quote `qualifier` (or its sense) whenever it repeats a share;
+- call two items closer than `margin_pts` "about level", never rank them;
+- give no recommendation when `confidence` is `small_sample` or `too_few`.
+
+Exposure, scope and tier are unchanged: the same tool, with its response made honest about
+sampling.
 
 ### `get_employment_risk`
 **Scope**: `companies.read`. **Wraps**: `query_employment_events_data`.
@@ -554,6 +586,14 @@ maintained via the `mcp-access-review` skill (framework level) — run whenever 
 (this one or any other) introduces or changes a capability, so nothing ships with an undecided
 MCP-exposure status.
 
+- **Sampling internals (added 2026-10-23 — `changes/2026-10-10-requirements-extraction-sampling.md`).**
+  Raw `posting_samples` decisions, per-group seen/kept counts, and stored payloads
+  (`posting_details`) are **not exposed**. They are operator bookkeeping (admin
+  `/admin/sampling`), and a full job-board payload is never handed out raw (Principle 9). What
+  an external AI needs to be honest about sampling already reaches it, curated: the `estimate`
+  object on `get_skill_demand`, `meta.coverage` on count tools, and `get_taxonomy.method`.
+- **The "How do you get these numbers?" curated answer** — not a tool, same reason as every
+  curated chip (`ACCESS.md`). Its content reaches MCP through `get_taxonomy.method`.
 - **Company-level job-demand** (e.g. "how many roles is Company X hiring for") — `query_market_data`
   has no `company` filter today (`raw_postings.company` exists in the database but was never
   exposed to the *in-app* chat tool either). Adding it here would mean trusting new,
@@ -627,6 +667,8 @@ document or remembering context from an earlier call:
 | `time_window` | always | `from`/`to` plus a `label` in words — never a bare ISO pair with no human-readable form |
 | `source` | always | Plain-language provenance, equivalent to what the Reasoning Panel gives a human, for an AI that gets asked "how do you know that?" |
 | `taxonomy_version` | when the tool returns taxonomy-classified data | Lets a caller (or a human debugging a discrepancy) know which taxonomy revision produced these labels |
+| `coverage` | on every job-postings tool (added 2026-10-23) | One sentence from `method_text.py` saying whether the figures are full counts of the followed companies or estimates from a sample |
+| `estimate` | on any tool returning requirements shares (added 2026-10-23) | The shared estimate object; its absence means the numbers are full counts |
 | `total_matching` / `sources_checked` | tool-specific | Carried straight through from the wrapped function — never dropped, since it's what lets an AI state a real denominator or a real "we checked and found nothing" |
 
 Category/role/skill/event-type **values** inside `data` are always this platform's own

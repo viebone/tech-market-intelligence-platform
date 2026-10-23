@@ -98,7 +98,7 @@ data read directly from the pipeline's own stored results.
    as a filterable, sortable table (see Interactions).
 4. The operator narrows the table using filters — by Role Category, Level, Track,
    Specialization, Classification Confidence, Taxonomy Version, Requirements Status
-   (extracted / pending / failed), source, or a free-text search over posting title/company —
+   (extracted / pending / failed / not sampled — the last added 2026-10-23), source, or a free-text search over posting title/company —
    to find the specific slice of postings they want to inspect.
 5. The operator clicks a row to open that posting's **Detail** view: the posting's raw stored
    data, its classification result and confidence, its extracted requirements/skills (if any),
@@ -234,6 +234,54 @@ data read directly from the pipeline's own stored results.
       second, separately-maintained tracking mechanism. Clicking through shows the same
       capability-by-capability detail `ACCESS.md` already documents, in this page's own layout
       rather than sending the operator to a raw markdown file.
+
+14. **(Added 2026-10-23 — `changes/2026-10-10-requirements-extraction-sampling.md`, scope widened
+    to storage; `outcomes/storage-stays-bounded-as-sources-grow.md`.)** The operator can see the
+    sample working, so "are we keeping and reading the right amount?" never needs a database
+    query:
+    - **Overview** gains a **Sampling** panel for the current month: postings seen, postings
+      kept in full, postings read for requirements, and postings not kept. One line underneath
+      states the rule in force with live values, for example "Up to 50 per role and
+      specialization per month · Designer: all · unknown: kept until resolved".
+    - Each **Ingestion Run** row adds "seen / kept in full" next to fetched / inserted, so a run
+      that suddenly keeps everything (or nothing) stands out.
+    - A **Sampling by group** table (reached from the panel) shows one row per role ×
+      specialization for the chosen month, with postings seen, kept in full, the limit, and
+      whether the group is "under the limit, all kept" or "sampled". It shows whether a group
+      is thin, full, or behaving unexpectedly.
+    - The **Postings** table gains a **Full details** filter and column: "Kept" / "Not kept
+      (outside sample)" / "Kept, from before sampling" for postings stored before 2026-10-23.
+    - A not-kept posting's **Detail** view shows its short record and classification as usual.
+      In place of the raw stored data it says "Full details not kept: outside the {month}
+      sample for {role} · {specialization}", never an empty box that looks like a fault.
+    - **Technical Data Visibility**'s Data footprint row for job postings adds the storage
+      split: postings kept in full vs. short record only.
+
+15. **(Added 2026-10-23 — `changes/2026-10-10-requirements-re-extraction-loop.md`, Step 2.)**
+    The operator can tell, without querying anything, whether paid reading of job descriptions
+    is buying **new** results. The bug this answers: for two weeks the dashboard showed
+    "500 postings collected" every day while the same postings were being paid for again and
+    again. Nothing compared paid work with new results.
+    - **Overview** gains a **Paid work check** line under the backlog & batch status, for the
+      most recent run: "Paid for {p} postings · {new} new · {repeat} already read before ·
+      {deleted} results removed". On a healthy day, repeats and removals are 0 and the line
+      reads plainly, with no colour.
+    - When the **safeguard stops paid work** (too many of the postings selected for reading had
+      already been read before), the line becomes a warning: "Paid reading paused: {repeat} of
+      {selected} postings selected had already been read. Nothing was spent. Check before
+      re-running." It links to that run.
+    - When the **removal limit stops a large clean-up** (a run tried to remove more previous
+      results than a daily run is allowed to), the line says: "Removal stopped: this run tried
+      to remove {attempted} results; the daily limit is {limit}. Nothing was removed. Large
+      clean-ups are a manual, planned step."
+    - Each **Ingestion Run** row adds "paid / new / repeats / removed" next to its batch
+      activity. A run where either safeguard fired shows a warning badge naming which one.
+    - **Batch history** (the Ingestion Run detail's batch activity, and the backlog line's
+      tooltip) shows each batch as "{distinct} distinct postings in {slots} slots". The two
+      match on a healthy batch, and a gap is called out ("12 distinct in 500 slots").
+    - A run whose paid reading **did not start or failed** (a submit that never came back, a
+      collection error, a safeguard stop) always names the reason in its row. It never just
+      shows 0 collected, which looks like a quiet day.
 
 ---
 
@@ -403,6 +451,56 @@ over unchanged. This is the same visual language, applied to a different layout 
 - Empty state: not applicable — every category always has at least its own tables, even at zero
   rows; a zero-row category reads as "0 rows," not as a missing card
 
+**Sampling panel** (Overview, added 2026-10-23)
+- Type: four summary numbers side by side (no chart). Postings seen · Kept in full · Read for
+  requirements · Not kept.
+- Title: "Sampling — {Month YYYY}"
+- Subtitle: the live rule line (User Flow 14), so the numbers are read against the rule that
+  produced them
+- Unit: always "postings". Each number below "seen" also shows its % of seen ("1,240 · 18% of
+  seen")
+- Colour: `gray-300` neutral throughout. These are design facts, not statuses. No red or amber
+  for "not kept", because not keeping is the intended outcome, not a failure
+- Hover: exact counts and the month's date range
+- Loading state: skeleton pulse
+- Empty state: "No postings seen yet this month", never zeros shown as a real reading
+
+**Sampling by group** (table, added 2026-10-23)
+- Title: "Sampling by group — {Month YYYY}"; subtitle "One row per role and specialization ·
+  limit = postings kept in full at most"
+- Columns: Role · Specialization · Seen · Kept in full · Limit (or "All" for Designer) · Status
+- Status values, as plain labels: "Under the limit, all kept" / "Sampled" / "Over the limit"
+  (more kept than the limit allows). Only "Over the limit" uses the `amber-600` flag treatment,
+  because it means the rule isn't behaving
+- Sortable by any count column; default sort Seen, descending
+- Empty state: same as the panel
+
+**Paid work check** (Overview line + per-run columns, added 2026-10-23)
+- Type: one text line (Overview) and four numeric columns (Ingestion Runs). No chart.
+- Title: "Paid work check: last run" on Overview. Column headers "Paid", "New", "Repeats",
+  "Removed".
+- Unit: always "postings" for paid / new / repeats, and "results" for removed. Stated in the
+  line itself, never implied.
+- Meaning of each number: **Paid** = postings sent for paid reading this run (both lanes).
+  **New** = paid postings that had never been read before. **Repeats** = paid postings that had
+  been read before. **Removed** = previous reading results this run deleted.
+- Colour: neutral `gray-300` when repeats and removed are both 0. `amber-600` with the label
+  "Paused" or "Removal stopped" when a safeguard fired. That's the existing "flag, not failure"
+  treatment: the safeguard working is a good outcome, but it needs the operator's attention.
+  Repeats > 0 without a safeguard stop (a small, allowed number) shows the number in `amber-600`
+  with no badge. A real failure (submit or collect error) keeps the existing `red-600`
+  treatment. Colour is never the only signal; every state has its words.
+- Hover (Overview line): the run's start time, the safeguard's thresholds in words ("pauses when
+  more than 10% or more than 50 of the selected postings were already read"), and the daily
+  removal limit.
+- Loading: skeleton pulse. Empty (no run yet): the line is omitted, same as the rest of the
+  latest-run summary.
+
+**Batch slots vs. distinct postings** (batch activity, added 2026-10-23)
+- Text: "{distinct} distinct postings in {slots} slots".
+- When distinct < slots, the gap is stated in words ("{slots − distinct} slots repeated a
+  posting") in `amber-600`.
+
 **Exposure Summary** (Technical Data Visibility, added 2026-09-28)
 - Type: three summary numbers side by side, plus a link through to the full capability list
 - Title: "Reachable via MCP" / "Reachable via frontend/API" / "Not exposed anywhere"
@@ -441,6 +539,11 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Operator applies a filter on the Skill Associations table (source, role) | Table re-queries and re-renders with the filtered set, same pattern |
 | Operator clicks a Skill Associations row | Navigates to that association's Detail view |
 | Operator opens Sources & Licensing | Shows one row per registered source of every kind (job-posting, employment-event, scraped, trusted-statistics) — licence badges, category label, and cadence badge (or "Runs on shared schedule" for job-posting/employment-event sources); a trusted-statistics row also shows its trust-bar/release sub-line — no filtering or pagination needed at this scale (merged 2026-09-28, folding in the former Scraped Source Runs and Statistics Sources interactions) |
+| Operator hovers the Paid work check line (added 2026-10-23) | Tooltip with the run's time, the safeguard thresholds and the removal limit, in words |
+| Operator clicks a "Paused" / "Removal stopped" warning (added 2026-10-23) | Navigates to that run's detail, which lists how many of the selected postings were repeats (with a link to Postings filtered to them) or how many removals were attempted |
+| Operator clicks the Sampling panel on Overview (added 2026-10-23) | Opens Sampling by group for the same month; a month picker switches months |
+| Operator clicks a Sampling by group row | Navigates to Postings, pre-filtered to that role, specialization and month, with the Full details column visible |
+| Operator filters Postings by Full details (added 2026-10-23) | Same filter-chip pattern as every other Postings filter |
 | Operator opens Data Coverage & Quality | Shows all four ranked lists at once — no filtering, sorting, or drill-down; this page is a fixed cross-cut summary, not an explorable table |
 | Operator hovers a Coverage & Quality bar | Tooltip shows exact counts (postings and/or companies) and %-of-total for that row |
 | Operator opens Technical Data Visibility | Shows the Data Footprint cards and the Exposure Summary numbers at once — no filtering; a fixed structural snapshot |
@@ -469,6 +572,32 @@ over unchanged. This is the same visual language, applied to a different layout 
   not errors — shown in classification distributions and the Postings table using the
   `amber-600` "flag, not failure" treatment, distinguishable from both a real classified value
   and a hard failure.
+- **The repeat-work safeguard pauses paid reading** (added 2026-10-23). Overview and the run
+  row show "Paused" in `amber-600`. The run itself is **not** marked failed: nothing broke and
+  nothing was spent. The postings stay where they were. The warning stays on the latest-run
+  line until a later run reads normally, so a pause can't scroll out of sight unnoticed.
+- **A planned large re-read** (a deliberate taxonomy migration) is done through the manual,
+  planned step, never by a daily run. Those runs show their repeats as expected and labelled
+  "planned re-read", not as a warning.
+- **The removal limit stops a clean-up** (added 2026-10-23). Same treatment: "Removal stopped"
+  in `amber-600`, not a failure. Nothing was removed.
+- **A small number of repeats with no pause** (under the thresholds, for example a posting
+  re-read after its earlier reading failed). Shown as a number, not a warning badge. It is
+  allowed, and the column makes it visible.
+- **A batch never came back from the provider.** The run row says "Batch submit did not
+  complete" and names the batch, never just 0 collected (the 2026-10-09/10 jobs 30 and 31).
+- **A posting's full details were not kept** (added 2026-10-23). This is expected. Its Detail
+  view says why (User Flow 14), and its Requirements Status reads "Not sampled", distinct from
+  "Pending" and "Failed" and shown in neutral `gray-300`. It is never counted in the
+  requirements backlog.
+- **A group keeps more than its limit** (added 2026-10-23). Shown as "Over the limit" with the
+  `amber-600` flag. Small overshoots can be expected while a month fills; the backend spec
+  decides how much is tolerated before it counts as a fault.
+- **An `unknown` posting kept in full is later resolved.** It stays kept in full. A kept
+  posting is never reduced, so the group it lands in may show one more kept than its limit.
+  That doesn't count towards "Over the limit".
+- **The month has just started.** Most groups read "Under the limit, all kept". That's the
+  normal shape of early-month data, not a fault.
 - **The Postings table has thousands of rows** (5,000+ postings in production today). The
   table is paginated; filters narrow the result set before rendering, not after.
   Implementation detail (page size, virtualization) is left to the frontend spec.
@@ -572,6 +701,9 @@ over unchanged. This is the same visual language, applied to a different layout 
 | Failure/error discoverability | Observed usage | Every classification or extraction failure — interactive **or batch** — is visible from the dashboard without cross-referencing logs |
 | Time to answer "is the requirements backlog draining or stuck?" | Observed usage / operator self-report | Under 15 seconds from opening Overview |
 | Time to answer "where is our data weakest right now?" | Observed usage / operator self-report | Under 30 seconds from opening Data Coverage & Quality |
+| Time to answer "is paid reading buying new results?" (added 2026-10-23) | Observed usage / operator self-report | Under 10 seconds from opening Overview |
+| Repeat paid work goes unnoticed (added 2026-10-23) | Count of runs with repeats above the safeguard thresholds that did not show a warning | 0 |
+| Time to answer "is the sample keeping the right amount this month?" (added 2026-10-23) | Observed usage / operator self-report | Under 20 seconds from opening Overview |
 | Time to answer "how big is this platform, structurally, right now?" | Observed usage / operator self-report | Under 20 seconds from opening Technical Data Visibility |
 
 ---

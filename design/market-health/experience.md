@@ -128,15 +128,19 @@ openings/skills/pay):
 > {Category Share Bar: one segment per Role Category, e.g. Engineer / Product Manager /
 > Designer, each labelled with its name and share.}
 >
-> This is a growing sample of the market, not every job out there — it reflects the companies
-> and roles we follow today. For a representative share of these we also read the full job
-> description to see which skills employers ask for, and we show pay figures where they're
-> shared.
+> We count every job posted by the {M} companies we follow. To see what employers ask for, we
+> read a fair sample of those job descriptions in full. We show pay where it's shared.
+>
+> {"How we read the market" disclosure, collapsed by default. Its four points are the
+> canonical text in How we read the market, below.}
 
-(Skills sentence revised 2026-10-10 — `changes/2026-10-10-requirements-extraction-sampling.md`.
-It previously said "for most of these we also have the skills employers mention". That was
-already untrue in practice, and it becomes untrue by design once extraction samples
-Engineering and Product Management postings. See Requirements estimates, below.)
+(Revised 2026-10-23 — `changes/2026-10-10-requirements-extraction-sampling.md`, scope widened
+to storage. The owner asked that every surface make clear "we don't track every single job,
+but we do a good sampling to get an accurate reading". The earlier sentence ("a growing sample
+of the market … a representative share") blurred two different limits into one word, "sample":
+following a set of companies rather than the whole market, and reading only some descriptions.
+The new wording separates them. Revised before that on 2026-10-10: it previously said "for most
+of these we also have the skills employers mention", which was untrue.)
 >
 > **{E}** employment events tracked · **{R}** official registries — {registry names} · **{C}**
 > countries covered
@@ -168,6 +172,7 @@ no LLM.
 | Employment events tracked (added 2026-09-13) | `count(*) FROM employment_events WHERE superseded_by IS NULL` | Reported events, not a claim every real-world event is captured |
 | Official registries (added 2026-09-13) | `count(DISTINCT source)` + names via `SOURCE_DISPLAY_NAMES` | Named individually, same "name each source" discipline as the Employment Risk story's own `sources` fact |
 | Countries covered (added 2026-09-13) | `count(DISTINCT country) FROM employment_events WHERE country IS NOT NULL` | All-time coverage, not scoped to the Employment Risk story's trailing-12-month window — a broader, "have we ever seen this country" fact, stated as such |
+| Method text values (added 2026-10-23) | {M} = the same company count as the Companies Stat Tile; {cap} = the current per-role read limit for Engineer and Product Manager | Live settings, never hardcoded; see How we read the market |
 | "What you can ask" cards | `design/market-health/data-stories.md` catalogue — each entry's `question` | One card per current entry; the section is omitted if the catalogue is ever empty |
 
 ### Honesty rules
@@ -471,7 +476,8 @@ When expanded, it shows:
   that wasn't actually consulted for that response. This is the same commitment
   `design/ai-reasoning-panel/experience.md` already makes product-wide (its "Sources & Tools"
   section) — a follow-up turn's Sources entry here is that same disclosure, applied to this
-  feature's questions.
+  feature's questions. Sources always ends with the one-line method text (How we read the
+  market — added 2026-10-23).
 - **API calls** — the internal endpoints queried to build the response (briefing turns only)
 
 The accordion is read-only. It cannot be edited or shared. It appears on every AI turn —
@@ -613,6 +619,77 @@ identically (see Interactions).
 
 ---
 
+## How we read the market
+
+Added 2026-10-23 — `changes/2026-10-10-requirements-extraction-sampling.md` (scope widened to
+storage). The owner's direction: data, charts and AI-tool answers must all line up with the
+sampling method, and it must be clear that the platform doesn't read every job but samples
+well enough to give an accurate reading.
+
+### Two limits, never blurred
+
+Every figure on this platform has up to two limits on what it covers. The reader must always
+be able to tell them apart:
+
+1. **Who we follow.** Postings come from the career pages of a set of companies we follow, not
+   from every employer. This limit applies to every job figure. It is already disclosed (see
+   Edge Cases — "Coverage is a curated set of companies, not the whole market").
+2. **What we read in full.** Every job those companies post is counted and sorted by role,
+   specialization and level. Only a fair sample of job descriptions is read in full to see what
+   employers ask for. This limit applies to requirements figures only (see Requirements
+   estimates, below).
+
+So **job counts, trends, coverage, pay and the comparison with official statistics are full
+counts** of the companies we follow. **Skills and other requirements are estimates** from a
+sample, unless every posting in the slice was read. No surface says or implies otherwise.
+
+### The canonical text
+
+One explanation, reused word for word wherever the method is explained, so the welcome, the
+stories, chat and external AI tools never tell different versions.
+
+**One-line version** (welcome, story footers, the reasoning accordion's Sources):
+> We count every job posted by the {M} companies we follow, and read a fair sample of those
+> job descriptions in full to see what employers ask for.
+
+**Full version** ("How we read the market" disclosure, the instant answer below, MCP):
+> - **Who we follow.** The career pages of {M} companies, plus official sources for layoffs
+>   and national vacancy figures. That's a large slice of tech hiring, not every employer.
+> - **Every job counted.** Every job those companies post is counted and sorted by role,
+>   specialization and level. Job numbers, trends and pay come from all of them.
+> - **A fair sample read in full.** To see which skills and experience employers ask for, we
+>   read up to {cap} job descriptions for each role and specialization every month, picked
+>   so that every job has the same chance. For design roles we read every one.
+> - **How close the estimates are.** Each skills figure says how many descriptions we read and
+>   how close the estimate is likely to be, for example "±12 pts". That's enough to see which
+>   skills lead and how they compare. When two skills are closer than that, we say they're
+>   level, and when a sample is too small to tell, we say so.
+
+`{M}` and `{cap}` are live values, never hardcoded. If a per-role limit changes, the text
+changes with it. `end-user-content` and `data-legibility` were run on this copy.
+
+### Words to use and avoid
+
+| Use | Never |
+|---|---|
+| "every job posted by the companies we follow" | "every job in the market", "all tech jobs" |
+| "a fair sample", "read in full", "estimated from {n} of {N}" | "we don't count every job" (counts *are* full; this undersells them) |
+| "how close the estimate is", "± pts" | "exact", "precise", "guaranteed" for any requirements figure |
+| "too few read to tell" | "stratified", "weighted", "statistically significant", "confidence interval" |
+
+### Where it appears
+
+| Surface | What the reader sees |
+|---|---|
+| Welcome ("About this platform") | The one-line version in the Proof block, plus the "How we read the market" disclosure with the full version. |
+| Every data story | The one-line version as the last line of the story, above "How this was generated". Requirements blocks keep their own n-of-N qualifier (Requirements estimates). |
+| Chat answers | Counts are stated plainly. Requirements figures carry their qualifier in the same sentence (Requirements estimates). When the user asks about method ("do you track every job?", "how accurate is this?", "where does this come from?"), the answer uses the full version. |
+| Instant answer | A common question, **"How do you get these numbers?"**, answers with the full version and live {M}/{cap}. No model call, like every instant answer. It appears as a suggested question under "About this platform". |
+| "How this was generated" | Sources ends with the one-line version. The requirements line keeps "{n} read in full of {N} postings". |
+| External AI tools (MCP) | See `design/mcp-access/experience.md` — "The method travels with the data". |
+
+---
+
 ## Requirements estimates
 
 Added 2026-10-10 — `changes/2026-10-10-requirements-extraction-sampling.md`.
@@ -677,6 +754,11 @@ appear in user-facing text.
   Kubernetes (estimated from 50 of 712 postings we read in full, give or take 13 points)."
   A slice where every posting was read keeps the existing phrasing ("based on 38 Senior UX
   Designer postings").
+- **Close figures are not ranked against each other** (added 2026-10-23, promised by the
+  canonical text in How we read the market). When two estimated shares differ by less than
+  the margin shown, chat and instant answers say they're "about level" rather than calling one
+  more in demand. Charts still draw them in order (the bar order is the data), and the margin
+  line under the chart lets the reader judge.
 - **Synthesis questions.** The judgment half of the two-part answer (User Flow 7b) is only
   given when n ≥ 30. Below that, the AI gives the data and says plainly the sample is too
   small to recommend from.
@@ -723,6 +805,8 @@ figure is more useful, it says which slice it is answering for.
 | Pick an offered common question | It's asked as if typed. A curated question returns an instant answer from current platform data, held to the same time-window and honesty rules as any answer. |
 | Assistant is briefly unavailable (transient outage) | The AI turn shows a calm "try again shortly" message and the common questions stay available. Not a red error state; retrying a moment later normally works. |
 | Tap "view prompt" | Read-only overlay shows the exact prompt that produced that message. |
+| Tap "How we read the market" on the welcome (added 2026-10-23) | Expands the full method text in place. Tap again to collapse. Collapsed by default. |
+| Ask "do you track every job?", "how accurate is this?" or tap "How do you get these numbers?" (added 2026-10-23) | Instant answer with the full method text and live values. No model call. A free-form variant that misses the instant answer is answered by the AI from the same canonical text, never from its own wording. |
 | Tap "How this was generated" | Accordion expands below the AI message header, showing filters, context sent to Claude, data counts, model, and sources. Tap again to collapse. |
 | Click thumbs up at the bottom of a Data Story (added 2026-09-23) | Captured immediately; button shows a brief selected state. No further UI. See `design/market-health/data-stories.md` — Feedback reaction. |
 | Click thumbs down at the bottom of a Data Story (added 2026-09-23) | Captured immediately; an inline optional comment field reveals beneath the buttons, same inline-reveal pattern as the Connect Your AI Revoke confirm — never a modal. |
@@ -865,6 +949,8 @@ figure is more useful, it says which slice it is answering for.
 | Requirements question rate | Analytics — % of sessions that include at least one skills/requirements or synthesis question | Track, no target yet |
 | Data-vs-judgment comprehension | Post-task question, after a synthesis answer: "Which part was factual data, and which part was the AI's opinion?" | ≥ 85% correct |
 | Estimate comprehension (added 2026-10-10) | Post-task question, after a sampled requirements figure: "Was this share counted from every posting, or estimated from some of them?" | ≥ 85% correct |
+| Method comprehension (added 2026-10-23) | Post-task question, after reading the welcome or a story: "Does this platform count every job from the companies it follows? Does it read every job description?" | ≥ 85% answer "yes, counts every job" and "no, reads a sample" |
+| Method text consistency (added 2026-10-23) | Automated test: the welcome disclosure, the instant answer and the MCP method note render the same canonical text with the same live {M}/{cap} | 100% |
 | Estimate labelling coverage (added 2026-10-10) | Automated test across stories, instant answers and MCP responses: % of sampled requirements figures carrying n, N and margin | 100% |
 | Instant-answer coverage | Analytics — % of follow-up questions answered by the curated no-model path | Track; expected to rise as the catalogue grows |
 | Degraded-state recovery | Analytics — % of "assistant unavailable" turns followed by a successful answer (retry or common question) in the same session | ≥ 90% |

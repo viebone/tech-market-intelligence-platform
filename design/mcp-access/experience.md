@@ -263,6 +263,22 @@ Access, Never Raw):
   state that it is an estimate, and its basis, whenever it quotes the number. Slices below the
   minimum sample return no shares, only a plain reason. Same thresholds and meaning as
   `design/market-health/experience.md` — Requirements estimates.
+- **The method travels with the data** (added 2026-10-23 —
+  `changes/2026-10-10-requirements-extraction-sampling.md`, scope widened). An external AI
+  must be able to answer "does this track every job?" and "how accurate is this?" correctly
+  without help from us. So:
+  - Every job-postings response says plainly that its counts cover **every job posted by the
+    companies this platform follows**, not the whole market, and that they are full counts, not
+    estimates.
+  - Every requirements response carries the estimate fields above **and** a short method note
+    in the same canonical words as `design/market-health/experience.md` — How we read the
+    market (fair sample, up to {cap} per role and specialization per month, design roles read
+    in full).
+  - The platform's own description to the external AI, and the taxonomy tool, carry the full
+    canonical method text, so a "how does this work?" question gets the same answer a person
+    gets on the welcome.
+  - The tools tell the external AI not to rank two estimated shares closer than their margin
+    against each other, matching the "about level" rule on our own surfaces.
 - **A curated shape, never a raw one** — every response is built from this platform's own
   defined operations (Principle 9), so its shape is something this platform chose because it's
   helpful, not an accidental byproduct of an internal query. If an operation can't answer what

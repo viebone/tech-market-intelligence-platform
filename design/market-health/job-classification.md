@@ -478,6 +478,31 @@ count-based figure stays a full count, while requirements figures become estimat
 `design/market-health/experience.md` — Requirements estimates defines how those estimates
 are shown.
 
+### Which postings keep their full details (added 2026-10-23)
+
+`changes/2026-10-10-requirements-extraction-sampling.md`, scope widened to storage
+(`outcomes/storage-stays-bounded-as-sources-grow.md`). The same fair sample decides what is
+kept, so storage stops growing with every new source:
+
+- **Every posting keeps a short record**: title, company, location, pay where shared, its
+  classification, and when it was first seen. That is everything counts, trends, pay and
+  coverage need, so they stay full counts.
+- **The full job details as the company published them** (including the description) are kept
+  only for the sample. The rule is the same as "Which postings are read", above (up to 50 per
+  Specialization per month, Designer all, a fixed repeatable choice, groups at or under the
+  limit kept in full), applied to **every** Role Category, including `other`. For tracked
+  roles, the postings kept in full and the postings read are the same set.
+- **`unknown` postings keep their full details until they are resolved.** The second look that
+  can rescue an `unknown` (Classification Method) reads the description, so dropping it would
+  leave the posting `unknown` for good. Proposed 2026-10-23; there are few of them (71 at the
+  time).
+- **A posting kept in full is never reduced later**, and postings stored before 2026-10-23 keep
+  their full details (owner's choice: going forward only).
+- **Consequence to know about:** a field added to the taxonomy in future can only be filled in
+  for an older, not-kept posting if it can be derived from the short record (for example from
+  the title). Anything that needs the description is filled in for kept postings only, and
+  every figure built on it is an estimate under the same rules.
+
 ---
 
 ## Classification Method

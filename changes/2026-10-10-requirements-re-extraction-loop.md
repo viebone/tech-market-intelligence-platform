@@ -99,18 +99,25 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
       (stale-only selection plus changed-only clearing) before the next 06:00 UTC cron. Otherwise
       tomorrow's run deletes today's results again, including batch job 31's. The spec edit for
       this part is done in the same step and is small, but it comes first.
-- [ ] Step 2: Update `design/pipeline-visibility/experience.md` (admin states for repeat work,
+- [x] ✅ Step 2: Update `design/pipeline-visibility/experience.md` (admin states for repeat work,
       deletes, blocked phase).
-- [ ] Step 3: `/new-backend-spec`. Update `backend/specs/market-health/api.md` (circuit breaker,
+- [x] ✅ Step 3: `/new-backend-spec`. Update `backend/specs/market-health/api.md` (circuit breaker,
       delete cap, extraction record) and `backend/specs/pipeline-visibility/api.md`. Confirm the
       admin dashboard is backend-rendered (no frontend spec).
-- [ ] Step 4: `/implement-backend`. Guardrails, admin fields, regression tests.
-- [ ] Step 5: Verify in production over two runs:
+- [x] ✅ Step 4: `/implement-backend`. Guardrails, admin fields, regression tests.
+- [ ] Step 4b (added 2026-10-23): Deploy the guardrails (`job-sync`, `admin`; `api` restarts
+      too on any push) with the owner's go-ahead. Run `migrate_extraction_ledger.py` once, then
+      verify the next cron run:
+      - the new `ingestion_runs` columns are filled;
+      - `requirements_guard = ok`, with paid = new + repeats and repeats = 0;
+      - the admin Overview shows the Paid work check line;
+      - batch history shows distinct postings in slots.
+- [x] ✅ Step 5: Verify in production over two runs (done 2026-10-13; see Decision Log):
       - 0 reprocess deletes on a steady-state day;
       - `posting_requirements` grows day over day (no more resets to ~500);
       - distinct postings per batch job = slots;
       - the backlog actually falls.
-- [ ] Step 6: Resume `changes/2026-10-10-requirements-extraction-sampling.md` Step 4 with the
+- [x] ✅ Step 6: Resume `changes/2026-10-10-requirements-extraction-sampling.md` Step 4 with the
       owner, re-deciding urgency and cap using real post-fix numbers.
 - [x] ✅ Step 7 (framework, owner approved 2026-10-11): propose a framework-level rule so "a
       steady-state recurring run does no paid and no destructive work" is checked for every
@@ -187,3 +194,131 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
   - Logged here, not as its own CR: it blocks this CR's deploy, is a one-line pin, and changes no
     behaviour. Same lesson as Rule 15 in spirit: an unpinned transitive dependency is a
     recurring job (every rebuild) with no steady-state guarantee.
+- 2026-10-12: Step 5, run 1 of 2 (first run on the fixed code, `job-sync` 06:02–06:09 UTC). ✅
+  Every expectation met:
+  - **Reprocessing:** 54 stale postings, all 54 cache hits, 0 LLM calls, `changed_posting_ids: []`,
+    so 0 requirements deleted. The stale set should now be empty on future runs.
+  - **Batch job 32:** collected, 499 postings (1 skipped as an unknown/pruned id).
+  - **Requirements kept:** `posting_requirements` = 652 rows / 652 postings. That is exactly
+    95 (yesterday) + 499 (job 32) + 58 (12 interactive batches), so nothing was deleted.
+  - **Batch job 33:** submitted with 500 distinct postings. 0 of them already have requirements,
+    and none overlap job 32. 400 were in earlier jobs whose results the loop deleted (340 from
+    job 29, 60 from 28), so this is legitimate rebuilding, not pointless repeat work.
+  - Backlog: 7,567.
+  - Run status `partial` only because 3 boards returned 404 (greenhouse amplitude/buzzfeed,
+    lever plaid). Unrelated to this CR.
+  - **Still open for Step 5:**
+    - Run 2 tomorrow must show stale = 0 and requirements growing again.
+    - Jobs 30 and 31 failed on our side with `submit did not complete`, on the same 500 posting
+      ids. Check in Google AI Studio that no orphan provider batch was created or billed.
+- 2026-10-13: ✅ Step 5, run 2 of 2. Step 5 complete.
+  - **Reprocessing:** 0 stale postings. The phase returned early without logging anything (as
+    intended), with no deletes and no model calls.
+  - **Batch job 33:** collected, 499 postings.
+  - **Requirements growing:** `posting_requirements` 652 → 1,198, exactly +499 (job 33) +47
+    (12 interactive batches). 0 deleted.
+  - **Batch job 34:** submitted with 500 distinct postings. 0 already extracted, and no overlap
+    with jobs 32 or 33.
+  - **Backlog falling:** 7,567 → 7,083. Classification handled 118 new titles in 2 calls (new
+    postings, not reprocessing).
+  - **Jobs 30 and 31 checked:** their `submit did not complete` is set by
+    `batch_jobs.reconcile()` when a job has no `provider_job_ref` after 30 minutes. Google's own
+    batch list for the requirements key shows no job created on 10-09 or 10-10, so there was no
+    orphan provider batch and nothing was billed. The postings went back into the backlog. Why
+    the submit didn't return on those two days is not yet known and isn't blocking. Step 4's
+    admin "blocked/failed phase" visibility should make it visible next time.
+  - Still to do: Steps 2–4 (the guardrails themselves) and Step 6.
+- 2026-10-23: ✅ **Step 6 done in effect.** The sampling CR was resumed with the owner using real
+  numbers from after the fix: cap 50, Designer unlimited, the backlog left to finish. Its
+  scope was then widened to storage. See that CR's 2026-10-23 entries. The owner then asked
+  for these guardrails before sampling is built, and sampling's backend build now depends on
+  them.
+- 2026-10-23: ✅ **Step 2 done.** `design/pipeline-visibility/experience.md` gains User Flow 15
+  (Paid work check), chart specs for the Paid work check and for batch slots vs. distinct
+  postings, two interactions, five edge cases and two metrics.
+  - **States:** neutral when there are no repeats or removals. `amber-600` "Paused" /
+    "Removal stopped" ("flag, not failure") when a safeguard fires. The existing `red-600` stays
+    for real failures.
+  - **No quiet stops:** a pause stays on the Overview until a later run reads normally. A run
+    that didn't read always names why, so it can't look like a quiet day.
+- 2026-10-23: ✅ **Step 3 done.**
+  - **`backend/specs/market-health/api.md`:** a new Business Logic subsection, "Repeat-work
+    guardrails". It adds:
+    - an append-only `requirements_extraction_ledger`, written in the same transaction as each
+      extraction and seeded once from current rows;
+    - append-only `requirements_reprocess_requests`. A repeat is "explained" only if a request
+      is newer than the posting's last ledger row;
+    - a circuit breaker on the exact set each lane will pay for, checked before any spend:
+      block if unexplained > 50 or > 10%, each lane independently, with thresholds as code
+      constants rather than env vars;
+    - a daily delete cap of 200, which raises before any SQL. Manual scripts need `allow_bulk`
+      plus a `change_ref`;
+    - paid / new / repeats / deleted per run, with `new + repeats = paid`;
+    - de-duplicated batch selection plus `distinct_count`;
+    - `batch_submit_incomplete` surfaced;
+    - reprocessing `total_classified` counting changed rows only, with `reclassified_unchanged`
+      separate.
+    It also adds the IngestionRun fields `requirements_guard` and `guard_detail` (a guard firing
+    does not make a run `partial`), and the two new tables.
+  - **Steady state written in (Rule 15).** Proved by a new `test_requirements_guard.py` and an
+    extended `test_reprocessing_steady_state.py`.
+  - **`backend/specs/pipeline-visibility/api.md`:** Overview `paid_work_check` (read from run
+    fields, never recomputed; `last_unresolved_guard` keeps a pause visible) and batch
+    `distinct_count`, plus `/admin/runs` columns and run-detail `guard_detail` with links to
+    unexplained postings.
+  - **No frontend spec.** The admin is server-rendered (confirmed).
+  - **MCP access review: no change, confirmed.** These are operator telemetry, covered by
+    `ACCESS.md`'s existing "Pipeline processing visibility" row (not exposed, operator-only).
+  - **Data surface review:** not applicable. The ledger and requests are pipeline bookkeeping,
+    not a new kind of market fact.
+  - **Polite scraping:** not applicable.
+- 2026-10-23: ✅ **Step 4 done (built and tested locally; not committed or deployed).**
+  - **New:**
+    - `requirements_guard.py`: thresholds as constants (50 / 10% / delete cap 200), the pure
+      `is_blocked`, `check_repeat_work` (injectable lookup), `RequirementsDeleteCapExceeded`,
+      and `severest`.
+    - `migrate_extraction_ledger.py`: a one-time idempotent seed, never run from `ingest.py`.
+    - `backend/tests/test_requirements_guard.py`: 16 tests.
+  - **Changed:**
+    - `db.py`: two append-only tables, `batch_jobs.distinct_count`, and 7 `ingestion_runs`
+      columns.
+    - `requirements.py`: `insert_requirements` writes ledger rows for newly extracted postings
+      in the same transaction (`lane`, `batch_job_id`). `delete_requirements_for_reprocess`
+      enforces the cap before any SQL, requires `change_ref` for bulk deletes, records
+      reprocess requests and returns the deleted count. `extract_requirements` takes
+      `pre_spend_check` and reports paid/new/repeats. `collect_batch_results` passes
+      `batch_job_id`.
+    - `ingest.py`: reprocessing counts only changes and records a delete-cap block instead of
+      raising. The interactive lane is guarded. `_maybe_submit_batch` de-duplicates, checks the
+      breaker before `create_job` and returns `(job_id, info)`. Reconcile marks
+      `batch_submit_incomplete`. Guard fields are folded into `record_run`.
+    - `ingestion_runs.py`: new fields in `record_run` / `list_runs` / `get_run`, plus
+      `get_paid_work_check()` with `last_unresolved_guard`.
+    - `batch_jobs.py`: de-duplicates `posting_ids` and stores `distinct_count` (computed for
+      legacy rows).
+    - `raw_postings.attach_ingestion_run` also attaches ledger rows (NULL-only).
+    - `reprocess_taxonomy.py` and `reextract_skilless.py`: `--change-ref` is required, and they
+      call with `allow_bulk=True`.
+    - Admin: Overview Paid work check line and batch "distinct in slots", runs-table
+      Paid/New/Repeats/Removed column with badges, run-detail Paid work check card listing
+      unexplained posting links, and a `.field-hint` CSS rule.
+    - `DEPLOYMENT.md`: a deploy/seed/verify section.
+    - `test_reprocessing_steady_state.py`: updated for the new delete signature, plus asserts
+      that `total_classified` excludes unchanged rewrites.
+  - **Verified:**
+    - all 19 backend test files pass (`test_requirements_guard` 16/16,
+      `test_reprocessing_steady_state` 6/6, all others unchanged and passing);
+    - every changed module imports;
+    - the three admin templates parse;
+    - the Paid work check and run-detail fragments render correctly for healthy, leak, paused,
+      delete-cap and incomplete-submit states (StrictUndefined).
+  - **Not verified yet:** the new SQL against a real Postgres (DDL, the ledger lookup, the
+    `last_unresolved_guard` query). It runs on the next deploy via `init_schema()`. This is
+    Step 4b.
+  - **Deviations from the spec:**
+    - **Badge colour:** the admin's existing amber badge class is named `neutral` (it already
+      means "flag, not failure"), so the spec's `amber-600` warning reuses it rather than adding
+      a class.
+    - **Interactive-lane paid count:** for that lane, `requirements_paid` counts postings in
+      batches actually sent, including a batch whose call then failed, because a failed call
+      may still be billed. For the batch lane, it is counted at successful submit.

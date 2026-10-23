@@ -69,7 +69,7 @@ its prior state, so nothing here is ever mutated after insert.
 | `company` | `str \| None` | The company whose job board produced this row — the Greenhouse `board_token`, Lever `site`, or Ashby job-board name used to fetch it. `NULL` for legacy Adzuna rows, which were never fetched per-company (see `role_family_query` below). |
 | `role_family_query` | `str \| None` | **Legacy, Adzuna-era only.** Which tracked search term produced this row (Adzuna was queried by role-family search term, not by company). Always `NULL` for rows from Greenhouse/Lever/Ashby — those adapters fetch a company's entire board and rely on classification's `role_category: "other"` escape hatch to filter relevance, not a source-side search query (see Business Logic — Ingestion). Column kept, not dropped or renamed, since existing rows' values are historical data. |
 | `title` | `str` | Raw job title, verbatim from the source. |
-| `raw_response` | `JSON` | The full source API response object for this posting, stored verbatim — Adzuna's shape for legacy rows, the originating ATS's own job-object shape for everything since. Never normalised or projected down; each source's shape is whatever that source actually returned. |
+| `raw_response` | `JSON \| None` | The full source API response object for this posting, stored verbatim — Adzuna's shape for legacy rows, the originating ATS's own job-object shape for everything since. Never normalised or projected down; each source's shape is whatever that source actually returned. **Nullable from sampling go-live (2026-10-23, `changes/2026-10-10-requirements-extraction-sampling.md`):** every posting first stored at or after `SAMPLING_GO_LIVE` is inserted with `raw_response = NULL`. If it is sampled, its payload goes to `PostingDetail` (below), inserted once. Rows stored before go-live keep their value here, untouched (owner: "going forward only"). The immutability rule still holds: no row's `raw_response` is ever updated or cleared. Every reader uses `COALESCE(posting_details.raw_response, raw_postings.raw_response)` through one helper (Business Logic — Sampling). |
 | `fetched_at` | `datetime` | When our ingestion pipeline captured this posting. The only date this product can trust for "when did this posting first appear to us" — none of Adzuna, Greenhouse, Lever, or Ashby's public APIs support querying by historical date range; all four are live-snapshot-only. |
 | `created_at` | `datetime` | Row insert timestamp (server clock). |
 | `country` | `str \| None` | Normalized country, derived at ingestion time from the source's own location fields (see Business Logic — Location normalization). `NULL` when the source's location data couldn't be normalized — never guessed. |
@@ -106,6 +106,54 @@ backfill — populated going forward at ingestion time from the static lookup (B
 Logic — Industry tagging); existing rows keep it `NULL` until re-fetched (they won't be,
 since postings aren't re-fetched once stored — see the `id` dedupe invariant above) or a
 backfill is deliberately scoped separately.
+
+**Migration note (2026-10-23 — sampling).** `raw_response` drops `NOT NULL` (`ALTER COLUMN ...
+DROP NOT NULL`). Nothing else on existing rows changes. A one-time, idempotent script
+(`migrate_sampling_go_live.py`, run by hand once at deploy, **never** from `ingest.py`) inserts
+one `PostingSample` row with `decision = 'kept_before_sampling'` for every posting with
+`created_at < SAMPLING_GO_LIVE`, using `ON CONFLICT DO NOTHING`. It only inserts and never
+deletes, and its scope is fixed by a constant cutoff rather than "all rows", so a second run is
+a no-op.
+
+### PostingSample (`posting_samples` table) — added 2026-10-23
+The one sampling decision per posting: whether its full details are kept, and with them
+whether it can be read for requirements. **Insert-only**, at most one row per posting
+(`posting_id` is the PK), never updated or deleted. A posting with no row, first stored at or
+after go-live, is **pending**: it is not yet decided, usually because it isn't classified yet.
+`changes/2026-10-10-requirements-extraction-sampling.md`;
+`outcomes/storage-stays-bounded-as-sources-grow.md`;
+`design/market-health/job-classification.md` — Which postings keep their full details.
+
+| Field | Type | Description |
+|---|---|---|
+| `posting_id` | `str` (PK, FK → `raw_postings.id`) | |
+| `decision` | `"kept" \| "not_kept" \| "kept_before_sampling"` | `kept_before_sampling` is only written by the go-live migration. |
+| `reason` | `str` | Closed set: `"under_limit"` (rate was 1), `"selected"` (hash under rate), `"not_selected"`, `"all_kept_role"` (role has no limit, e.g. Designer), `"unknown_role"` (`role_category = 'unknown'`, kept until resolved), `"ceiling"` (group hit its hard ceiling this month), `"unavailable"` (still pending after `SAMPLING_PENDING_MAX_DAYS` and no longer on its board, so the payload was gone), `"before_sampling"`. |
+| `group_role` | `str` | `role_category` at decision time. |
+| `group_specialization` | `str \| None` | `specialization` at decision time (`NULL` → its own group, "no specialization"). |
+| `group_month` | `date` | First day of the UTC month of `raw_postings.created_at`. |
+| `limit_at_decision` | `int \| None` | The role's limit in force (`None` = no limit). Audit only, never re-read for logic. |
+| `rate` | `float` | Inclusion rate used (0–1]. `1.0` for every non-sampled reason. |
+| `hash_u` | `float` | The posting's fixed sampling number in [0, 1) (Business Logic — Sampling). Stored so the decision can be re-verified. |
+| `decided_at` | `datetime` | |
+| `ingestion_run_id` | `int \| None` | Run that made the decision. It is attached after `record_run()`, by the same mechanism as `raw_postings.ingestion_run_id` (`attach_ingestion_run`, matching on `decided_at >= started_at AND ingestion_run_id IS NULL`). That is the one permitted write to an existing row, and it only fills a NULL. Admin per-run counts come from `IngestionRun`'s own sampling fields, never from this column, so they don't inherit the NULL problem recorded for `raw_postings`. |
+
+### PostingDetail (`posting_details` table) — added 2026-10-23
+The full source payload for kept postings stored after go-live. **Insert-only**, written once,
+in the same transaction as that posting's `PostingSample` row with `decision = 'kept'`.
+Never updated or deleted.
+
+| Field | Type | Description |
+|---|---|---|
+| `posting_id` | `str` (PK, FK → `raw_postings.id`) | |
+| `raw_response` | `JSON` | Verbatim source payload, same rules as `RawPosting.raw_response`. |
+| `description_hash` | `str` | `sha256(company + "|" + normalised title + "|" + cleaned description)`, computed with the same `_extract_description` the extractor uses. It is the duplicate-reuse key (Business Logic — Sampling — Duplicate reuse). Indexed. |
+| `kept_at` | `datetime` | |
+
+Storage check, using September 2026 production data: 9,442 postings across 62 groups. At a
+limit of 50 (Designer and `unknown` unlimited), about 1,815 would be kept in full (19%). The
+other 81% are stored as a short record of about 200 B each, against about 6.6 KB for a kept
+posting.
 
 ### Classification (`classifications` table)
 Keyed to `raw_postings`, one row per posting. Kept separate from `RawPosting` so
@@ -165,6 +213,7 @@ aggregated with a plain `GROUP BY` rather than JSONB array manipulation.
 | `responsibilities_summary` | `str \| None` | 2-4 sentence LLM-generated summary of the posting's core responsibilities. Deliberately not a closed taxonomy (`job-classification.md` — Responsibilities) — day-to-day duties are too varied to force into a fixed set. `NULL` only if extraction hasn't reached this posting yet. |
 | `other_requirements` | `str \| None` | The freeform catch-all (`job-classification.md` — Other requirements) — captures both untracked skill mentions and any other notable requirement (certification, clearance, portfolio) that doesn't fit a standard field. Never forced into a standard field just to avoid using this one. **Must never contain a salary/compensation figure** (new rule, 2026-08-11) — that's Compensation Signal's data (`RawPosting.salary_min`/`salary_max`/etc., above), not Requirements Signal's; extraction must ignore compensation text entirely rather than re-capture it here. |
 | `model` | `str` | Provider/model that produced this extraction, same free-text provenance pattern as `classifications.model`. |
+| `reused_from` | `str \| None` | **Added 2026-10-23.** For a duplicate-reuse copy, the `posting_id` whose extraction was copied (`model` keeps the original's model). `NULL` for a paid extraction. |
 | `extracted_at` | `datetime` | |
 
 **Migration note (2026-08-11).** `education_required`, `equivalent_experience_accepted`,
@@ -245,13 +294,55 @@ human happened to be watching in a terminal.
 | `requirements_extracted` | `int` | **Added 2026-08-09.** Postings that got a `posting_requirements` row this run (see Business Logic — Requirements extraction). A separate phase from classification, so this is 0 on runs that only classified without reaching the requirements phase. |
 | `requirements_requests_used` | `int` | **Added 2026-08-09.** Same discipline as `llm_requests_used`, tracked separately since requirements extraction uses its own dedicated key/budget (see Business Logic — Requirements extraction) — conflating the two would make either budget impossible to reason about independently. |
 | `requirements_budget_reached` | `bool` | **Added 2026-08-09.** Same meaning as `budget_reached`, scoped to the requirements extraction phase's own daily budget. |
-| `requirements_phase` | `"ok" \| "nothing_to_do" \| "interactive_failed" \| "batch_submit_failed" \| "batch_collect_failed"` | **Added 2026-09-01.** The outcome of this run's requirements phase. Closes the gap where a crashed extraction and an idle extraction both read as `requirements_extracted = 0` with nothing else to distinguish them (found in `changes/2026-08-29-chat-free-tier-key-isolation.md`). `interactive_failed` contributes to `status: "partial"` like a failed classification batch; the two `batch_*_failed` values do **not** by themselves make the run `partial` (the batch is retried; the run's own work succeeded). Multiple things can go wrong in one run — record the most severe (`interactive_failed` > `batch_*_failed` > `nothing_to_do` > `ok`). |
+| `requirements_phase` | `"ok" \| "nothing_to_do" \| "interactive_failed" \| "batch_submit_failed" \| "batch_collect_failed"` | **Added 2026-09-01.** The outcome of this run's requirements phase. Closes the gap where a crashed extraction and an idle extraction both read as `requirements_extracted = 0` with nothing else to distinguish them (found in `changes/2026-08-29-chat-free-tier-key-isolation.md`). `interactive_failed` contributes to `status: "partial"` like a failed classification batch; the two `batch_*_failed` values do **not** by themselves make the run `partial` (the batch is retried; the run's own work succeeded). Multiple things can go wrong in one run — record the most severe (`interactive_failed` > `batch_*_failed` > `nothing_to_do` > `ok`). A lane stopped by the repeat-work circuit breaker is **not** a phase failure: it is recorded in `requirements_guard` (added 2026-10-23), and the phase reads `nothing_to_do` for that lane. |
 | `batch_collected` | `int` | **Added 2026-09-01.** Postings whose requirements were inserted this run from a **finished batch job** (step 1 of the requirements phase). Distinct from `requirements_extracted`, which counts the interactive lane only, so the two never double-count. `0` when no batch finished this run. |
 | `batch_submitted_id` | `int \| None` | **Added 2026-09-01.** The `batch_jobs.id` this run submitted, or `None` if it submitted nothing (backlog below the floor, a job already in flight, or the cost estimate exceeded `MAX_BATCH_USD`). |
 | `anomalies` | `JSON` | List of flagged issue strings (see Business Logic — Anomaly flagging); empty list if none |
 | `error_message` | `str \| None` | Set only when `status` is `"failed"` |
+| `postings_kept` | `int` | **Added 2026-10-23 (sampling).** `PostingSample` rows this run wrote with `decision = 'kept'`. |
+| `postings_not_kept` | `int` | **Added 2026-10-23.** Rows this run wrote with `decision = 'not_kept'`. |
+| `postings_pending` | `int` | **Added 2026-10-23.** Postings still undecided at the end of the run, usually unclassified because the classification budget was reached. Expected to be 0 on a normal day. |
+| `requirements_reused` | `int` | **Added 2026-10-23.** Postings whose requirements were copied from an identical posting (duplicate reuse) instead of paid for. Counted separately from `requirements_extracted` so paid work and free work are never mixed (Rule 15 visibility). |
+| `requirements_paid` | `int` | **Added 2026-10-23 (repeat-work guardrails, `changes/2026-10-10-requirements-re-extraction-loop.md`).** Postings sent to a model this run, both lanes, counted when the lane commits to spending. |
+| `requirements_new` | `int` | **Added 2026-10-23.** Of `requirements_paid`, postings with no prior `requirements_extraction_ledger` row. |
+| `requirements_repeats` | `int` | **Added 2026-10-23.** Of `requirements_paid`, postings read before (explained + unexplained). `new + repeats = paid`, always. |
+| `requirements_deleted` | `int` | **Added 2026-10-23.** Posting requirement results this run deleted (reprocessing only; 0 on a steady-state day). |
+| `reclassified_unchanged` | `int` | **Added 2026-10-23.** Stale postings rewritten to the current taxonomy version with identical role/track/specialization. Kept out of `total_classified`. |
+| `requirements_guard` | `"ok" \| "repeat_work_blocked_batch" \| "repeat_work_blocked_interactive" \| "delete_cap_blocked" \| "batch_submit_incomplete"` | **Added 2026-10-23.** Which safeguard fired this run, if any. If more than one fired, the most severe is recorded (order as listed after `ok`, blocked repeat work first), and the full list goes in `guard_detail.fired`. A guard firing does **not** make the run `partial`: nothing broke and nothing was spent. |
+| `guard_detail` | `JSON` | **Added 2026-10-23.** `{ fired: [...], selected, repeats, explained, unexplained, unexplained_ids (≤ 200), thresholds: {count, share}, attempted_deletes, delete_cap, batch_job_id }`. Only the keys relevant to what fired. `{}` when nothing did. |
 
 ---
+
+### RequirementsExtractionLedger (`requirements_extraction_ledger` table) — added 2026-10-23
+Append-only history of every successful requirements extraction, so "has this posting been paid
+for before?" survives deletes. `changes/2026-10-10-requirements-re-extraction-loop.md` (Business
+Logic — Repeat-work guardrails). Never updated or deleted, by any code path, including manual
+scripts.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` (PK) | |
+| `posting_id` | `str` (FK → `raw_postings.id`) | Indexed. Many rows per posting are possible; each is one paid (or reused) reading. |
+| `lane` | `"interactive" \| "batch" \| "reused" \| "seed"` | `seed` = backfilled from `posting_requirements` at deploy. |
+| `batch_job_id` | `int \| None` | For `batch`. |
+| `model` | `str` | |
+| `ingestion_run_id` | `int \| None` | NULL-only attach after `record_run()`, same mechanism as `raw_postings`. |
+| `extracted_at` | `datetime` | |
+
+### RequirementsReprocessRequest (`requirements_reprocess_requests` table) — added 2026-10-23
+Append-only record that reading a posting **again** was deliberate. A later extraction of that
+posting counts as an explained repeat.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` (PK) | |
+| `posting_id` | `str` (FK → `raw_postings.id`) | Indexed. |
+| `reason` | `str` | `classification_changed` (daily reprocessing), `taxonomy_migration` (`reprocess_taxonomy.py`), `skill_gap_reextract` (`reextract_skilless.py`), or another reason a manual script names. |
+| `change_ref` | `str \| None` | Change request slug. Required for manual scripts; `NULL` only for `classification_changed`. |
+| `requested_at` | `datetime` | |
+
+`BatchJob` gains `distinct_count` (`int`, set at create; legacy rows compute it from
+`posting_ids`), added 2026-10-23.
 
 ### BatchJob (`batch_jobs` table) — added 2026-09-01
 
@@ -1166,6 +1257,150 @@ budget rather than assuming the most generous interpretation of an unconfirmed e
 constraint. A second same-day run now correctly sees a reduced (or zero) remaining budget
 rather than a fresh 12-batch allowance.
 
+**Sampling (daily, between classification and requirements) — added 2026-10-23.**
+`changes/2026-10-10-requirements-extraction-sampling.md` (scope widened to storage);
+`outcomes/storage-stays-bounded-as-sources-grow.md`, `outcomes/llm-spend-is-bounded-and-isolated.md`;
+`design/market-health/job-classification.md` — Which postings are read / keep their full
+details; `design/market-health/experience.md` — How we read the market, Requirements estimates.
+
+One decision per posting, made once, decides both things. Kept postings keep their full
+details, and tracked-role kept postings are the requirements sample. By construction, storage
+and extraction can't drift apart.
+
+*What is unchanged.* Every posting is fetched, deduped by `id` and inserted into
+`raw_postings` with every derived column (company, location, salary, industry, size band).
+Every posting is classified. So job counts, trends, coverage, pay and the ONS cross-check
+read the same rows as before and stay full counts. No count-based query changes.
+
+*Run order (`ingest.py`).* (1) fetch + insert short records, (2) classify, (3) taxonomy
+reprocessing (unchanged), (4) **sampling decisions** (new), (5) requirements phase.
+- **Step 1 change:** `insert_new_postings()` inserts with `raw_response = NULL` and returns, for
+  this run, a payload map `{posting_id: raw_response}` covering **new ids plus already-pending
+  ids** seen on the board this run. Pending ids are loaded once at run start: no `PostingSample`
+  row and `created_at >= SAMPLING_GO_LIVE`. Every run fetches each company's full live board,
+  so a posting left pending by a crash or a budget stop has its payload again next run. That
+  makes the step self-healing, with no staging table. The map lives in memory only, at about
+  6.5 KB per entry, typically about 250 entries a day.
+- **Step 4, the decision phase:** for each pending posting that is now classified and whose
+  payload is in the map, compute the decision (below) and insert its `PostingSample` row. For a
+  `kept` decision, insert its `PostingDetail` row in the **same transaction**. Unclassified
+  postings stay pending. A posting pending for more than `SAMPLING_PENDING_MAX_DAYS` (14) and
+  absent from the map gets `not_kept / unavailable`. A selected posting is never written as
+  kept without its payload.
+
+*The decision.* Group = (`role_category`, `specialization`, UTC month of `created_at`).
+1. The role's limit `K` comes from `sampling_settings.py`. It is env-overridable, so no code
+   change is needed: `SAMPLING_LIMIT_DEFAULT = 50` (Engineer, Product Manager, `other`), and
+   `None` (no limit) for Designer. `unknown` is always kept (`reason = unknown_role`) whatever
+   the settings say, because the description-assisted recovery pass needs the description.
+   No limit → `kept / all_kept_role`.
+2. The posting's fixed sampling number is
+   `u = int(sha256("tmip-sample-v1:" + posting_id)[:16], 16) / 2**64`. It is uniform in
+   [0, 1), depends on nothing about the posting's content or arrival order, and is the same
+   on every run.
+3. Rate `r` for the group this month:
+   - `r = min(1, K / N_prev)`, where `N_prev` is the number of postings classified into the same
+     (role, specialization) in the **previous** calendar month. No previous month, or
+     `N_prev <= K` → `r = 1`.
+   - **Recalibration:** from day 7 of the month, `r = min(r, K / N_projected)`, where
+     `N_projected = N_so_far × days_in_month / days_elapsed`. The rate can only go down within a
+     month, never up. That prevents a new source from filling a group in its first week.
+4. Decision:
+   - Keep if `u < r`. Reason is `under_limit` when `r = 1`, otherwise `selected`.
+   - Otherwise `not_kept / not_selected`.
+   - **Hard ceiling:** if the group already has `2 × K` kept this month, the posting gets
+     `not_kept / ceiling` whatever `u` is. This is a surge backstop and should rarely fire.
+     When it does, the admin flags it (pipeline-visibility).
+5. A decision is never revisited. If taxonomy reprocessing later moves a posting to another
+   group, its decision stands. Inclusion depended only on `u`, never on content, so the
+   estimates below stay valid.
+
+Why rate-based (Poisson) and not "lowest 50 hashes per month": exact bottom-k needs the whole
+month in hand. Deciding daily without ever un-keeping overshoots badly: about
+`K(1 + ln(N/K))` kept, about 180 for a 700-posting group. The rate approach keeps about K on
+average, stays deterministic, and never un-keeps.
+
+*Duplicate reuse.* Before the requirements phase sends a kept posting to either lane, look up
+an already-extracted posting with the same `PostingDetail.description_hash`. Legacy rows get
+their hash computed on the fly from `raw_postings.raw_response`. On a match, copy that
+posting's `posting_requirements` / `posting_skills` / `posting_languages` rows with
+`reused_from` set: no model call, counted in `IngestionRun.requirements_reused`. Only an exact
+hash match qualifies. Company plus title alone is never enough, because the same title can
+cover different levels and different descriptions.
+
+*Estimates (one function, used everywhere).* `sampling_estimates.estimate_shares(filters,
+counter)` is the only place requirements shares are computed. It is called by
+`market_query.query_requirements_data`, `market_stories` (Story 1 skill block),
+`curated_answers` (the skills entries) and the MCP skill tool. For the slice the filters
+select:
+- **Per group g:** `N_g` = classified postings in the slice, `n_g` = postings with a
+  `posting_requirements` row, `x_g` = those mentioning the item (skill, education level, and so
+  on). Filters such as level or country narrow `N_g`, `n_g` and `x_g` alike.
+- **Share:** `share = Σ_g N_g · (x_g / n_g) / Σ_{g: n_g>0} N_g`, which is post-stratified by
+  group. Groups with `n_g = 0` (not read yet) are excluded and reported as `unread_n`.
+- **Margin:** one per response, the widest it can be (worst case p = 0.5), as the experience
+  requires:
+  `margin_pts = ceil(100 × 1.96 × sqrt(Σ_g (N_g/N)² × 0.25/n_g × (N_g − n_g)/(N_g − 1)))`,
+  where `N = Σ_{g: n_g>0} N_g`. Groups with `n_g = N_g` contribute 0.
+- **Returned with every figure, as one `estimate` object:**
+  ```json
+  { "is_estimate": true, "sample_n": 50, "population_n": 712, "unread_n": 0,
+    "margin_pts": 14, "confidence": "estimate",
+    "qualifier": "Estimated from 50 of 712 postings we read in full · ±14 pts" }
+  ```
+  `confidence` is one of `full` (n = N), `estimate` (n ≥ 30), `small_sample` (10 ≤ n < 30),
+  `too_few` (n < 10, sampled; no shares returned) or `full_small` (n < 10, every posting read;
+  counts instead of shares). These are the thresholds in the experience spec — Requirements
+  estimates. `qualifier` is rendered here, once, from `method_text.py`'s templates, so no
+  surface writes its own wording.
+- **Units are shares (`share_pct`), never sampled counts**, except under `full_small`.
+- **"About level":** `sampling_estimates.about_level(a_pct, b_pct, margin_pts)` returns true
+  when `|a − b| < margin_pts`. Curated answers and the chat synthesis prompt use it before
+  saying one item is "more in demand" than another. Charts keep the data order.
+
+*Method text (one source).* `method_text.py` renders the canonical one-line and full method
+text from `design/market-health/experience.md` — How we read the market. It substitutes live
+values: `{M}` is the same distinct-company count as the welcome's Companies tile, and `{cap}`
+is the Engineer/Product Manager limit from `sampling_settings.py`. If those two limits ever
+differ, `{cap}` renders both ("up to 50 for engineering and 40 for product roles"). The welcome
+endpoint, every posting-based story, the "How do you get these numbers?" curated answer, the
+chat system prompt (for method questions), the reasoning trace's Sources line, and the MCP
+server description and responses all call it. Nothing else holds method wording.
+A test asserts every surface's rendered text is byte-identical for the same inputs (the
+experience spec's Method text consistency metric).
+
+*Readers of the full payload.* Requirements extraction, `reclassify_unknowns.py`, the
+backfill scripts and the admin Detail view read through `raw_postings.get_payload(posting_id)`
+/ the shared SQL fragment `COALESCE(pd.raw_response, rp.raw_response)`. A future backfill that
+needs the description covers kept postings only and must report how many it skipped as
+`not_kept`, never silently.
+
+*Steady state (Rule 15).* On a day with nothing new:
+- **Selects:** the decision phase selects only pending postings, which is none. The
+  requirements phase selects only kept, unextracted, unfailed tracked postings, which is none.
+- **Pays:** nothing. Duplicate reuse and the decision phase make no model call, and no
+  posting can be sent twice (`posting_requirements` PK, plus the repeat-work tripwire from
+  `changes/2026-10-10-requirements-re-extraction-loop.md`, which this change depends on, see
+  below).
+- **Deletes or overwrites:** nothing, ever. `posting_samples` and `posting_details` are
+  insert-only, `raw_postings` is never updated except the NULL-only `ingestion_run_id` attach,
+  and no step removes a payload.
+- **Proved by** `backend/tests/test_sampling_steady_state.py`:
+  - running the decision phase twice over the same fixture inserts rows only the first time;
+  - the SQL issued by the decision phase and `insert_new_postings()` contains no `DELETE` and
+    no `UPDATE` of `raw_response`;
+  - `u` and the decision are identical across runs;
+  - a not-kept posting never appears in `get_all_needing_requirements()`.
+- **Also** `test_sampling_rates.py`: rate, recalibration and ceiling arithmetic, plus a
+  simulated month with K = 50 and N = 700 keeping 50 ± 15. And `test_sampling_estimates.py`:
+  post-stratified share and margin against hand-computed values, the threshold transitions,
+  and `about_level`.
+
+*Dependency.* `/implement-backend` for this change starts only after the re-extraction-loop
+CR's guardrails (its Steps 2–4: repeat-work circuit breaker, delete cap, admin fields) are
+implemented, or ships together with them. Sampling changes the requirements selection path,
+and Rule 15 requires the tripwire to be in place on that path.
+
 **Requirements extraction (daily, after classification) — added 2026-08-09, per-posting not
 per-title.** Populates `PostingRequirements`/`PostingSkill`/`PostingLanguage` (Data Models)
 per `design/market-health/job-classification.md`'s Requirements Taxonomy. Structurally
@@ -1178,7 +1413,15 @@ has since been confirmed much smaller than assumed at that time (~43-115 new pos
 steady-state, not thousands — see the Business Logic — Classification's cost analysis,
 which was based on a one-time migration burst, not ongoing load).
 
-- **Scope**: only postings with a real classification (`role_category != "other"`) and no
+- **Scope, revised 2026-10-23 (sampling):** a tracked role (Designer, Product Manager,
+  Engineer), a `PostingSample` decision of `kept` or `kept_before_sampling`, no
+  `posting_requirements` row, and not failed. `not_kept` postings are **not sampled**. They are
+  never in the backlog, never counted in `count_needing_requirements()`, and never sent to
+  either lane. Pending postings (no decision yet) wait. The `kept_before_sampling` backlog
+  (2,472 at go-live) is extracted in full (owner: "let it finish"). Weights absorb any n per
+  group, so legacy months simply have a larger n. Same eligibility rule, one shared `WHERE`
+  fragment, as before.
+- **Scope (original)**: only postings with a real classification (`role_category != "other"`) and no
   existing `posting_requirements` row. No point extracting requirements for postings
   already known to be irrelevant, and — same invariant as classification — never
   re-extract a posting already processed (`posting_requirements.posting_id` is a
@@ -1424,8 +1667,120 @@ postings each day. The binding rules are now:
   values keeps its requirements. The 2026-08-11 ordering rule (classification before
   requirements) still holds: the delete runs after the rewrite, for exactly the rewritten
   postings that changed.
-- Guardrails against any future cause of paid repeat work (a repeat-work circuit breaker, a
-  bulk-delete cap, admin visibility) are specified under that change request's Step 3.
+- **Reprocessing counts only real changes (added 2026-10-23).** In `IngestionRun`, the
+  reprocessing step's contribution to `total_classified` is `len(changed_posting_ids)`, not
+  every rewritten row. Cache-identical rewrites are still written (previous bullet), but they
+  are reported separately as `reclassified_unchanged`, so a steady-state day never looks like
+  "N classified".
+
+**Repeat-work guardrails (added 2026-10-23 — `changes/2026-10-10-requirements-re-extraction-loop.md`,
+Step 3; CLAUDE.md Rule 15).** These are cause-agnostic: they detect paying twice for the same
+posting, or a daily run deleting too much, whatever the bug. Experience:
+`design/pipeline-visibility/experience.md` — User Flow 15, Paid work check.
+
+*Why the existing caps didn't catch the loop.* The daily request budgets and `MAX_BATCH_USD`
+bound how fast money is spent, not whether it buys anything new. `posting_requirements`
+can't answer "was this read before?", because it is exactly what the loop deleted. The
+guardrails therefore need a record that deletes never touch.
+
+*1. The extraction ledger* (`requirements_extraction_ledger`, Data Models). This is an
+append-only row for every successful extraction, written by `insert_requirements()` in the
+**same transaction** as the `posting_requirements` insert, for every lane (`interactive`,
+`batch`, and `reused` from the sampling change's duplicate reuse). It is never updated or
+deleted, including by `delete_requirements_for_reprocess()`. One-time seed at deploy
+(`migrate_extraction_ledger.py`, by hand, idempotent): one `lane = 'seed'` row per existing
+`posting_requirements` row. History deleted by the loop before 2026-10-11 isn't recoverable,
+and that's accepted; `batch_jobs.posting_ids` records submissions, not successes.
+
+*2. Reprocess requests* (`requirements_reprocess_requests`, Data Models). These are an
+append-only record of a **deliberate** decision to read a posting again. Written by:
+- the daily reprocessing step, for each `changed_posting_ids` entry, with
+  reason `classification_changed`;
+- `reprocess_taxonomy.py` and `reextract_skilless.py`, with their own reason and a required
+  `change_ref` argument naming the change request.
+
+A repeat is **explained** if the posting has a reprocess request newer than its latest ledger
+row. Insert-only both ways, so no "fulfilled" flag needs updating.
+
+*3. The circuit breaker* (`requirements_guard.check_repeat_work(posting_ids)`). It runs on the
+exact set a lane is about to pay for:
+- **Batch lane:** the ≤ 500 postings `_maybe_submit_batch()` selected, **before**
+  `create_job()`.
+- **Interactive lane:** the postings `extract_requirements()` will actually send this run,
+  meaning the oldest-first selection truncated to `MAX_BATCHES_PER_RUN × BATCH_SIZE`, computed
+  **before** the first model call.
+
+The check returns `{selected, repeats, explained, unexplained, unexplained_ids}`. An
+unexplained repeat is a posting with a ledger row and no newer reprocess request.
+- **Blocks** when `unexplained > REPEAT_WORK_MAX_COUNT` (50) **or**
+  `unexplained > REPEAT_WORK_MAX_SHARE` (0.10) × `selected`, and `unexplained ≥ 1`. On a block
+  the lane spends **nothing**: no batch row, no submit, no interactive call. The postings stay
+  where they are. The run records `requirements_guard` = `repeat_work_blocked_batch` /
+  `repeat_work_blocked_interactive` plus `guard_detail` (counts, thresholds, up to 200
+  `unexplained_ids`), and logs a **warning**. Each lane is checked independently, so a block in
+  one does not stop the other.
+- **Below the thresholds**, the lane proceeds. The repeats are still paid for, and they are
+  counted (`requirements_repeats`), so a small leak stays visible without stopping legitimate
+  work.
+- Thresholds are constants in `requirements_guard.py`. Raising them is a change request, not
+  an env flip. The guard is a tripwire, so it shouldn't be easy to switch off.
+
+*4. Bulk-delete cap.* `delete_requirements_for_reprocess(posting_ids, *, reason, change_ref=None,
+allow_bulk=False)`:
+- **In a daily run** (`allow_bulk=False`), more than `DAILY_REPROCESS_DELETE_CAP` (200) ids
+  raises `RequirementsDeleteCapExceeded` **before any statement runs**, so nothing is deleted.
+  `run_taxonomy_reprocessing_phase()` catches it and records
+  `requirements_guard = delete_cap_blocked` plus `guard_detail.attempted`. The classification
+  rewrite stays, and the run is not marked failed. The operator then runs the manual script.
+- **Manual scripts** pass `allow_bulk=True` with a non-empty `change_ref`. Without a
+  `change_ref` they are refused too.
+- **Every delete** writes the matching reprocess requests in the same transaction, so the
+  re-read that follows is "explained", and it adds the count to
+  `IngestionRun.requirements_deleted`.
+
+*5. Paid-work accounting per run* (`IngestionRun`, Data Models). Counted at the moment the
+lane commits to spending (batch: at submit; interactive: per batch actually sent):
+- `requirements_paid` = postings sent to a model in both lanes;
+- `requirements_new` = those with no prior ledger row;
+- `requirements_repeats` = those with one (explained + unexplained, with
+  `guard_detail.explained` splitting them).
+
+`requirements_new + requirements_repeats = requirements_paid`, always (asserted in tests).
+`requirements_deleted` comes from (4). The admin Paid work check reads exactly these fields
+(`backend/specs/pipeline-visibility/api.md`).
+
+*6. Batch slots vs. distinct postings.* `_maybe_submit_batch()` de-duplicates its selection
+before `create_job()`, so a duplicated id can never take a slot. `batch_jobs` gains
+`distinct_count` (set at create). The admin batch history shows
+`distinct_count / item_count`, and legacy rows compute it from `posting_ids`.
+
+*7. A submit that never returns.* This is already recorded by `batch_jobs.reconcile()`
+("submit did not complete", 30 minutes, jobs 30 and 31 on 2026-10-09/10). The run that
+reconciles it now also sets `requirements_guard = batch_submit_incomplete`, with the job id
+in `guard_detail`, so the admin row names it rather than showing 0 collected.
+
+*Steady state (Rule 15).* On a day with nothing new:
+- **Selects:** reprocessing selects 0 stale rows, and both lanes select 0 postings.
+- **Pays:** `requirements_paid = 0`.
+- **Deletes:** `requirements_deleted = 0`. The ledger and reprocess requests are only ever
+  inserted into.
+- **Proved by** `backend/tests/test_requirements_guard.py`:
+  - a steady-state fixture yields paid = deleted = 0 and no guard state;
+  - a selection of 100 already-ledgered postings with no reprocess requests is blocked, with
+    0 provider calls (the provider mocked to fail if called), and no `batch_jobs` row is
+    created;
+  - the same 100 with reprocess requests newer than their ledger rows pass;
+  - 5 unexplained in 100 pass and are counted as repeats;
+  - a daily-path delete of 201 ids raises before any SQL (spy connection), and 200 succeeds;
+  - a manual delete without `change_ref` is refused;
+  - `new + repeats = paid` across mixed fixtures;
+  - a duplicated id in a batch selection takes one slot.
+- **Extended:** the existing `test_reprocessing_steady_state.py` asserts that
+  `total_classified` excludes unchanged rewrites.
+
+*Ordering with sampling.* `changes/2026-10-10-requirements-extraction-sampling.md` builds on
+this: its duplicate-reuse copies write ledger rows with `lane = 'reused'`, and its selection
+path is guarded by the same breaker. This ships first.
 
 **Description-assisted recovery pass (added 2026-09-06 — `changes/2026-09-06-unknown-reclassification.md`).**
 A one-time reprocessing pass, separate from taxonomy reprocessing, that re-classifies every
@@ -2758,3 +3113,66 @@ inventory plus a shortcut for every story currently in the catalogue.
 `companies` are `0`, `collection_started_at` is `null`, `role_breakdown` is `[]`, and
 `role_categories`/`signals_available`/`story_shortcuts` are unaffected (they describe what the
 platform tracks and offers, not what it has collected so far).
+
+**Method fields (added 2026-10-23 — `changes/2026-10-10-requirements-extraction-sampling.md`;
+`design/market-health/experience.md` — How we read the market).** The response gains:
+```json
+"method": {
+  "one_line": "We count every job posted by the 210 companies we follow, and read a fair sample of those job descriptions in full to see what employers ask for.",
+  "full": [
+    { "heading": "Who we follow", "text": "The career pages of 210 companies, plus official sources for layoffs and national vacancy figures. That's a large slice of tech hiring, not every employer." },
+    { "heading": "Every job counted", "text": "…" },
+    { "heading": "A fair sample read in full", "text": "…" },
+    { "heading": "How close the estimates are", "text": "…" }
+  ],
+  "company_count": 210,
+  "limit_per_group": 50
+}
+```
+Rendered by `method_text.py` (Business Logic — Sampling — Method text). `company_count` is the
+same value as `inventory.companies`. The frontend renders `one_line` in the Proof block and
+`full` in the "How we read the market" disclosure, and never composes its own wording.
+`inventory.total_postings` is unchanged: it counts every posting, kept in full or not.
+
+---
+
+## Sampling across the other response surfaces (added 2026-10-23)
+
+`changes/2026-10-10-requirements-extraction-sampling.md`. Business Logic — Sampling defines
+the calculations. This section is the contract each surface follows.
+
+- **Stories** (`POST /api/market-health/stories/{story_id}`): every story built on job postings
+  returns a top-level `method_line` (the `method_text` one-line text). Stories built only on
+  official statistics or employment events (Story 5, Story 2) return `method_line: null` and
+  keep their own source line. Each requirements block (Story 1's skill block) returns its
+  items as `share_pct` plus the block's `estimate` object (Business Logic — Sampling —
+  Estimates), in place of the old raw counts. Count blocks get no `estimate` object, so no
+  count can be rendered as an estimate.
+- **`market_query.query_requirements_data`** (chat tool): it returns `estimate` plus
+  `share_pct` per item, and keeps `total_matching` as an alias of `estimate.sample_n` for one
+  release. Its docstring, which the model reads, changes to:
+  - state the estimate and its basis in the same sentence as the number;
+  - call two items closer than `margin_pts` "about level";
+  - give no judgment when `confidence` is `small_sample`;
+  - give no shares when it is `too_few`.
+- **Curated answers** (`curated_answers.py`):
+  - The skills entries (`pm-skills`, `engineer-skills`) render with `estimate.qualifier` in the
+    sentence and apply `about_level`.
+  - New entry **`how-numbers`**: the question "How do you get these numbers?". Matcher phrasings
+    include "do you track every job", "how accurate is this", "where does your data come from"
+    and "is this every job". It returns the `method_text` full version. No model call, and a
+    test per curated entry, as usual. It is added to `GET /api/market-health/chat-suggestions`
+    for "About this platform" (Data stories — chat-suggestions).
+- **Chat** (`chat.py`): the system prompt carries the `method_text` full version. For a method
+  question that misses the curated entry, the model must answer from that text and add nothing
+  of its own. The reasoning trace carries the one-line text as its own field, `trace.method_line`
+  (aligned with `frontend/specs/market-health/architecture.md`, 2026-10-23). It is not a
+  `sources_and_tools` entry, so it can never read as a source that was consulted. The
+  Reasoning Panel renders it last under Sources & Tools. Its
+  requirements line reads `"{sample_n} read in full of {population_n} postings"` plus "sample"
+  or "every posting read".
+- **Unchanged and checked:** `/summary`, `/openings`, the coverage chart, pay, the ONS
+  cross-check and every count-based story block read `raw_postings` + `classifications` only.
+  They return the same numbers before and after go-live (tested by
+  `test_sampling_counts_unchanged.py`, which runs each count query on a fixture with and
+  without sample decisions).

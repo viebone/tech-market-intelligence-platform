@@ -219,7 +219,7 @@ Added 2026-09-04 — `changes/2026-09-04-about-this-platform-welcome.md`; restru
 
 | Data | Source | When fetched |
 |---|---|---|
-| Platform welcome (added 2026-09-04) | `GET /api/market-health/welcome` — returns `{ inventory, story_shortcuts, provenance, as_of }` | On page mount (default task); also whenever "About this platform" is selected, so figures stay current |
+| Platform welcome (added 2026-09-04) | `GET /api/market-health/welcome` — returns `{ inventory, story_shortcuts, provenance, as_of, method }` (`method` added 2026-10-23 — see Sampling and the method text, below) | On page mount (default task); also whenever "About this platform" is selected, so figures stay current |
 | Story catalogue (added 2026-09-04) | `GET /api/market-health/stories` — returns `{ stories: [{ id, display_name, question, example_phrasings }] }` | Once, on page mount — drives `TaskPanel`'s catalogue section |
 | Chat suggestions (added 2026-09-06) | `GET /api/market-health/chat-suggestions` — returns `{ suggestions: [{ id, question }] }` | Once, on page mount — drives `SuggestedQuestions` chips |
 | Trend chart data + written summary (weekly or monthly openings per Role Category, from post-baseline live-classified postings) | `GET /api/market-health/openings?range={range}&granularity={granularity}` — returns `{ range, granularity, data: [{ period, designer, product_manager, engineer }], summary, as_of, source }`; `summary` names the selected range and granularity | On page mount; refetch when range or granularity changes |
@@ -976,3 +976,90 @@ under a second. The frontend surfaces them so the fast path is one tap:
 The catalogue and story response are server-owned contracts. Adding a story should not require
 changing the generic assistant message parser; adding a navigation entry is an explicit product
 task change.
+
+---
+
+## Sampling and the method text (added 2026-10-23)
+
+`changes/2026-10-10-requirements-extraction-sampling.md` (Step 5).
+- **Implements:** `design/market-health/experience.md` — How we read the market, Requirements
+  estimates; `design/market-health/data-stories.md` — Honesty and empty states.
+- **Consumes:** `backend/specs/market-health/api.md` — Welcome `method`, and Sampling across the
+  other response surfaces.
+
+**One rule above all the others: the frontend never writes method or estimate wording.**
+Every sentence about how the data was gathered or how close an estimate is comes from the API
+(`method.one_line`, `method.full`, `method_line`, `estimate.qualifier`). The backend renders it
+from one module so every surface says the same thing. The only client-side text is the fixed
+"± pts" how-to-read line (below), which the experience spec defines once, verbatim.
+
+### Types (the existing story/API types file)
+
+```ts
+type EstimateConfidence = "full" | "estimate" | "small_sample" | "too_few" | "full_small";
+interface Estimate {
+  is_estimate: boolean; sample_n: number; population_n: number; unread_n: number;
+  margin_pts: number | null; confidence: EstimateConfidence; qualifier: string;
+}
+interface MethodText {
+  one_line: string; full: { heading: string; text: string }[];
+  company_count: number; limit_per_group: number;
+}
+```
+
+### Component changes
+
+| Component | Change | Location |
+|---|---|---|
+| `WelcomeMessage` | The Proof band replaces its hardcoded "This is a growing sample of the market…" paragraph with `welcome.method.one_line`, then renders `MethodDisclosure` below it. If `method` is missing (an older API mid-deploy), nothing renders in its place. It never falls back to the old hardcoded copy, which the experience spec retired as misleading. | `stories/WelcomeMessage.tsx` |
+| `MethodDisclosure` *(new)* | A collapsed-by-default disclosure: a text button "How we read the market" with a chevron (`aria-expanded`, `aria-controls`), which expands to the four `method.full` items, each with a bold heading and its text. Same secondary-copy tokens the welcome already uses, and no new visual pattern (the same chevron disclosure as "How this was generated"). Local `useState` only; open/closed state isn't shared. | `stories/MethodDisclosure.tsx` |
+| `DataStoryMessage` and every per-story renderer (`EmploymentRiskStoryMessage`, `JobFunctionStoryMessage`, `MarketBenchmarkStoryMessage`, `UkVacanciesStoryMessage`) | When the response has a non-null `method_line`, it renders as the story's last line, after the final `StoryBlock` and before the Reasoning Panel control, in `text-xs text-gray-500`. When it is null (stories built only on official statistics, employment events or third-party benchmarks), nothing renders; those stories keep their own `SourceAttribution` / source line. The backend decides which stories get it; the renderer never does. | `stories/*StoryMessage.tsx` |
+| `StoryBlock` | It gains an optional `estimate?: Estimate` prop. With it, the honesty qualifier line renders `estimate.qualifier` (replacing the block's old sample-size text). With `confidence: "too_few"`, the block renders the qualifier **instead of** the child visual, through the same path as `insufficient_data`, never an empty chart. Count blocks never pass `estimate`, so they can't be shown as estimates. | `stories/StoryBlock.tsx` |
+| `SkillDemandChart` | Values become shares. Props change to `{ skill_group, must_have_pct, nice_to_have_pct }[]`. The value axis label reads "% of postings", value labels read "42%", tooltips read "Must-have: 42% of postings", and the sort is by `must_have_pct + nice_to_have_pct`. The `ShowAsTable` disclosure shows the same percentages and uses `estimate.qualifier` as its caption. Under `confidence: "full_small"`, Story 1 passes counts instead, the labels read "3 of 8 postings" and the axis reads "postings". That's the one count case the experience spec allows. | `stories/SkillDemandChart.tsx` |
+| Story 1 (`DataStoryMessage`, block "what employers ask for") | Maps `employer-mentioned-skills.skills[].share_pct` into `SkillDemandChart` and passes the section's `estimate` to its `StoryBlock`. The **how-to-read line** renders once per story view, under the first block whose `estimate.margin_pts` is non-null: "± pts: the real figure across all {estimate.population_n} postings is very likely within this many points of the figure shown." | `stories/DataStoryMessage.tsx` |
+| `ReasoningPanel` | It gains an optional `trace.method_line`. When present, it renders as the last line of "Sources & Tools", in plain text. The requirements line ("{n} read in full of {N} postings · sample") is already server-rendered trace text and needs no change. | `components/ReasoningPanel.tsx` |
+| `SuggestedQuestions` | **No change.** The `how-numbers` chip ("How do you get these numbers?") arrives from `GET /api/market-health/chat-suggestions` like every curated chip and is answered by the server with no model call. Chips render on every task today, so it shows under "About this platform" as the experience requires, and elsewhere too. That's acceptable: the question is relevant everywhere. | `layout/SuggestedQuestions.tsx` |
+
+### API contract (alignment with the backend spec)
+
+| Method | Endpoint | What this spec reads |
+|---|---|---|
+| GET | `/api/market-health/welcome` | `method.one_line`, `method.full[]` |
+| POST | `/api/market-health/stories/{story_id}` | top-level `method_line` (string or null); requirements sections' `estimate` and `share_pct` items |
+| POST | `/api/chat` (SSE trace) | `trace.method_line` (optional string). **Alignment:** this spec asks for the one-line text as a named field on the trace, not as a `sources_and_tools` entry, so it can't be mistaken for a data source that was consulted. The backend spec is updated to match. |
+| GET | `/api/market-health/chat-suggestions` | unchanged |
+
+### Resolved here: small-sample treatment on bars
+
+The experience spec's Open Question asked whether "small sample, treat as a rough guide" on a
+`SkillDemandChart` bar needs a visual treatment like the range chart's hollow dot. **It
+doesn't, under the backend design.** Confidence is computed per block, with one n and one
+margin per chart (`backend/specs/market-health/api.md` — Sampling — Estimates), never per bar,
+so there's no individual small-sample bar to mark. The block's qualifier line carries
+"small sample, treat as a rough guide" for the whole chart, which is a text label and satisfies
+`data-legibility`. `design/visual-design.md` needs no new token. Recorded in the change request
+for the Designer to close the open question.
+
+### Admin
+
+**No frontend change.** The admin dashboard is server-rendered by the backend (Jinja2,
+`backend/specs/pipeline-visibility/api.md` — Deployment topology). Its sampling panel, group
+table, filters and Detail message are specified there and built in `/implement-backend`.
+
+### Verification (at `/implement-frontend`)
+
+- `npm run build` + `tsc` clean.
+- In a real browser, against the deployed backend:
+  - the welcome's one-line text and disclosure (keyboard: Enter/Space toggles, focus visible);
+  - Story 1's skills block, showing percentages, the qualifier, the how-to-read line once, and
+    its table view;
+  - a story with a null `method_line` (Story 5) showing no posting method line;
+  - the `how-numbers` chip returning the full text with "No language model was used";
+  - the Reasoning Panel's method line.
+- Check copy against the experience spec's word list. Nothing visible may say "every job in
+  the market" or "we don't count every job".
+
+### Out of scope here
+
+- Admin views (server-rendered, above).
+- Any client-side computation of shares, margins or confidence. All of it comes from the API.

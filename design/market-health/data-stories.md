@@ -313,6 +313,17 @@ external search, or unstated market assumptions to fill a value.
   margin, thresholds and wording. Every story and every future catalogue entry that shows a
   requirements figure inherits this. A requirements figure is never shown as a raw count of
   sampled postings.
+- **Every story ends with the one-line method text** (added 2026-10-23), placed above "How this
+  was generated": "We count every job posted by the {M} companies we follow, and read a fair
+  sample of those job descriptions in full to see what employers ask for." This is the same
+  canonical text as `design/market-health/experience.md` — How we read the market, with the
+  same live values. A story with no requirements block still carries it, because the "who we
+  follow" limit applies to every job figure. Stories built only on official statistics (such
+  as Story 5) or only on employment events use their own source line instead. The posting
+  method text describes postings, not those sources.
+- **Counts are never presented as estimates, and estimates never as counts.** Job counts,
+  trends, role shares, pay and coverage are full counts of the companies we follow. They don't
+  get "estimated" or "±" wording, which would understate them. Only requirements figures do.
 - A section with too little data says **"Not enough data yet"** and explains what coverage is
   missing. It does not disappear silently and it does not borrow from external sources.
 - **A year-on-year shift block before the prior window exists** is a distinct state from "not
