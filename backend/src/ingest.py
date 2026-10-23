@@ -48,6 +48,7 @@ from raw_postings import (
     insert_new_postings,
 )
 from requirements import REQUIREMENTS_DAILY_REQUEST_BUDGET, extract_requirements
+from requirements_guard import RequirementsDeleteCapExceeded, check_repeat_work, severest
 from sources import ALL_SOURCE_ADAPTERS
 from sources.base import SourceFetchError
 
@@ -130,12 +131,16 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
     wait for a later run to notice.
 
     Returns the same stats shape as classify_postings()/reclassify_all(), all-zero/False
-    when there was nothing stale to do.
+    when there was nothing stale to do, plus (2026-10-23 — Repeat-work guardrails)
+    `requirements_deleted`, `reclassified_unchanged` and `guard`/`guard_detail`.
+    `total_classified` counts only postings whose classification actually changed; identical
+    rewrites go to `reclassified_unchanged`, so a steady-state day never reads as "N classified".
     """
     empty_stats = {
         "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
         "other_count": 0, "total_classified": 0,
         "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+        "requirements_deleted": 0, "reclassified_unchanged": 0, "guard": "ok", "guard_detail": {},
     }
     stale_backlog = get_stale_for_reclassification(TAXONOMY_VERSION)
     if not stale_backlog:
@@ -153,12 +158,27 @@ async def run_taxonomy_reprocessing_phase(already_used_today: int) -> dict:
     # wiped every extracted posting daily from 2026-09-21 to 2026-10-10
     # (changes/2026-10-10-requirements-re-extraction-loop.md).
     changed = stats.pop("changed_posting_ids", [])
+    rewritten = stats["total_classified"]
+    stats.update({
+        "total_classified": len(changed),
+        "reclassified_unchanged": max(0, rewritten - len(changed)),
+        "requirements_deleted": 0, "guard": "ok", "guard_detail": {},
+    })
     if changed:
-        reqs.delete_requirements_for_reprocess(changed)
-        logger.info(
-            "reclassify: %d of %d reprocessed postings changed classification; their "
-            "requirements are cleared for re-extraction", len(changed), stats["total_classified"],
-        )
+        try:
+            stats["requirements_deleted"] = reqs.delete_requirements_for_reprocess(
+                changed, reason="classification_changed",
+            )
+            logger.info(
+                "reclassify: %d of %d reprocessed postings changed classification; their "
+                "requirements are cleared for re-extraction", len(changed), rewritten,
+            )
+        except RequirementsDeleteCapExceeded as exc:
+            # Nothing was deleted. The classification rewrite stands; a re-read this large is a
+            # planned, manual step (reprocess_taxonomy.py with a change_ref), never a daily one.
+            logger.warning("reclassify: %s — run reprocess_taxonomy.py deliberately if intended", exc)
+            stats["guard"] = "delete_cap_blocked"
+            stats["guard_detail"] = {"attempted_deletes": exc.attempted, "delete_cap": exc.cap}
     return stats
 
 
@@ -179,6 +199,9 @@ async def run_requirements_phase() -> dict:
         "requirements_extracted": 0, "requirements_requests_used": 0,
         "requirements_budget_reached": False, "stopped_early": False,
         "requirements_phase": "ok", "batch_collected": 0, "batch_submitted_id": None,
+        # Repeat-work guardrails (2026-10-23): paid = new + repeats, always.
+        "requirements_paid": 0, "requirements_new": 0, "requirements_repeats": 0,
+        "guards": [], "guard_detail": {},
     }
     phases: list[str] = []
 
@@ -186,6 +209,11 @@ async def run_requirements_phase() -> dict:
     for job in batch_jobs.reconcile(reqs.BATCH_STUCK_AFTER_HOURS):
         for pid in job["posting_ids"]:
             reqs.record_extraction_failure(pid, job["error"] or "batch job failed", job["model"])
+        if job["provider_job_ref"] is None:
+            # The submit never came back (jobs 30/31, 2026-10-09/10). Name it on the run rather
+            # than leaving the dashboard to show a quiet 0 collected.
+            result["guards"].append("batch_submit_incomplete")
+            result["guard_detail"]["batch_job_id"] = job["id"]
 
     # --- step 1: collect a finished batch --------------------------------
     active = batch_jobs.get_active_job()
@@ -204,7 +232,8 @@ async def run_requirements_phase() -> dict:
             elif state == "succeeded":
                 batch_results = await provider.fetch(active["provider_job_ref"])
                 postings = get_postings_by_ids(active["posting_ids"])
-                collected = reqs.collect_batch_results(batch_results, postings, active["model"])
+                collected = reqs.collect_batch_results(batch_results, postings, active["model"],
+                                                       batch_job_id=active["id"])
                 batch_jobs.mark_collected(active["id"])
                 result["batch_collected"] = collected
                 logger.info("requirements batch %d collected: %d postings", active["id"], collected)
@@ -218,13 +247,17 @@ async def run_requirements_phase() -> dict:
         used_today = get_requirements_requests_used_today()
         logger.info("requirements: %d in backlog; %d/%d of today's interactive budget used",
                     len(needing), used_today, REQUIREMENTS_DAILY_REQUEST_BUDGET)
-        stats = await extract_requirements(needing, already_used_today=used_today)
+        stats = await extract_requirements(needing, already_used_today=used_today,
+                                           pre_spend_check=check_repeat_work)
         result.update({
             "requirements_extracted": stats["requirements_extracted"],
             "requirements_requests_used": stats["requirements_requests_used"],
             "requirements_budget_reached": stats["requirements_budget_reached"],
             "stopped_early": stats["stopped_early"],
         })
+        _add_paid(result, stats["paid"], stats["new"], stats["repeats"])
+        if stats["guard"] is not None:
+            _record_block(result, "repeat_work_blocked_interactive", stats["guard"])
         if stats["stopped_early"]:
             phases.append("interactive_failed")
     except Exception as exc:  # noqa: BLE001
@@ -233,8 +266,12 @@ async def run_requirements_phase() -> dict:
 
     # --- step 3: maybe submit one batch --------------------------------
     try:
-        submitted_id = await _maybe_submit_batch()
+        submitted_id, submit_info = await _maybe_submit_batch()
         result["batch_submitted_id"] = submitted_id
+        if submit_info.get("blocked"):
+            _record_block(result, "repeat_work_blocked_batch", submit_info["check"])
+        elif submitted_id is not None:
+            _add_paid(result, submit_info["paid"], submit_info["new"], submit_info["repeats"])
     except Exception as exc:  # noqa: BLE001
         logger.exception("requirements batch submit failed: %s", exc)
         phases.append("batch_submit_failed")
@@ -247,21 +284,61 @@ async def run_requirements_phase() -> dict:
     return result
 
 
+def _guard_fields(reclassify_stats: dict, requirements_stats: dict) -> dict:
+    """Fold both phases' safeguard outcomes into requirements_guard (most severe) and
+    guard_detail (everything that fired). A guard firing never makes the run `partial`."""
+    fired = list(requirements_stats["guards"])
+    detail = dict(requirements_stats["guard_detail"])
+    if reclassify_stats["guard"] != "ok":
+        fired.append(reclassify_stats["guard"])
+        detail.update(reclassify_stats["guard_detail"])
+    if fired:
+        detail["fired"] = fired
+    return {"requirements_guard": severest(fired), "guard_detail": detail}
+
+
+def _add_paid(result: dict, paid: int, new: int, repeats: int) -> None:
+    result["requirements_paid"] += paid
+    result["requirements_new"] += new
+    result["requirements_repeats"] += repeats
+
+
+def _record_block(result: dict, guard: str, check: dict) -> None:
+    """A lane refused to spend. Not a phase failure — nothing broke and nothing was spent — so
+    it goes to requirements_guard / guard_detail, never requirements_phase."""
+    result["guards"].append(guard)
+    result["guard_detail"][guard] = {
+        k: check[k] for k in ("selected", "repeats", "explained", "unexplained", "unexplained_ids", "thresholds")
+    }
+
+
 def _require_batch_key() -> str:
     import os
     return os.environ["GEMINI_API_KEY_REQUIREMENTS"]
 
 
-async def _maybe_submit_batch() -> int | None:
-    """Submit one batch job iff the backlog is worth it and none is in flight.
-    Returns the new batch_jobs.id, or None."""
+async def _maybe_submit_batch() -> tuple[int | None, dict]:
+    """Submit one batch job iff the backlog is worth it, none is in flight, and the repeat-work
+    circuit breaker passes (2026-10-23). Returns (new batch_jobs.id or None, info) where info
+    carries paid/new/repeats for a submit, or {"blocked": True, "check": ...} when the breaker
+    refused — in which case no batch_jobs row is written and nothing is submitted."""
     if batch_jobs.get_active_job() is not None:
-        return None
+        return None, {}
     backlog = count_needing_requirements()
     if backlog < reqs.REQUIREMENTS_BATCH_MIN_BACKLOG:
-        return None
+        return None, {}
 
     postings = get_all_needing_requirements(limit=reqs.MAX_BATCH_POSTINGS)
+    postings = list({p["id"]: p for p in postings}.values())  # a duplicate id never takes a slot
+    check = check_repeat_work([p["id"] for p in postings])
+    if check["blocked"]:
+        logger.warning(
+            "requirements batch NOT submitted: %d of %d selected postings were already extracted "
+            "with no reprocess request (thresholds: >%d or >%.0f%%)",
+            check["unexplained"], check["selected"], check["thresholds"]["count"],
+            check["thresholds"]["share"] * 100,
+        )
+        return None, {"blocked": True, "check": check}
     prepped = reqs.prep_postings(postings)
     est = reqs.estimate_batch_cost_usd(prepped)
     if est > reqs.MAX_BATCH_USD:
@@ -270,7 +347,7 @@ async def _maybe_submit_batch() -> int | None:
             "for %d postings — a human must decide whether to raise the cap",
             est, reqs.MAX_BATCH_USD, len(postings),
         )
-        return None
+        return None, {}
 
     posting_ids = [p["id"] for p in postings]
     model = reqs.EXTRACTION_MODEL
@@ -283,7 +360,8 @@ async def _maybe_submit_batch() -> int | None:
         "requirements batch %d submitted: %d postings, est $%.4f, ref %s",
         job_id, len(posting_ids), est, job_ref,
     )
-    return job_id
+    repeats = sum(1 for pid in posting_ids if pid in check["repeat_ids"])
+    return job_id, {"paid": len(posting_ids), "new": len(posting_ids) - repeats, "repeats": repeats}
 
 
 async def run() -> None:
@@ -327,6 +405,7 @@ async def run() -> None:
             "cache_hits": 0, "heuristic_filtered": 0, "llm_classified": 0,
             "other_count": 0, "total_classified": 0,
             "stopped_early": False, "budget_reached": False, "llm_requests_used": 0,
+            "requirements_deleted": 0, "reclassified_unchanged": 0, "guard": "ok", "guard_detail": {},
         }
         if not stats["stopped_early"]:
             try:
@@ -401,6 +480,12 @@ async def run() -> None:
         requirements_phase=requirements_stats["requirements_phase"],
         batch_collected=requirements_stats["batch_collected"],
         batch_submitted_id=requirements_stats["batch_submitted_id"],
+        requirements_paid=requirements_stats["requirements_paid"],
+        requirements_new=requirements_stats["requirements_new"],
+        requirements_repeats=requirements_stats["requirements_repeats"],
+        requirements_deleted=reclassify_stats["requirements_deleted"],
+        reclassified_unchanged=reclassify_stats["reclassified_unchanged"],
+        **_guard_fields(reclassify_stats, requirements_stats),
     )
     # ingestion_runs' row for this run only exists from this point on — see
     # ingestion_runs.record_run()'s docstring — so raw_postings.ingestion_run_id

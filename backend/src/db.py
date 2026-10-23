@@ -704,6 +704,42 @@ CREATE OR REPLACE VIEW statistic_observations_latest AS
     SELECT DISTINCT ON (series_id, period_start) *
     FROM statistic_observations
     ORDER BY series_id, period_start, released_on DESC, created_at DESC;
+
+-- Repeat-work guardrails (2026-10-23) — see backend/specs/market-health/api.md — Business Logic
+-- — Repeat-work guardrails; changes/2026-10-10-requirements-re-extraction-loop.md (Step 4).
+-- Both tables are APPEND-ONLY: no code path updates or deletes their rows. That is the whole
+-- point — posting_requirements is exactly what the 2026-09-21..10-10 loop deleted, so it can't
+-- answer "was this posting paid for before?". These can.
+CREATE TABLE IF NOT EXISTS requirements_extraction_ledger (
+    id               SERIAL PRIMARY KEY,
+    posting_id       TEXT NOT NULL REFERENCES raw_postings(id),
+    lane             TEXT NOT NULL,          -- interactive | batch | reused | seed
+    batch_job_id     INTEGER REFERENCES batch_jobs(id),
+    model            TEXT NOT NULL,
+    ingestion_run_id INTEGER,
+    extracted_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_extraction_ledger_posting ON requirements_extraction_ledger (posting_id, extracted_at);
+
+CREATE TABLE IF NOT EXISTS requirements_reprocess_requests (
+    id           SERIAL PRIMARY KEY,
+    posting_id   TEXT NOT NULL REFERENCES raw_postings(id),
+    reason       TEXT NOT NULL,
+    change_ref   TEXT,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_reprocess_requests_posting ON requirements_reprocess_requests (posting_id, requested_at);
+
+ALTER TABLE batch_jobs ADD COLUMN IF NOT EXISTS distinct_count INTEGER;
+
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_paid INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_new INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_repeats INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_deleted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS reclassified_unchanged INTEGER NOT NULL DEFAULT 0;
+-- 'ok' for legacy rows: they predate the guardrails, nothing fired.
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_guard TEXT NOT NULL DEFAULT 'ok';
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS guard_detail JSONB NOT NULL DEFAULT '{}';
 """
 
 

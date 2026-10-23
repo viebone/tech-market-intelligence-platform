@@ -57,8 +57,48 @@
       {% else %}
         <span class="badge neutral">No batch yet</span>
       {% endif %}
+      {% if bl.batch %}
+        <div class="field-hint">
+          {{ bl.batch.distinct_count }} distinct postings in {{ bl.batch.item_count }} slots
+          {% if bl.batch.distinct_count < bl.batch.item_count %}
+            · <span class="badge neutral">{{ bl.batch.item_count - bl.batch.distinct_count }} slots repeated a posting</span>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
   </div>
+  {% set pw = paid_work_check %}
+  {% if pw %}
+  <div class="field-row" title="Run started {{ pw.started_at }}. The safeguard pauses paid reading when more than {{ (pw.thresholds.share * 100) | round | int }}% or more than {{ pw.thresholds.count }} of the selected postings were already read. A daily run may remove at most {{ pw.delete_cap }} previous results.">
+    <div class="field-label">Paid work check: last run</div>
+    <div class="field-value">
+      {% if pw.guard in ('repeat_work_blocked_batch', 'repeat_work_blocked_interactive') %}
+        {% set d = pw.guard_detail[pw.guard] %}
+        <a href="/admin/runs/{{ pw.run_id }}"><span class="badge neutral">Paused</span></a>
+        Paid reading paused: {{ d.unexplained }} of {{ d.selected }} postings selected had already been read.
+        Nothing was spent. Check before re-running.
+      {% elif pw.guard == 'delete_cap_blocked' %}
+        <a href="/admin/runs/{{ pw.run_id }}"><span class="badge neutral">Removal stopped</span></a>
+        This run tried to remove {{ pw.guard_detail.attempted_deletes }} results; the daily limit is
+        {{ pw.guard_detail.delete_cap }}. Nothing was removed. Large clean-ups are a manual, planned step.
+      {% elif pw.guard == 'batch_submit_incomplete' %}
+        <a href="/admin/runs/{{ pw.run_id }}"><span class="badge error">Batch submit did not complete</span></a>
+        (batch #{{ pw.guard_detail.batch_job_id }}) — nothing was charged; its postings are back in the backlog.
+      {% else %}
+        Paid for {{ pw.paid }} postings · {{ pw.new }} new ·
+        {% if pw.repeats %}<span class="badge neutral">{{ pw.repeats }} already read before</span>{% else %}0 already read before{% endif %}
+        · {% if pw.removed %}<span class="badge neutral">{{ pw.removed }} results removed</span>{% else %}0 results removed{% endif %}
+      {% endif %}
+      {% if pw.last_unresolved_guard and pw.last_unresolved_guard.run_id != pw.run_id %}
+        <div class="field-hint">
+          <span class="badge neutral">Unresolved</span>
+          A safeguard fired on <a href="/admin/runs/{{ pw.last_unresolved_guard.run_id }}">run {{ pw.last_unresolved_guard.run_id }}</a>
+          ({{ pw.last_unresolved_guard.guard | replace('_', ' ') }}) and no run has read normally since.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="card">

@@ -55,7 +55,7 @@ def test_steady_state_day_does_no_work_and_deletes_nothing():
     deletes: list = []
     with _Swap(ingest, get_stale_for_reclassification=lambda version: [],
                reclassify_all=_fail("reclassify_all")), \
-         _Swap(ingest.reqs, delete_requirements_for_reprocess=lambda ids: deletes.append(ids)):
+         _Swap(ingest.reqs, delete_requirements_for_reprocess=lambda ids, **k: deletes.append(ids)):
         stats = asyncio.run(ingest.run_taxonomy_reprocessing_phase(already_used_today=0))
     assert deletes == []
     assert stats["total_classified"] == 0
@@ -85,10 +85,13 @@ def test_only_changed_postings_have_requirements_cleared():
     deletes: list = []
     with _Swap(ingest, get_stale_for_reclassification=lambda version: stale,
                reclassify_all=_fake_reclassify), \
-         _Swap(ingest.reqs, delete_requirements_for_reprocess=lambda ids: deletes.append(list(ids))):
+         _Swap(ingest.reqs, delete_requirements_for_reprocess=lambda ids, **k: deletes.append(list(ids)) or len(ids)):
         stats = asyncio.run(ingest.run_taxonomy_reprocessing_phase(already_used_today=0))
     assert deletes == [["p3", "p50", "p99"]]
     assert "changed_posting_ids" not in stats  # never leaks into ingestion_runs fields
+    # 2026-10-23: only real changes count as classified; identical rewrites are reported apart.
+    assert stats["total_classified"] == 3 and stats["reclassified_unchanged"] == 97
+    assert stats["requirements_deleted"] == 3
 
 
 def test_reprocessed_but_unchanged_postings_keep_requirements():
@@ -102,7 +105,8 @@ def test_reprocessed_but_unchanged_postings_keep_requirements():
     with _Swap(ingest, get_stale_for_reclassification=lambda v: [{"id": "x", "title": "t"}],
                reclassify_all=_fake_reclassify), \
          _Swap(ingest.reqs, delete_requirements_for_reprocess=_fail("delete_requirements_for_reprocess")):
-        asyncio.run(ingest.run_taxonomy_reprocessing_phase(already_used_today=0))
+        stats = asyncio.run(ingest.run_taxonomy_reprocessing_phase(already_used_today=0))
+    assert stats["total_classified"] == 0 and stats["reclassified_unchanged"] == 54
 
 
 def test_changed_posting_ids_compares_requirements_relevant_fields_only():

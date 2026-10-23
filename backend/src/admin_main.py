@@ -133,6 +133,7 @@ def _requirements_backlog_status() -> dict:
         batch = {
             "state": job["state"],
             "item_count": job["item_count"],
+            "distinct_count": job["distinct_count"],
             "est_cost_usd": job["est_cost_usd"],
             "actual_cost_usd": job["actual_cost_usd"],
             "submitted_at": job["submitted_at"],
@@ -160,6 +161,7 @@ def overview(request: Request):
             "taxonomy_version_breakdown": classification.get_taxonomy_version_breakdown(),
             "skill_group_distribution": requirements.get_skill_group_distribution(),
             "latest_run": runs[0] if runs else None,
+            "paid_work_check": ingestion_runs.get_paid_work_check(),
             "employment_events_summary": employment_events_storage.get_summary(),
         },
     )

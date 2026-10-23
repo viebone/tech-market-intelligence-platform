@@ -256,11 +256,20 @@ def attach_ingestion_run(run_id: int, started_at: datetime) -> None:
     job-sync runs are sequential, never concurrent (Railway restart policy
     NEVER, one-shot cron per DEPLOYMENT.md) — no other run's postings could
     ever fall inside this window.
+
+    Also attaches this run's requirements_extraction_ledger rows (2026-10-23 — Repeat-work
+    guardrails), by the same rule. That is the ledger's one permitted write to an existing row,
+    and it only ever fills a NULL.
     """
     with get_connection() as conn:
         conn.execute(
             "UPDATE raw_postings SET ingestion_run_id = %s "
             "WHERE ingestion_run_id IS NULL AND fetched_at >= %s",
+            (run_id, started_at),
+        )
+        conn.execute(
+            "UPDATE requirements_extraction_ledger SET ingestion_run_id = %s "
+            "WHERE ingestion_run_id IS NULL AND extracted_at >= %s",
             (run_id, started_at),
         )
 

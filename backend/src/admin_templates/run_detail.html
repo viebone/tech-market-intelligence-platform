@@ -28,6 +28,41 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <h2>Paid work check</h2>
+  <div class="field-row"><div class="field-label">Paid</div><div class="field-value">{{ run.requirements_paid }} postings sent for paid reading</div></div>
+  <div class="field-row"><div class="field-label">New</div><div class="field-value">{{ run.requirements_new }} postings never read before</div></div>
+  <div class="field-row"><div class="field-label">Repeats</div><div class="field-value">{{ run.requirements_repeats }} postings read before{% if run.guard_detail.get(run.requirements_guard, {}).get('explained') %} ({{ run.guard_detail[run.requirements_guard].explained }} explained by a deliberate re-read){% endif %}</div></div>
+  <div class="field-row"><div class="field-label">Removed</div><div class="field-value">{{ run.requirements_deleted }} previous results removed</div></div>
+  {% if run.reclassified_unchanged %}<div class="field-row"><div class="field-label">Reclassified, unchanged</div><div class="field-value">{{ run.reclassified_unchanged }} postings moved to the current taxonomy version with the same role (not counted as classified)</div></div>{% endif %}
+  {% for guard in run.guard_detail.get('fired', []) %}
+    {% set d = run.guard_detail.get(guard, run.guard_detail) %}
+    <div class="field-row">
+      <div class="field-label">Safeguard</div>
+      <div class="field-value">
+      {% if guard in ('repeat_work_blocked_batch', 'repeat_work_blocked_interactive') %}
+        <span class="badge neutral">Paused ({{ 'batch' if guard.endswith('batch') else 'interactive' }})</span>
+        {{ d.unexplained }} of {{ d.selected }} selected postings had already been read with no deliberate re-read recorded
+        ({{ d.explained }} more were deliberate). Pauses above {{ d.thresholds.count }} or {{ (d.thresholds.share * 100) | round | int }}%.
+        Nothing was spent.
+        {% if d.unexplained_ids %}
+          <div class="field-hint">
+            {% for pid in d.unexplained_ids %}<a href="/admin/postings/{{ pid | urlencode }}">{{ pid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        {% endif %}
+      {% elif guard == 'delete_cap_blocked' %}
+        <span class="badge neutral">Removal stopped</span>
+        Tried to remove {{ run.guard_detail.attempted_deletes }} results; the daily limit is {{ run.guard_detail.delete_cap }}. Nothing was removed.
+        Run <code>reprocess_taxonomy.py --change-ref …</code> if the re-read is intended.
+      {% elif guard == 'batch_submit_incomplete' %}
+        <span class="badge error">Batch submit did not complete</span>
+        Batch #{{ run.guard_detail.batch_job_id }} never received a provider reference. Nothing was charged; its postings are back in the backlog.
+      {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
 {% if submitted_batch or run.batch_collected %}
 <div class="card">
   <h2>Batch activity</h2>
@@ -36,7 +71,7 @@
   {% endif %}
   {% if submitted_batch %}
   <div class="field-row"><div class="field-label">Submitted</div><div class="field-value">
-    Batch #{{ submitted_batch.id }} — {{ submitted_batch.item_count }} postings,
+    Batch #{{ submitted_batch.id }} — {{ submitted_batch.distinct_count }} distinct postings in {{ submitted_batch.item_count }} slots,
     <span class="badge {{ 'success' if submitted_batch.state == 'collected' else ('error' if submitted_batch.state == 'failed' else 'neutral') }}">{{ submitted_batch.state }}</span>
   </div></div>
   <div class="field-row"><div class="field-label">Estimated cost</div><div class="field-value">${{ '%.4f' | format(submitted_batch.est_cost_usd) }}{% if submitted_batch.actual_cost_usd is not none %} (actual ${{ '%.4f' | format(submitted_batch.actual_cost_usd) }}){% endif %}</div></div>

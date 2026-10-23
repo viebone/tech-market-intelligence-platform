@@ -8,7 +8,7 @@
   <thead>
     <tr>
       <th>Started</th><th>Status</th><th>Fetched</th><th>Inserted</th>
-      <th>Classified</th><th>Requirements Extracted</th><th>Batch</th><th>Budget Reached</th><th>Other Rate</th>
+      <th>Classified</th><th>Requirements Extracted</th><th>Batch</th><th title="Postings sent for paid reading / never read before / read before / previous results removed">Paid / New / Repeats / Removed</th><th>Budget Reached</th><th>Other Rate</th>
     </tr>
   </thead>
   <tbody>
@@ -30,6 +30,14 @@
           {%- if r.batch_submitted_id %}{% set _ = parts.append('submitted #' ~ r.batch_submitted_id) %}{% endif -%}
           {{ parts | join(' · ') if parts else '—' }}
         {% endif %}
+      </a></td>
+      <td><a class="row-link" href="/admin/runs/{{ r.id }}">
+        {{ r.requirements_paid }} / {{ r.requirements_new }} /
+        {% if r.requirements_repeats %}<span class="badge neutral">{{ r.requirements_repeats }}</span>{% else %}0{% endif %} /
+        {% if r.requirements_deleted %}<span class="badge neutral">{{ r.requirements_deleted }}</span>{% else %}0{% endif %}
+        {% if r.requirements_guard in ('repeat_work_blocked_batch', 'repeat_work_blocked_interactive') %}<span class="badge neutral">Paused</span>
+        {% elif r.requirements_guard == 'delete_cap_blocked' %}<span class="badge neutral">Removal stopped</span>
+        {% elif r.requirements_guard == 'batch_submit_incomplete' %}<span class="badge error">submit incomplete</span>{% endif %}
       </a></td>
       <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ 'Yes' if r.budget_reached else 'No' }}</a></td>
       <td><a class="row-link" href="/admin/runs/{{ r.id }}">{{ (r.other_rate * 100) | round(1) }}%</a></td>

@@ -6,8 +6,9 @@ skills". Deletes their requirements/skills/languages rows and re-extracts via th
 
 See `changes/2026-09-06-unknown-reclassification.md`.
 
-Run manually (backend/src/, requirements venv):
-    python reextract_skilless.py
+Run manually (backend/src/, requirements venv), naming the change request that authorises the
+re-read (2026-10-23 — Repeat-work guardrails):
+    python reextract_skilless.py --change-ref 2026-09-06-unknown-reclassification
 
 Safe to re-run: it only picks postings still in the zero-skill state. Prints the batch job
 ref. Not wired into `ingest.py`.
@@ -19,6 +20,7 @@ them is wasted spend. Only the zero-skills case is a reliable "the extractor mis
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import os
@@ -53,7 +55,7 @@ def _zero_skill_ids() -> list[str]:
     return [r[0] for r in rows]
 
 
-async def main() -> None:
+async def main(change_ref: str) -> None:
     init_schema()
 
     ids = _zero_skill_ids()
@@ -63,7 +65,10 @@ async def main() -> None:
     print(f"{len(ids)} extracted postings have zero skills — re-extracting.")
 
     postings = get_postings_by_ids(ids)
-    reqs.delete_requirements_for_reprocess(ids)  # so ON CONFLICT DO NOTHING doesn't block re-insert
+    # so ON CONFLICT DO NOTHING doesn't block re-insert; records reprocess requests so the re-read
+    # is an explained repeat (2026-10-23 — Repeat-work guardrails)
+    reqs.delete_requirements_for_reprocess(ids, reason="skill_gap_reextract", change_ref=change_ref,
+                                           allow_bulk=True)
 
     prepped = reqs.prep_postings(postings)
     requests = reqs.build_batch_requests(prepped)
@@ -103,4 +108,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Re-extract postings that have requirements but no skills.")
+    parser.add_argument("--change-ref", required=True, help="the change request authorising this re-read")
+    asyncio.run(main(parser.parse_args().change_ref))

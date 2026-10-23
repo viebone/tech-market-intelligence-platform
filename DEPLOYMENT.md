@@ -250,6 +250,30 @@ Run this via the Railway dashboard → Postgres service → **Data** tab (no loc
 needed), or a local GUI/`psql` client using the *public* `DATABASE_URL` from
 `backend/.env`.
 
+### Repeat-work safeguards (added 2026-10-23)
+
+`changes/2026-10-10-requirements-re-extraction-loop.md`. Paid requirements reading refuses to
+spend when it is about to pay again for postings it already paid for, and a daily run can't
+remove more than 200 postings' results. See `backend/specs/market-health/api.md` — Business
+Logic — Repeat-work guardrails.
+
+- **Once, right after the first deploy that includes them**, seed the extraction history from
+  today's results. It is idempotent, so a second run inserts nothing:
+  `cd backend/src && python migrate_extraction_ledger.py`.
+  Until it runs, postings read before the deploy are invisible to the safeguard.
+- **Per-run check** (also on the admin Overview as "Paid work check"):
+  ```sql
+  SELECT id, started_at, requirements_paid, requirements_new, requirements_repeats,
+         requirements_deleted, requirements_guard, guard_detail
+  FROM ingestion_runs ORDER BY started_at DESC LIMIT 10;
+  ```
+  On a normal day, `requirements_repeats` and `requirements_deleted` are 0 and
+  `requirements_guard` is `ok`.
+- **A deliberate large re-read** (a taxonomy migration) goes through the manual scripts, which
+  now require the change request's slug:
+  `python reprocess_taxonomy.py --change-ref <change-slug>`, and the same for
+  `reextract_skilless.py`.
+
 ---
 
 ## Service: `employment-events` (deployed — runs weekly, Mondays 07:00 UTC)

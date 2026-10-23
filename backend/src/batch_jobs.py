@@ -24,7 +24,7 @@ ACTIVE_STATES = ["submitted", "running"]
 
 _COLUMNS = (
     "id, provider, model, provider_job_ref, purpose, state, item_count, "
-    "posting_ids, est_cost_usd, actual_cost_usd, submitted_at, completed_at, error"
+    "posting_ids, est_cost_usd, actual_cost_usd, submitted_at, completed_at, error, distinct_count"
 )
 
 
@@ -34,6 +34,8 @@ def _row(r) -> dict:
         "purpose": r[4], "state": r[5], "item_count": r[6],
         "posting_ids": r[7] or [], "est_cost_usd": r[8], "actual_cost_usd": r[9],
         "submitted_at": r[10], "completed_at": r[11], "error": r[12],
+        # Legacy rows (before 2026-10-23) have no stored value; compute it from posting_ids.
+        "distinct_count": r[13] if r[13] is not None else len(set(r[7] or [])),
     }
 
 
@@ -69,16 +71,21 @@ def create_job(provider: str, model: str, posting_ids: list[str], est_cost_usd: 
     """Write the row BEFORE the provider submit call (the batch API is not
     idempotent — a crash after submit but before persist must be reconcilable,
     not a silent double charge). `provider_job_ref` stays NULL until
-    set_provider_ref() is called with what submit() returned."""
+    set_provider_ref() is called with what submit() returned.
+
+    posting_ids are de-duplicated first (2026-10-23 — Repeat-work guardrails), so a duplicated
+    id can never take a paid slot; distinct_count is stored alongside item_count."""
+    posting_ids = list(dict.fromkeys(posting_ids))
     with get_connection() as conn:
         r = conn.execute(
             """
-            INSERT INTO batch_jobs (provider, model, purpose, state, item_count, posting_ids, est_cost_usd, submitted_at)
-            VALUES (%s, %s, %s, 'submitted', %s, %s, %s, %s)
+            INSERT INTO batch_jobs (provider, model, purpose, state, item_count, posting_ids, est_cost_usd,
+                                    submitted_at, distinct_count)
+            VALUES (%s, %s, %s, 'submitted', %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (provider, model, purpose, len(posting_ids), json.dumps(posting_ids),
-             est_cost_usd, datetime.now(timezone.utc)),
+             est_cost_usd, datetime.now(timezone.utc), len(posting_ids)),
         ).fetchone()
     return r[0]
 

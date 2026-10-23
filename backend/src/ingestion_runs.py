@@ -143,6 +143,13 @@ def record_run(
     requirements_phase: str = "ok",
     batch_collected: int = 0,
     batch_submitted_id: int | None = None,
+    requirements_paid: int = 0,
+    requirements_new: int = 0,
+    requirements_repeats: int = 0,
+    requirements_deleted: int = 0,
+    reclassified_unchanged: int = 0,
+    requirements_guard: str = "ok",
+    guard_detail: dict | None = None,
     error_message: str | None = None,
 ) -> int:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -167,8 +174,11 @@ def record_run(
                  llm_classified, other_count, other_rate, budget_reached,
                  llm_requests_used, requirements_extracted, requirements_requests_used,
                  requirements_budget_reached, requirements_phase, batch_collected,
-                 batch_submitted_id, anomalies, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 batch_submitted_id, anomalies, error_message,
+                 requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
+                 reclassified_unchanged, requirements_guard, guard_detail)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -178,6 +188,8 @@ def record_run(
                 llm_requests_used, requirements_extracted, requirements_requests_used,
                 requirements_budget_reached, requirements_phase, batch_collected,
                 batch_submitted_id, json.dumps(anomalies), error_message,
+                requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
+                reclassified_unchanged, requirements_guard, json.dumps(guard_detail or {}, default=list),
             ),
         ).fetchone()
     return row[0]
@@ -194,7 +206,9 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
             """
             SELECT id, started_at, completed_at, status, total_fetched, total_inserted,
                    total_classified, requirements_extracted, budget_reached, other_rate,
-                   requirements_phase, batch_collected, batch_submitted_id
+                   requirements_phase, batch_collected, batch_submitted_id,
+                   requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
+                   requirements_guard
             FROM ingestion_runs
             ORDER BY started_at DESC
             LIMIT %s OFFSET %s
@@ -207,6 +221,8 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
             "total_fetched": r[4], "total_inserted": r[5], "total_classified": r[6],
             "requirements_extracted": r[7], "budget_reached": r[8], "other_rate": r[9],
             "requirements_phase": r[10], "batch_collected": r[11], "batch_submitted_id": r[12],
+            "requirements_paid": r[13], "requirements_new": r[14], "requirements_repeats": r[15],
+            "requirements_deleted": r[16], "requirements_guard": r[17],
         }
         for r in rows
     ]
@@ -224,7 +240,9 @@ def get_run(run_id: int) -> dict | None:
                    llm_classified, other_count, other_rate, budget_reached,
                    llm_requests_used, requirements_extracted, requirements_requests_used,
                    requirements_budget_reached, anomalies, error_message,
-                   requirements_phase, batch_collected, batch_submitted_id
+                   requirements_phase, batch_collected, batch_submitted_id,
+                   requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
+                   reclassified_unchanged, requirements_guard, guard_detail
             FROM ingestion_runs WHERE id = %s
             """,
             (run_id,),
@@ -240,4 +258,51 @@ def get_run(run_id: int) -> dict | None:
         "requirements_extracted": row[15], "requirements_requests_used": row[16],
         "requirements_budget_reached": row[17], "anomalies": row[18], "error_message": row[19],
         "requirements_phase": row[20], "batch_collected": row[21], "batch_submitted_id": row[22],
+        "requirements_paid": row[23], "requirements_new": row[24], "requirements_repeats": row[25],
+        "requirements_deleted": row[26], "reclassified_unchanged": row[27],
+        "requirements_guard": row[28], "guard_detail": row[29] or {},
+    }
+
+
+def get_paid_work_check() -> dict | None:
+    """Overview's Paid work check — backend/specs/pipeline-visibility/api.md (2026-10-23,
+    changes/2026-10-10-requirements-re-extraction-loop.md). Reads the run's own recorded fields;
+    never recomputes them, so the dashboard and the pipeline can't disagree. None before any run.
+
+    `last_unresolved_guard`: the newest run whose safeguard fired, if no later run read normally
+    (guard ok and paid > 0) — keeps a pause on the Overview until it's actually resolved."""
+    from requirements_guard import DAILY_REPROCESS_DELETE_CAP, REPEAT_WORK_MAX_COUNT, REPEAT_WORK_MAX_SHARE
+
+    with get_connection() as conn:
+        latest = conn.execute(
+            """
+            SELECT id, started_at, requirements_paid, requirements_new, requirements_repeats,
+                   requirements_deleted, requirements_guard, guard_detail
+            FROM ingestion_runs ORDER BY started_at DESC LIMIT 1
+            """
+        ).fetchone()
+        if latest is None:
+            return None
+        fired = conn.execute(
+            """
+            SELECT g.id, g.requirements_guard, g.started_at
+            FROM ingestion_runs g
+            WHERE g.requirements_guard <> 'ok'
+              AND NOT EXISTS (
+                  SELECT 1 FROM ingestion_runs later
+                  WHERE later.started_at > g.started_at
+                    AND later.requirements_guard = 'ok' AND later.requirements_paid > 0
+              )
+            ORDER BY g.started_at DESC LIMIT 1
+            """
+        ).fetchone()
+    return {
+        "run_id": latest[0], "started_at": latest[1],
+        "paid": latest[2], "new": latest[3], "repeats": latest[4], "removed": latest[5],
+        "guard": latest[6], "guard_detail": latest[7] or {},
+        "thresholds": {"count": REPEAT_WORK_MAX_COUNT, "share": REPEAT_WORK_MAX_SHARE},
+        "delete_cap": DAILY_REPROCESS_DELETE_CAP,
+        "last_unresolved_guard": (
+            {"run_id": fired[0], "guard": fired[1], "started_at": fired[2]} if fired else None
+        ),
     }

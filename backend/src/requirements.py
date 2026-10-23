@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from db import get_connection
 from llm import providers
 from llm.base import BatchRequest
+from requirements_guard import DAILY_REPROCESS_DELETE_CAP, RequirementsDeleteCapExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +421,8 @@ async def extract_batch(postings: list[dict], valid_skills: list[str], request_c
     return [parsed.get(p["id"], {**_DEFAULT_ENTRY, "id": p["id"]}) for p in postings]
 
 
-def insert_requirements(entries: list[dict], model: str = EXTRACTION_MODEL) -> None:
+def insert_requirements(entries: list[dict], model: str = EXTRACTION_MODEL, lane: str = "interactive",
+                        batch_job_id: int | None = None) -> None:
     """Writes posting_requirements + posting_skills + posting_languages for a
     batch of validated entries. `model` records provenance — defaults to the
     interactive `EXTRACTION_MODEL`; the batch collector passes the batch job's
@@ -439,12 +441,20 @@ def insert_requirements(entries: list[dict], model: str = EXTRACTION_MODEL) -> N
     same posting, and a separate call in its own connection would leave a
     real (if narrow) window where a crash between the two could violate
     that — same discipline as this table's own ON CONFLICT DO NOTHING
-    invariants."""
+    invariants.
+
+    Also appends one requirements_extraction_ledger row per posting that actually got a new
+    posting_requirements row, same transaction (2026-10-23 — Business Logic — Repeat-work
+    guardrails). `lane` is "interactive" or "batch"; the ledger is never deleted from, so it
+    remembers what was paid for even after a reprocess clears posting_requirements."""
     if not entries:
         return
     extracted_at = datetime.now(timezone.utc)
+    ids = [e["id"] for e in entries]
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT posting_id FROM posting_requirements WHERE posting_id = ANY(%s)", (ids,))
+            already_present = {r[0] for r in cur.fetchall()}
             cur.executemany(
                 """
                 INSERT INTO posting_requirements
@@ -496,6 +506,15 @@ def insert_requirements(entries: list[dict], model: str = EXTRACTION_MODEL) -> N
                 "DELETE FROM posting_requirements_failures WHERE posting_id = ANY(%s)",
                 ([e["id"] for e in entries],),
             )
+            newly_extracted = [pid for pid in dict.fromkeys(ids) if pid not in already_present]
+            if newly_extracted:
+                cur.executemany(
+                    """
+                    INSERT INTO requirements_extraction_ledger (posting_id, lane, batch_job_id, model, extracted_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    [(pid, lane, batch_job_id, model, extracted_at) for pid in newly_extracted],
+                )
 
 
 def record_extraction_failure(posting_id: str, error: str, model: str) -> None:
@@ -562,7 +581,8 @@ def get_skill_group_distribution() -> list[dict]:
     return [{"value": r[0], "count": r[1]} for r in rows]
 
 
-def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
+def delete_requirements_for_reprocess(posting_ids: list[str], *, reason: str, change_ref: str | None = None,
+                                      allow_bulk: bool = False) -> int:
     """
     Deletes existing posting_requirements/posting_skills/posting_languages
     rows for the given posting ids, so they become indistinguishable from
@@ -577,14 +597,34 @@ def delete_requirements_for_reprocess(posting_ids: list[str]) -> None:
     reprocessed would let it be re-extracted against stale
     role_category/track/specialization, reintroducing the exact bug this
     revision fixes.
+
+    Guardrails (2026-10-23 — Business Logic — Repeat-work guardrails):
+    - the daily path (allow_bulk=False) refuses more than DAILY_REPROCESS_DELETE_CAP ids by
+      raising RequirementsDeleteCapExceeded BEFORE any statement runs;
+    - manual scripts pass allow_bulk=True and must name the change request (change_ref);
+    - every delete records a requirements_reprocess_requests row per posting in the same
+      transaction, so the re-read that follows counts as an explained repeat, not a leak.
+    Returns how many posting_requirements rows were deleted.
     """
     if not posting_ids:
-        return
+        return 0
+    ids = list(dict.fromkeys(posting_ids))
+    if allow_bulk:
+        if not change_ref:
+            raise ValueError("a bulk requirements delete must name its change request (change_ref)")
+    elif len(ids) > DAILY_REPROCESS_DELETE_CAP:
+        raise RequirementsDeleteCapExceeded(len(ids))
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM posting_skills WHERE posting_id = ANY(%s)", (posting_ids,))
-            cur.execute("DELETE FROM posting_languages WHERE posting_id = ANY(%s)", (posting_ids,))
-            cur.execute("DELETE FROM posting_requirements WHERE posting_id = ANY(%s)", (posting_ids,))
+            cur.execute("DELETE FROM posting_skills WHERE posting_id = ANY(%s)", (ids,))
+            cur.execute("DELETE FROM posting_languages WHERE posting_id = ANY(%s)", (ids,))
+            cur.execute("DELETE FROM posting_requirements WHERE posting_id = ANY(%s)", (ids,))
+            deleted = cur.rowcount
+            cur.executemany(
+                "INSERT INTO requirements_reprocess_requests (posting_id, reason, change_ref) VALUES (%s, %s, %s)",
+                [(pid, reason, change_ref) for pid in ids],
+            )
+    return deleted
 
 
 def prep_postings(postings: list[dict]) -> list[dict]:
@@ -630,7 +670,7 @@ def _group_into_batches(postings: list[dict]) -> list[tuple[list[str], list[dict
     return batches
 
 
-async def extract_requirements(postings: list[dict], already_used_today: int = 0) -> dict:
+async def extract_requirements(postings: list[dict], already_used_today: int = 0, pre_spend_check=None) -> dict:
     """
     postings: what raw_postings.get_all_needing_requirements() returns
     ([{id, source, raw_response, role_category, track, specialization}],
@@ -645,10 +685,16 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
     extraction). Effective per-run cap is
     min(MAX_BATCHES_PER_RUN, REQUIREMENTS_DAILY_REQUEST_BUDGET -
     REQUIREMENTS_RETRY_HEADROOM - already_used_today), floored at 0.
+
+    pre_spend_check — requirements_guard.check_repeat_work (2026-10-23), called once with the
+    exact posting ids this run will send (the first `effective_batch_cap` batches) BEFORE any
+    model call. If it reports `blocked`, nothing is sent and `guard` carries its result. Also
+    used to split paid postings into new vs. repeats for the run record.
     """
     empty_stats = {
         "requirements_extracted": 0, "requirements_requests_used": 0,
         "requirements_budget_reached": False, "stopped_early": False,
+        "paid": 0, "new": 0, "repeats": 0, "guard": None,
     }
     if not postings:
         return empty_stats
@@ -661,7 +707,23 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
     prepped = prep_postings(postings)
     batches = _group_into_batches(prepped)
 
+    repeat_ids: set[str] = set()
+    if pre_spend_check is not None and effective_batch_cap > 0:
+        planned = [p["id"] for _, batch in batches[:effective_batch_cap] for p in batch]
+        check = pre_spend_check(planned)
+        if check["blocked"]:
+            logger.warning(
+                "extract_requirements: NOT spending — %d of %d postings selected were already "
+                "extracted with no reprocess request (thresholds: >%d or >%.0f%%)",
+                check["unexplained"], check["selected"], check["thresholds"]["count"],
+                check["thresholds"]["share"] * 100,
+            )
+            return {**empty_stats, "guard": check}
+        repeat_ids = check["repeat_ids"]
+
     request_counter = {"requests": 0}
+    paid = 0
+    repeats = 0
     extracted = 0
     stopped_early = False
     budget_reached = False
@@ -678,6 +740,9 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
                 num_batches - batches_attempted, num_batches,
             )
             break
+        # Counted when the call is made (it is paid whether or not it succeeds).
+        paid += len(batch)
+        repeats += sum(1 for p in batch if p["id"] in repeat_ids)
         try:
             results = await extract_batch(
                 [{"id": p["id"], "description": p["description"]} for p in batch],
@@ -716,6 +781,7 @@ async def extract_requirements(postings: list[dict], already_used_today: int = 0
         "requirements_requests_used": request_counter["requests"],
         "requirements_budget_reached": budget_reached,
         "stopped_early": stopped_early,
+        "paid": paid, "new": paid - repeats, "repeats": repeats, "guard": None,
     }
 
 
@@ -767,7 +833,7 @@ def build_batch_requests(prepped: list[dict]) -> list[BatchRequest]:
     return requests
 
 
-def collect_batch_results(results, postings: list[dict], model: str) -> int:
+def collect_batch_results(results, postings: list[dict], model: str, batch_job_id: int | None = None) -> int:
     """Turn finished-batch BatchResults into posting_requirements rows.
 
     `postings` — the full get_all_needing_requirements()-shaped list the job
@@ -811,5 +877,5 @@ def collect_batch_results(results, postings: list[dict], model: str) -> int:
             record_extraction_failure(pid, "no valid result in batch output", model)
 
     if entries:
-        insert_requirements(entries, model=model)
+        insert_requirements(entries, model=model, lane="batch", batch_job_id=batch_job_id)
     return len(entries)

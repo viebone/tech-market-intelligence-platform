@@ -15,8 +15,9 @@ Shares classification's existing daily budget/key (this is a larger-than-
 usual backlog on the same budget, not a separately budgeted concern), and
 requirements' own separate daily budget, same as ongoing operation.
 
-Run manually:
-    python reprocess_taxonomy.py
+Run manually, naming the change request that authorises the re-read (2026-10-23 —
+Repeat-work guardrails; a bulk requirements delete is refused without one):
+    python reprocess_taxonomy.py --change-ref 2026-11-01-some-taxonomy-revision
 
 Two phases, in order every invocation — the order matters (see api.md):
   1. Classification reprocessing — reclassifies every posting still on a stale
@@ -31,6 +32,7 @@ Two phases, in order every invocation — the order matters (see api.md):
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -50,7 +52,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def run() -> None:
+async def run(change_ref: str) -> None:
     init_schema()
     started_at = datetime.now(timezone.utc)
 
@@ -77,7 +79,11 @@ async def run() -> None:
         "reprocess_taxonomy: %d reprocessed postings changed classification; clearing their "
         "requirements for re-extraction", len(reprocess_targets),
     )
-    delete_requirements_for_reprocess(reprocess_targets)
+    # allow_bulk: this is the planned, manual path the daily delete cap points to. Each deleted
+    # posting gets a reprocess request, so its re-read is an explained repeat, not a leak.
+    delete_requirements_for_reprocess(
+        reprocess_targets, reason="taxonomy_migration", change_ref=change_ref, allow_bulk=True,
+    )
 
     status = "partial" if classify_stats["stopped_early"] else "success"
     record_run(
@@ -101,4 +107,7 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    parser = argparse.ArgumentParser(description="Reprocess postings on a stale taxonomy_version.")
+    parser.add_argument("--change-ref", required=True,
+                        help="the change request authorising this re-read, e.g. 2026-11-01-taxonomy-revision")
+    asyncio.run(run(parser.parse_args().change_ref))
