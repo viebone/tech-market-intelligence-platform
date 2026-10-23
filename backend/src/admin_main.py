@@ -39,6 +39,7 @@ import feedback_storage
 import ingestion_runs
 import market_stories
 import raw_postings
+import sampling_admin
 import requirements
 import scraping_storage
 import statistics_storage
@@ -162,6 +163,7 @@ def overview(request: Request):
             "skill_group_distribution": requirements.get_skill_group_distribution(),
             "latest_run": runs[0] if runs else None,
             "paid_work_check": ingestion_runs.get_paid_work_check(),
+            "sampling_panel": sampling_admin.month_summary(),
             "employment_events_summary": employment_events_storage.get_summary(),
         },
     )
@@ -188,6 +190,8 @@ def postings_list(
     classification_confidence: str | None = None,
     taxonomy_version: str | None = None,
     requirements_status: str | None = None,
+    full_details: str | None = None,
+    group_month: str | None = None,
     source: str | None = None,
     search: str | None = None,
     sort: str = "fetched_at",
@@ -200,6 +204,7 @@ def postings_list(
         "specialization": specialization, "job_function": job_function,
         "classification_confidence": classification_confidence,
         "taxonomy_version": taxonomy_version, "requirements_status": requirements_status,
+        "full_details": full_details, "group_month": group_month,
         "source": source, "search": search,
     }
     result = raw_postings.list_postings(
@@ -251,7 +256,8 @@ def postings_list(
                 "job_functions": sorted(classification.JOB_FUNCTIONS) + ["unknown"],
                 "confidences": sorted(classification.CLASSIFICATION_CONFIDENCE_VALUES),
                 "taxonomy_versions": [r["version"] for r in classification.get_taxonomy_version_breakdown()],
-                "requirements_statuses": ["extracted", "pending", "failed", "not_eligible"],
+                "requirements_statuses": ["extracted", "pending", "failed", "not_eligible", "not_sampled"],
+                "full_details": ["kept", "not_kept", "kept_before_sampling", "pending"],
                 "sources": ["greenhouse", "lever", "ashby", "workable", "personio", "adzuna"],
             },
         },
@@ -822,6 +828,15 @@ def _parse_access_md() -> dict:
     }
 
 
+@app.get("/admin/sampling", dependencies=[Depends(require_admin_session)])
+def sampling_page(request: Request, month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$")):
+    """Sampling by group — backend/specs/pipeline-visibility/api.md GET /admin/sampling (2026-10-23)."""
+    return templates.TemplateResponse(
+        request, "sampling.html",
+        {"active_page": "sampling", "summary": sampling_admin.month_summary(month)},
+    )
+
+
 @app.get("/admin/technical-data", dependencies=[Depends(require_admin_session)])
 def technical_data(request: Request):
     footprint = raw_postings.get_technical_footprint()
@@ -832,7 +847,8 @@ def technical_data(request: Request):
         exposure = None
     return templates.TemplateResponse(
         request, "technical_data.html",
-        {"active_page": "technical_data", "footprint": footprint, "exposure": exposure},
+        {"active_page": "technical_data", "footprint": footprint, "exposure": exposure,
+         "storage_split": sampling_admin.storage_split()},
     )
 
 

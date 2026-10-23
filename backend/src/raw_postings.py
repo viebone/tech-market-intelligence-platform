@@ -21,7 +21,13 @@ from datetime import datetime, timezone
 from db import get_connection
 from employer_headcount import band_label
 from industries import industry_for, region_for, size_band_for
+from sampling_settings import SAMPLING_GO_LIVE
 from sources.base import SOURCE_DATA_GAPS, FetchedPosting
+
+# Every reader of a posting's full payload goes through this (2026-10-23 — Business Logic —
+# Sampling): postings stored after sampling go-live keep it in posting_details (kept ones only);
+# older rows keep it in raw_postings. Queries using it must LEFT JOIN posting_details pd.
+PAYLOAD_SQL = "COALESCE(pd.raw_response, rp.raw_response)"
 
 
 def existing_ids(ids: list[str]) -> set[str]:
@@ -40,6 +46,10 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
     Insert postings not already stored, deduped by id = f"{source}:{source_ref}"
     (see backend/specs/market-health/api.md — Data Models — RawPosting — id).
     Returns the ids of the newly inserted postings.
+
+    From SAMPLING_GO_LIVE (2026-10-23 — Business Logic — Sampling) the row is inserted with
+    raw_response = NULL — a short record. The payload is kept only if the posting is sampled,
+    by sampling.run_decision_phase(), into posting_details. Nothing here is ever updated later.
     """
     candidate_ids = [f"{source}:{p.source_ref}" for p in postings]
     seen = existing_ids(candidate_ids)
@@ -48,6 +58,7 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
         return []
 
     fetched_at = datetime.now(timezone.utc)
+    store_payload = fetched_at < SAMPLING_GO_LIVE
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany(
@@ -63,7 +74,8 @@ def insert_new_postings(source: str, postings: list[FetchedPosting]) -> list[str
                 """,
                 [
                     (
-                        pid, source, p.source_ref, p.company, p.title, json.dumps(p.raw_response), fetched_at,
+                        pid, source, p.source_ref, p.company, p.title,
+                        json.dumps(p.raw_response) if store_payload else None, fetched_at,
                         p.country, p.city, p.salary_min, p.salary_max, p.salary_currency,
                         p.salary_confidence, p.salary_extraction_method, industry_for(p.company),
                         size_band_for(p.company), region_for(p.company),
@@ -106,9 +118,20 @@ def get_all_unclassified() -> list[dict]:
     return [{"id": row[0], "title": row[1]} for row in rows]
 
 
+# Sampling-aware since 2026-10-23: only postings whose full details were kept are read. A
+# pre-go-live posting with no decision row yet counts as kept_before_sampling (so the legacy
+# backlog drains whether or not migrate_sampling_go_live.py has run). Queries using this must
+# LEFT JOIN posting_samples ps and posting_requirements pr.
 _NEEDING_REQUIREMENTS_WHERE = (
-    "c.role_category NOT IN ('other', 'unknown') AND pr.posting_id IS NULL"
+    "c.role_category NOT IN ('other', 'unknown') AND pr.posting_id IS NULL AND ("
+    "ps.decision IN ('kept', 'kept_before_sampling') OR "
+    f"(ps.posting_id IS NULL AND rp.created_at < '{SAMPLING_GO_LIVE.isoformat()}'))"
 )
+_NEEDING_REQUIREMENTS_JOINS = """
+        LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+        LEFT JOIN posting_samples ps ON ps.posting_id = rp.id
+        LEFT JOIN posting_details pd ON pd.posting_id = rp.id
+"""
 
 
 def get_all_needing_requirements(limit: int | None = None) -> list[dict]:
@@ -127,10 +150,10 @@ def get_all_needing_requirements(limit: int | None = None) -> list[dict]:
     lane to take at most MAX_BATCH_POSTINGS per job.
     """
     sql = f"""
-        SELECT rp.id, rp.source, rp.raw_response, c.role_category, c.track, c.specialization
+        SELECT rp.id, rp.source, {PAYLOAD_SQL}, c.role_category, c.track, c.specialization
         FROM raw_postings rp
         JOIN classifications c ON c.posting_id = rp.id
-        LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+        {_NEEDING_REQUIREMENTS_JOINS}
         WHERE {_NEEDING_REQUIREMENTS_WHERE}
         ORDER BY rp.fetched_at ASC
     """
@@ -159,7 +182,7 @@ def count_needing_requirements() -> int:
             SELECT COUNT(*)
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
-            LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
+            {_NEEDING_REQUIREMENTS_JOINS}
             WHERE {_NEEDING_REQUIREMENTS_WHERE}
             """
         ).fetchone()[0]
@@ -173,10 +196,11 @@ def get_postings_by_ids(posting_ids: list[str]) -> list[dict]:
         return []
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT rp.id, rp.source, rp.raw_response, c.role_category, c.track, c.specialization
+            f"""
+            SELECT rp.id, rp.source, {PAYLOAD_SQL}, c.role_category, c.track, c.specialization
             FROM raw_postings rp
             JOIN classifications c ON c.posting_id = rp.id
+            LEFT JOIN posting_details pd ON pd.posting_id = rp.id
             WHERE rp.id = ANY(%s)
             """,
             (posting_ids,),
@@ -272,6 +296,12 @@ def attach_ingestion_run(run_id: int, started_at: datetime) -> None:
             "WHERE ingestion_run_id IS NULL AND extracted_at >= %s",
             (run_id, started_at),
         )
+        # Same NULL-only rule for this run's sampling decisions (2026-10-23).
+        conn.execute(
+            "UPDATE posting_samples SET ingestion_run_id = %s "
+            "WHERE ingestion_run_id IS NULL AND decided_at >= %s",
+            (run_id, started_at),
+        )
 
 
 # Whitelisted sort columns for list_postings() — never interpolate a raw
@@ -297,6 +327,8 @@ def list_postings(
     classification_confidence: str | None = None,
     taxonomy_version: str | None = None,
     requirements_status: str | None = None,
+    full_details: str | None = None,
+    group_month: str | None = None,
     source: str | None = None,
     search: str | None = None,
     sort: str = "fetched_at",
@@ -336,6 +368,10 @@ def list_postings(
         where.append("taxonomy_version = %s"); params.append(taxonomy_version)
     if requirements_status:
         where.append("requirements_status = %s"); params.append(requirements_status)
+    if full_details:
+        where.append("full_details = %s"); params.append(full_details)
+    if group_month:
+        where.append("to_char(group_month, 'YYYY-MM') = %s"); params.append(group_month)
     if source:
         where.append("source = %s"); params.append(source)
     if search:
@@ -353,13 +389,18 @@ def list_postings(
                 CASE
                     WHEN pr.posting_id IS NOT NULL THEN 'extracted'
                     WHEN c.role_category IN ('other', 'unknown') THEN 'not_eligible'
+                    WHEN ps.decision = 'not_kept' THEN 'not_sampled'
                     WHEN prf.posting_id IS NOT NULL THEN 'failed'
                     ELSE 'pending'
-                END AS requirements_status
+                END AS requirements_status,
+                COALESCE(ps.decision, CASE WHEN rp.created_at < '""" + SAMPLING_GO_LIVE.isoformat() + """'
+                                           THEN 'kept_before_sampling' ELSE 'pending' END) AS full_details,
+                COALESCE(ps.group_month, date_trunc('month', rp.created_at)::date) AS group_month
             FROM raw_postings rp
             LEFT JOIN classifications c ON c.posting_id = rp.id
             LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
             LEFT JOIN posting_requirements_failures prf ON prf.posting_id = rp.id
+            LEFT JOIN posting_samples ps ON ps.posting_id = rp.id
         )
     """
     with get_connection() as conn:
@@ -371,7 +412,7 @@ def list_postings(
             {postings_view}
             SELECT id, source, company, title, fetched_at, role_category, level, track,
                    specialization, job_function, classification_confidence, taxonomy_version,
-                   requirements_status
+                   requirements_status, full_details
             FROM postings_view
             {where_sql}
             ORDER BY {sort_column} {direction} NULLS LAST
@@ -385,7 +426,7 @@ def list_postings(
             "id": r[0], "source": r[1], "company": r[2], "title": r[3], "fetched_at": r[4],
             "role_category": r[5], "level": r[6], "track": r[7], "specialization": r[8],
             "job_function": r[9], "classification_confidence": r[10], "taxonomy_version": r[11],
-            "requirements_status": r[12],
+            "requirements_status": r[12], "full_details": r[13],
         }
         for r in rows
     ]
@@ -397,8 +438,8 @@ def get_posting(posting_id: str) -> dict | None:
     GET /admin/postings/{posting_id}. None if no such posting."""
     with get_connection() as conn:
         row = conn.execute(
-            """
-            SELECT rp.id, rp.source, rp.company, rp.title, rp.fetched_at, rp.raw_response,
+            f"""
+            SELECT rp.id, rp.source, rp.company, rp.title, rp.fetched_at, {PAYLOAD_SQL},
                    rp.country, rp.city, rp.salary_min, rp.salary_max, rp.salary_currency,
                    rp.salary_confidence, rp.ingestion_run_id,
                    c.role_category, c.specialization, c.level, c.track,
@@ -406,11 +447,15 @@ def get_posting(posting_id: str) -> dict | None:
                    pr.education_level, pr.education_required, pr.equivalent_experience_accepted,
                    pr.years_experience_min, pr.work_arrangement, pr.responsibilities_summary,
                    pr.other_requirements, pr.model, pr.extracted_at,
-                   prf.error, prf.attempt_count, prf.last_attempted_at
+                   prf.error, prf.attempt_count, prf.last_attempted_at,
+                   ps.decision, ps.reason, ps.group_role, ps.group_specialization, ps.group_month, ps.rate,
+                   rp.created_at
             FROM raw_postings rp
             LEFT JOIN classifications c ON c.posting_id = rp.id
             LEFT JOIN posting_requirements pr ON pr.posting_id = rp.id
             LEFT JOIN posting_requirements_failures prf ON prf.posting_id = rp.id
+            LEFT JOIN posting_samples ps ON ps.posting_id = rp.id
+            LEFT JOIN posting_details pd ON pd.posting_id = rp.id
             WHERE rp.id = %s
             """,
             (posting_id,),
@@ -463,10 +508,24 @@ def get_posting(posting_id: str) -> dict | None:
         }
     elif classification is not None and classification["role_category"] in ("other", "unknown"):
         requirements = {"status": "not_eligible"}
+    elif row[33] == "not_kept":
+        requirements = {"status": "not_sampled"}
     else:
         requirements = {"status": "pending"}
 
+    # Sampling decision (2026-10-23). None while pending; a pre-go-live posting with no row reads
+    # as kept_before_sampling, same rule as the requirements eligibility fragment.
+    if row[33] is not None:
+        sample = {"decision": row[33], "reason": row[34], "group_role": row[35],
+                  "group_specialization": row[36], "group_month": row[37], "rate": row[38]}
+    elif row[39] is not None and row[39] < SAMPLING_GO_LIVE:
+        sample = {"decision": "kept_before_sampling", "reason": "before_sampling", "group_role": None,
+                  "group_specialization": None, "group_month": None, "rate": 1.0}
+    else:
+        sample = None
+
     return {
+        "sample": sample,
         "posting": posting,
         "ingested_by_run": ingested_by_run,
         "classification": classification,

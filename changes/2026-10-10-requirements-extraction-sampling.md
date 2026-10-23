@@ -126,10 +126,10 @@ owner keep expanding.
       Settle the open design questions in the Decision Log. `/mcp-access-review` runs inside this
       step.
 - [x] ✅ Step 5: `/new-frontend-spec`. Update `frontend/specs/market-health/architecture.md`.
-- [ ] Step 6: `/implement-backend`. Back up the requirements tables before any backfill or
+- [x] ✅ Step 6: `/implement-backend`. Back up the requirements tables before any backfill or
       reprocessing script runs.
-- [ ] Step 7: `/implement-frontend`.
-- [ ] Step 8: Update `OVERVIEW.md`.
+- [x] ✅ Step 7: `/implement-frontend`.
+- [x] ✅ Step 8: Update `OVERVIEW.md`.
 - [ ] Step 9: Verify in production: run one cron and compare its extraction call count with the
       previous run. Confirm the backlog shown in admin drops to sampled-only. Spot-check that
       one weighted skill share falls within its stated margin of the share from the 1,052
@@ -388,3 +388,134 @@ owner keep expanding.
     qualifier text carries "small sample, treat as a rough guide", and `visual-design.md` needs
     no new token. The Designer should close the open question in
     `design/market-health/experience.md` the next time it is touched.
+- 2026-10-23: ✅ **Step 6 done: backend built and tested locally; not committed or deployed.**
+  Backend and frontend deploy together after Step 7, because the skills API moves from counts to
+  estimated shares.
+  - **New modules:**
+    - `sampling_settings.py`: go-live, per-role limits with env overrides, recalibration day 7,
+      ceiling 2×, over-limit tolerance 1.5×.
+    - `sampling.py`: `hash_u`, the pure `rate_for` / `decide`, `run_decision_phase`
+      (insert-only `posting_samples` + `posting_details` in one transaction), `pending_ids`,
+      `description_hash`, and `reuse_duplicate_extractions` (no model call, ledger lane
+      `reused`).
+    - `sampling_estimates.py`: post-stratified `Estimator`, worst-case margin with FPC,
+      confidence thresholds, `about_level`.
+    - `method_text.py`: the one source for the method text, qualifiers, the MCP coverage/method
+      lines and the admin rule line.
+    - `sampling_admin.py` and `admin_templates/sampling.html`.
+    - `migrate_sampling_go_live.py`: one-time and idempotent.
+  - **Changed:**
+    - `db.py`: `raw_response` nullable, two insert-only tables, `posting_requirements.reused_from`,
+      and 4 `ingestion_runs` columns.
+    - `raw_postings.py`: NULL payload after go-live, a `COALESCE` payload helper in every reader,
+      sampling-aware requirements eligibility (a pre-go-live posting with no row counts as kept),
+      the admin Not sampled status / Full details / group month, the Detail `sample`, and the
+      NULL-only run attach.
+    - `ingest.py`: an in-memory payload map plus a decision phase after classification, and
+      duplicate reuse before both paid lanes.
+    - `ingestion_runs.py`: the new fields.
+    - `market_query.query_requirements_data`: rewritten onto the estimator; shares, the
+      `estimate` object, the docstring the model reads.
+    - `market_stories`: Story 1's skills block uses shares plus `estimate`; `method_line` on
+      posting stories (null on the others); welcome `method`.
+    - `curated_answers`: skills answers carry the qualifier and the "about level" rule; new
+      `how-numbers` entry.
+    - `chat.py`: method text in the prompt, estimate rules for synthesis, the requirements trace
+      line, `trace.method_line`. `models.ReasoningTrace.method_line`.
+    - MCP: envelope `coverage` / `estimate` / `method`; `get_skill_demand` shares plus estimate;
+      `coverage` on job demand, salary and job function; `get_taxonomy.method`; server
+      `instructions`; tool docstring.
+    - `reclassify_unknowns.py`: payload helper.
+    - Admin: Overview Sampling line, Sampling page and nav, Postings filter and column, Detail
+      not-kept message, runs Seen / Kept column, technical-data storage split.
+    - `DEPLOYMENT.md`: a sampling section.
+  - **Tests:** `test_sampling.py` 15/15 and `test_sampling_estimates.py` 12/12 are new; all 21
+    backend test files pass.
+  - **Read-only live check against production** (connections forced read-only):
+    - every requirements surface returns an estimate with the shared qualifier, and the shares
+      are in range;
+    - the PM curated answer correctly flags two groups as "about level";
+    - Story 1, the welcome, `how-numbers`, MCP `get_taxonomy` and server text all say
+      "161 companies" in identical words;
+    - MCP `get_job_demand` carries the full-count coverage line;
+    - admin templates render for every sampling state (StrictUndefined, sample data).
+  - **Deviations from the spec, and why:**
+    1. **Duplicate reuse covers postings stored after go-live only.** Legacy postings carry no
+       stored description hash, and hashing all 6.5k extracted legacy payloads every run would
+       cost a full payload read per day. The legacy backlog drains within days anyway.
+    2. **`test_sampling_counts_unchanged`** is a source-level check (count queries never read
+       `posting_samples` / `posting_details` / `raw_response`) rather than a database fixture,
+       because the repo's tests run without a database. The guarantee is the same: the counts
+       read nothing sampling changes.
+    3. **`kept_before_sampling` rows store `hash_u` 0.0.** They were never hash-selected, so
+       there is nothing to verify.
+    4. **Failed postings stay in the reading backlog** (unchanged retry behaviour). The spec's
+       "not failed" wording described eligibility loosely.
+    5. **Skill shares now count distinct postings, not skill mentions.** The old "counts" summed
+       mention rows, so a "% of postings" could pass 100%. Fixed as part of moving to shares.
+    6. **`method_text.company_count()` returns None when the database can't be read**, and the
+       text then says "the companies we follow" without a number. `get_taxonomy` and the MCP
+       server instructions must not fail on a database hiccup. Found by the existing MCP tests.
+  - **Found, not fixed (needs its own CR):** `raw_skill` matching is a case-insensitive
+    substring, so "Rust" also matches "trust" / "trusted" and pulls in pre-sales skill groups.
+    This predates sampling.
+  - **Deploy-time step:** set `SAMPLING_GO_LIVE` (code constant, currently 2026-10-24 00:00 UTC)
+    to the first cron after the real deploy, in the deploy commit.
+- 2026-10-23: ✅ **Step 7 done: frontend built and verified in a real browser; not committed or
+  deployed.**
+  - **New:** `stories/sampling.ts` (`Estimate` / `MethodText` types, `howToReadLine`,
+    `isEstimate`) and `stories/MethodDisclosure.tsx`.
+  - **Changed:**
+    - `WelcomeMessage`: the API's one-line method text plus the disclosure. The old "growing
+      sample … for most of these we also have the skills" copy is removed, with no fallback.
+    - `StoryBlock`: an `estimate` prop; `too_few` renders the qualifier instead of a chart.
+    - `SkillDemandChart`: "% of postings" (counts only under `full_small`), a `ShowAsTable` view
+      (it had none, against the 2026-09-27 accessibility rule), more bottom/left room (the axis
+      title used to overlap the series legend), and long names shortened on the axis only.
+    - `DataStoryMessage`: Story 1 skills read `share_pct` + `estimate`, with the how-to-read line
+      once; `method_line` is rendered once for every story in the shared wrapper.
+    - `ReasoningPanel`: `trace.method_line` shown last under Sources & Tools.
+  - **Backend touch-ups found by the browser check:**
+    - the Story 1 qualifier now ends with a full stop before the interpretation note;
+    - the `how-numbers` trace names "How this platform reads the market" instead of a fake
+      "Job Market Database … found 0 matching postings" entry.
+  - **Verified:**
+    - `tsc` and `npm run build` clean.
+    - Headless Chrome (system Chrome via `playwright-core`) against a local API whose database
+      connections were forced read-only. The schema step was refused ("read-only transaction")
+      and production was confirmed unchanged afterwards: no new tables, `raw_response` still
+      NOT NULL.
+    - 16 of 17 checks pass:
+      - welcome text, old copy gone, disclosure collapsed by default;
+      - Enter expands and Space collapses (`aria-expanded`), all four points shown;
+      - skills subtitle, qualifier, how-to-read line, "% of postings" axis, table in percentages;
+      - Story 1 ends with the method line, and Story 5 has none;
+      - the `how-numbers` chip returns the full text, and the panel says "No language model was
+        used";
+      - no JS errors. The only HTTP error is the expected 401 from `/api/account/me` when
+        logged out.
+    - Screenshots were reviewed by eye.
+  - **Not verified, blocked by a pre-existing bug (needs its own bug-fix CR):** a chat answer's
+    "View thinking" panel shows no trace for instant answers. In `MarketHealthPage`, `onFinish`
+    attaches `pendingTrace` before the `useEffect` that reads the streamed `reasoning_trace` has
+    run, so fast answers get `trace = null`. The behaviour is identical on the current production
+    site (checked with the existing engineer-skills chip). The backend does send
+    `trace.method_line` (confirmed in the raw stream), and `ReasoningPanel` renders it when a
+    trace is present.
+  - **Spec wording drift (pre-existing):** the experience and frontend specs call the control
+    "How this was generated", but the live UI label is "View thinking". Worth aligning in the
+    specs next time they are touched.
+- 2026-10-23: ✅ **Step 8 done.** `OVERVIEW.md` gains:
+  - **"Know exactly how the numbers were gathered":** every job counted; a fair sample read in
+    full; skills figures labelled as estimates with their basis; "about level"; the same wording
+    on the welcome, stories, the instant answer and connected AIs; bounded storage.
+  - **Operator paragraph:** the Paid work check (from the re-extraction-loop CR, already live, so
+    added here even though that CR had OVERVIEW as no-change, because an operator can see it) and
+    the Sampling page.
+  - **Build paragraph:** "every job is counted; full details kept and read for a fair sample".
+
+  Entries for the unreleased parts are marked "ships with the sampling release". **The deploy
+  commit replaces that with the real date** (together with `SAMPLING_GO_LIVE`).
+- Remaining: the deploy commit (set `SAMPLING_GO_LIVE`, date the OVERVIEW entries), push,
+  `migrate_sampling_go_live.py`, then Step 9 (production verification on the first cron after
+  go-live).

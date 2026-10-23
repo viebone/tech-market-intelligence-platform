@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+import method_text
 from db import get_connection
+from market_query import query_requirements_data
 from market_openings import PLOTTED_ROLE_CATEGORIES
 
 # Year-on-year breakdowns (changes/2026-09-10-story-yoy-breakdowns.md): exactly
@@ -115,6 +117,40 @@ def _section(
         "qualifier": qualifier,
         "message": "Not enough data yet for this section.",
     }
+
+
+def _skills_section(requirements_extracted: int) -> dict[str, Any]:
+    """Story 1's "what employers ask for" block — estimated % of postings per skill group, from the
+    same sampling_estimates path chat and MCP use (2026-10-23 — Sampling across the other response
+    surfaces). Carries the shared `estimate` object; under too_few it renders no shares, only the
+    qualifier (the frontend's insufficient_data path)."""
+    data = query_requirements_data()
+    estimate = data["estimate"]
+    counts_mode = estimate["confidence"] == "full_small"
+    skills = [
+        {
+            "skill_group": s["skill_group"],
+            **({"must_have_count": s.get("must_have_count", 0), "nice_to_have_count": s.get("nice_to_have_count", 0),
+                "count": s.get("count", 0)} if counts_mode else
+               {"must_have_pct": s.get("must_have_pct", 0.0), "nice_to_have_pct": s.get("nice_to_have_pct", 0.0),
+                "share_pct": s.get("share_pct")}),
+        }
+        for s in data["skills"][:10]
+    ]
+    lead = estimate["qualifier"] if estimate["qualifier"].endswith(".") else estimate["qualifier"] + "."
+    qualifier = lead + " Skill mentions are interpreted from posting text, not verified facts."
+    if estimate["confidence"] == "too_few" or not skills:
+        section = _section("employer-mentioned-skills", "What employers mention", {}, qualifier, ready=False)
+        section["message"] = estimate["qualifier"]
+    else:
+        section = _section(
+            "employer-mentioned-skills",
+            "What employers mention",
+            {"postings_with_extracted_requirements": requirements_extracted, "skills": skills},
+            qualifier,
+        )
+    section["estimate"] = estimate
+    return section
 
 
 def _rows_as_dicts(cursor) -> list[dict[str, Any]]:
@@ -293,16 +329,6 @@ def build_market_data_briefing() -> dict[str, Any]:
             LIMIT 10
             """
         ))
-        skill_rows = _rows_as_dicts(conn.execute(
-            """
-            SELECT ps.skill_group, ps.requirement_level,
-                   count(DISTINCT ps.posting_id) AS posting_count
-            FROM posting_skills ps
-            GROUP BY ps.skill_group, ps.requirement_level
-            ORDER BY posting_count DESC, ps.skill_group
-            LIMIT 20
-            """
-        ))
         requirements_coverage = conn.execute(
             """
             SELECT count(DISTINCT rp.id), count(DISTINCT pr.posting_id)
@@ -441,16 +467,7 @@ def build_market_data_briefing() -> dict[str, Any]:
             "Role counts use classified postings. Unknown and other classifications remain part of the coverage picture.",
             ready=classified_count > 0,
         ),
-        _section(
-            "employer-mentioned-skills",
-            "What employers mention",
-            {
-                "postings_with_extracted_requirements": requirements_extracted,
-                "skills": skill_rows,
-            },
-            "Skill mentions are interpreted from posting text, not verified facts. Counts are distinct postings per skill and requirement level.",
-            ready=bool(skill_rows),
-        ),
+        _skills_section(requirements_extracted),
         _section(
             "compensation-coverage",
             "Compensation coverage",
@@ -473,6 +490,7 @@ def build_market_data_briefing() -> dict[str, Any]:
 
     return {
         "story_id": "market-data-briefing",
+        "method_line": method_text.one_line(method_text.company_count()),
         "question": STORY_CATALOGUE[0]["question"],
         "as_of": query_time.isoformat(),
         "sections": sections,
@@ -667,6 +685,7 @@ def build_employment_risk_overview() -> dict[str, Any]:
 
     return {
         "story_id": "employment-risk-overview",
+        "method_line": None,  # not built on job postings
         "question": STORY_CATALOGUE[1]["question"],
         "as_of": query_time.isoformat(),
         "sections": sections,
@@ -710,6 +729,7 @@ def build_market_benchmark_story() -> dict[str, Any]:
     if not is_source_usable("itjobswatch"):
         return {
             "story_id": "market-benchmark",
+            "method_line": None,  # not built on job postings
             "question": STORY_CATALOGUE[2]["question"],
             "as_of": query_time.isoformat(),
             "sections": [
@@ -843,6 +863,7 @@ def build_market_benchmark_story() -> dict[str, Any]:
 
     return {
         "story_id": "market-benchmark",
+        "method_line": None,  # not built on job postings
         "question": STORY_CATALOGUE[2]["question"],
         "as_of": query_time.isoformat(),
         "sections": sections,
@@ -971,6 +992,7 @@ def build_job_function_story() -> dict[str, Any]:
 
     return {
         "story_id": "beyond-tracked-roles",
+        "method_line": method_text.one_line(method_text.company_count()),
         "question": STORY_CATALOGUE[3]["question"],
         "as_of": query_time.isoformat(),
         "sections": sections,
@@ -1049,7 +1071,7 @@ def _uk_empty_story(message: str, query_time: datetime, ids_titles: list[tuple[s
         s["message"] = message
         sections.append(s)
     return {
-        "story_id": "uk-vacancies-official", "question": STORY_CATALOGUE[4]["question"], "as_of": query_time.isoformat(),
+        "story_id": "uk-vacancies-official", "method_line": None, "question": STORY_CATALOGUE[4]["question"], "as_of": query_time.isoformat(),
         "sections": sections,
         "provenance": {"sources": [_UK_VACANCIES_SOURCE], "model_used": False, "query_time": query_time.isoformat()},
         "limitations": [message],
@@ -1411,7 +1433,7 @@ def build_uk_vacancies_story() -> dict[str, Any]:
     from data_definitions import DEFINITIONS
 
     return {
-        "story_id": "uk-vacancies-official",
+        "story_id": "uk-vacancies-official", "method_line": None,
         "question": STORY_CATALOGUE[4]["question"],
         "as_of": query_time.isoformat(),
         "sections": sections,
@@ -1520,6 +1542,9 @@ def build_welcome() -> dict[str, Any]:
             {"id": s["id"], "display_name": s["display_name"], "question": s["question"]}
             for s in STORY_CATALOGUE
         ],
+        # "How we read the market" (2026-10-23) — same company count as inventory.companies,
+        # rendered by method_text so the welcome never words the method itself.
+        "method": method_text.method(company_count),
         "provenance": {
             "sources": ["raw_postings", "classifications", "employment_events"],
             "model_used": False,

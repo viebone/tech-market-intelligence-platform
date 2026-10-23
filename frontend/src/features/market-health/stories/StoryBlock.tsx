@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Estimate } from "./sampling";
 
 // The fixed data-story block anatomy: heading -> optional subtitle -> one visual
 // -> honesty qualifier, with the divider that gives every story the same
@@ -23,6 +24,7 @@ export function StoryBlock({
   qualifier,
   insufficient = false,
   emptyMessage,
+  estimate,
   children,
 }: {
   heading: string;
@@ -36,8 +38,16 @@ export function StoryBlock({
   insufficient?: boolean;
   /** Shown when `insufficient`; falls back to a generic line. */
   emptyMessage?: string;
+  /** Requirements blocks only (added 2026-10-23 — sampling). Under "too_few" the block shows
+   * the estimate's own qualifier instead of a chart — never an empty one. Count blocks never
+   * pass this, so a full count can't be presented as an estimate. */
+  estimate?: Estimate;
   children: ReactNode;
 }) {
+  if (estimate?.confidence === "too_few") {
+    insufficient = true;
+    emptyMessage = estimate.qualifier;
+  }
   return (
     <section className="border-t border-gray-800 pt-4">
       <h3 className="text-sm font-semibold text-gray-200">{heading}</h3>

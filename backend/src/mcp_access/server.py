@@ -173,7 +173,18 @@ def create_mcp_server():
     # (app.mount("/mcp", asgi_app())), producing an unreachable /mcp/mcp. Found by
     # actually curling the deployed endpoint, not caught by import-level checks —
     # see the module docstring's verification note.
-    mcp_server = FastMCP("Tech Market Intelligence Platform", streamable_http_path="/")
+    # instructions (2026-10-23): the one-line method text, so an external AI asked "does this
+    # track every job?" relays the same words a person reads on the welcome.
+    import method_text
+    mcp_server = FastMCP(
+        "Tech Market Intelligence Platform", streamable_http_path="/",
+        instructions=(
+            method_text.one_line(method_text.company_count())
+            + " Job counts are full counts of those companies; skills figures are estimates from"
+            " the sample and always carry meta.estimate. The full explanation is in"
+            " get_taxonomy's method field."
+        ),
+    )
 
     @mcp_server.tool()
     def get_taxonomy_tool() -> dict:
@@ -228,8 +239,12 @@ def create_mcp_server():
         work_arrangement: list[str] | None = None,
         education_required: list[str] | None = None,
     ) -> dict:
-        """Skills, education, work-arrangement, and language requirements
-        from job postings. Requires the 'jobs.read' scope."""
+        """Skills, education, work-arrangement, and language requirements, read from a fair
+        sample of job postings — every share is an ESTIMATE. Whenever you repeat a number, also
+        state meta.estimate.qualifier (or its sense: "estimated from n of N postings, ± m pts").
+        Two shares closer than meta.estimate.margin_pts are "about level" — never rank them.
+        If meta.estimate.confidence is "small_sample", give no recommendation; if "too_few",
+        there are no shares — say too few postings have been read. Requires 'jobs.read'."""
         return _enforce_and_call("get_skill_demand", tools.get_skill_demand, dict(
             role_category=role_category, specialization=specialization, level=level, track=track,
             country=country, skill_group=skill_group, raw_skill=raw_skill,

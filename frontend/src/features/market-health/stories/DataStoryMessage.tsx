@@ -11,6 +11,7 @@ import { MarketBenchmarkStoryMessage } from "./MarketBenchmarkStoryMessage";
 import { JobFunctionStoryMessage } from "./JobFunctionStoryMessage";
 import { UkVacanciesStoryMessage } from "./UkVacanciesStoryMessage";
 import { StoryFeedbackReaction } from "../../feedback/StoryFeedbackReaction";
+import { howToReadLine, isEstimate, type Estimate } from "./sampling";
 
 // Lazy-loaded (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md) — these two
 // pull in @nivo/bar + @nivo/theming (~90KB gzipped, confirmed by a real build: the initial
@@ -53,6 +54,8 @@ export interface DataStorySection {
   content: Record<string, unknown>;
   qualifier: string;
   message?: string;
+  /** Requirements sections only (added 2026-10-23 — sampling). */
+  estimate?: Estimate;
 }
 
 export interface DataStoryResult {
@@ -66,6 +69,10 @@ export interface DataStoryResult {
     query_time: string;
   };
   limitations: string[];
+  /** The one-line "how we read the market" text (added 2026-10-23). Non-null only for stories
+   * built on job postings; null for official-statistics, employment-event and third-party
+   * stories, which keep their own source line. The backend decides — never this renderer. */
+  method_line?: string | null;
   /** Added 2026-09-18 (Story 3, market-benchmark) — a source's licence
    * attribution text, when the story's data requires visible credit on the
    * page itself, not only in the Reasoning Panel. Also sent by Story 5
@@ -243,26 +250,18 @@ function renderStory(story: DataStoryResult) {
     .slice(0, 7);
 
   // What employers ask for — must-have and nice-to-have kept as two real series
-  // (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md — see SkillDemandChart;
-  // this used to collapse both into one number with a must-have opacity flag).
-  const skillAgg = new Map<string, { mustHave: number; niceToHave: number }>();
-  for (const row of listFrom(skills, "skills")) {
-    const group = str(row.skill_group);
-    if (!group) continue;
-    const prev = skillAgg.get(group) ?? { mustHave: 0, niceToHave: 0 };
-    const isMustHave = str(row.requirement_level) === "must_have";
-    skillAgg.set(group, {
-      mustHave: prev.mustHave + (isMustHave ? num(row.posting_count) : 0),
-      niceToHave: prev.niceToHave + (isMustHave ? 0 : num(row.posting_count)),
-    });
-  }
-  const skillRows: SkillDemandRow[] = [...skillAgg.entries()].map(
-    ([skill_group, { mustHave, niceToHave }]) => ({
-      skill_group,
-      must_have: mustHave,
-      nice_to_have: niceToHave,
-    }),
-  );
+  // (added 2026-09-22, changes/2026-09-22-nivo-charting-library.md). Revised 2026-10-23
+  // (sampling): the API sends ESTIMATED % of postings per skill group plus the section's
+  // `estimate`; plain counts only when a handful of postings were all read ("full_small").
+  const skillEstimate = isEstimate(skills?.estimate) ? skills?.estimate : undefined;
+  const skillCounts = skillEstimate?.confidence === "full_small";
+  const skillRows: SkillDemandRow[] = listFrom(skills, "skills")
+    .filter((row) => str(row.skill_group) !== "")
+    .map((row) => ({
+      skill_group: str(row.skill_group),
+      must_have: num(skillCounts ? row.must_have_count : row.must_have_pct),
+      nice_to_have: num(skillCounts ? row.nice_to_have_count : row.nice_to_have_pct),
+    }));
 
   // Pay transparency — share of postings that state a salary (structured + parsed).
   const payRows = listFrom(pay, "coverage_by_confidence");
@@ -303,12 +302,27 @@ function renderStory(story: DataStoryResult) {
 
       <StoryBlock
         heading="What employers ask for"
-        subtitle="Postings mentioning each skill group, must-have vs. nice-to-have."
+        subtitle={
+          skillCounts
+            ? "Postings mentioning each skill group, must-have vs. nice-to-have."
+            : "Estimated share of postings mentioning each skill group, must-have vs. nice-to-have."
+        }
         {...blockProps(skills, skillRows.length > 0)}
+        estimate={skillEstimate}
       >
         <Suspense fallback={CHART_LOADING_FALLBACK}>
-          <SkillDemandChart rows={skillRows} limit={8} />
+          <SkillDemandChart
+            rows={skillRows}
+            unit={skillCounts ? "count" : "pct"}
+            population={skillEstimate?.population_n}
+            tableCaption={skillEstimate?.qualifier ?? skills?.qualifier ?? ""}
+            limit={8}
+          />
         </Suspense>
+        {/* Shown once per story view: Story 1 has one estimate block. */}
+        {skillEstimate && skillEstimate.margin_pts !== null ? (
+          <p className="mt-2 text-xs text-gray-400">{howToReadLine(skillEstimate.population_n)}</p>
+        ) : null}
       </StoryBlock>
 
       <StoryBlock
@@ -407,6 +421,11 @@ export function DataStoryMessage({ story }: { story: DataStoryResult }) {
   return (
     <>
       {renderedStory}
+      {/* The one-line method text (added 2026-10-23) — one change point for every story,
+          same as the feedback reaction below. */}
+      {story.method_line ? (
+        <p className="mt-4 text-xs text-gray-400">{story.method_line}</p>
+      ) : null}
       <StoryFeedbackReaction storyId={story.story_id} />
     </>
   );

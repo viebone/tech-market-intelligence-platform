@@ -15,6 +15,12 @@
     <div class="stat-value">{{ row.row_count }}</div>
     <div class="stat-label">{{ row.category }} — rows</div>
     <div class="stat-label" style="margin-top: 4px;">{{ row.tables | join(', ') }}</div>
+    {% if row.category == 'Job Postings' and storage_split %}
+    <div class="field-hint">
+      {{ storage_split.kept_in_full }} postings kept in full · {{ storage_split.short_record_only }} short record only
+      {% if storage_split.pending %} · {{ storage_split.pending }} deciding{% endif %}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

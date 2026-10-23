@@ -67,6 +67,23 @@
       {% endif %}
     </div>
   </div>
+  {% set sp = sampling_panel %}
+  {% if sp %}
+  <div class="field-row" title="{{ sp.rule_line }}">
+    <div class="field-label"><a href="/admin/sampling">Sampling — {{ sp.month_label }}</a></div>
+    <div class="field-value">
+      {% if sp.panel.seen == 0 %}No postings seen yet this month
+      {% else %}
+        {{ sp.panel.seen }} postings seen ·
+        {{ sp.panel.kept }} kept in full ({{ (100 * sp.panel.kept / sp.panel.seen) | round | int }}% of seen) ·
+        {{ sp.panel.read }} read for requirements ({{ (100 * sp.panel.read / sp.panel.seen) | round | int }}%) ·
+        {{ sp.panel.not_kept }} not kept ({{ (100 * sp.panel.not_kept / sp.panel.seen) | round | int }}%)
+        {% if sp.panel.pending %} · {{ sp.panel.pending }} deciding{% endif %}
+      {% endif %}
+      <div class="field-hint">{{ sp.rule_line }}</div>
+    </div>
+  </div>
+  {% endif %}
   {% set pw = paid_work_check %}
   {% if pw %}
   <div class="field-row" title="Run started {{ pw.started_at }}. The safeguard pauses paid reading when more than {{ (pw.thresholds.share * 100) | round | int }}% or more than {{ pw.thresholds.count }} of the selected postings were already read. A daily run may remove at most {{ pw.delete_cap }} previous results.">

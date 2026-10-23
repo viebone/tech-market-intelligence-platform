@@ -62,8 +62,11 @@ def get_taxonomy() -> dict:
     """No scope required — reference metadata, not user data (same reasoning
     this platform's frontend can always read job-classification.md without
     auth). See backend/specs/mcp-access/api.md — MCP Tools."""
+    import method_text  # local: keeps this module importable without a database at import time
     return {
         "data": {
+            # How the platform reads the market (2026-10-23) — the same object the welcome returns.
+            "method": method_text.method(),
             "role_category": _pairs(_ROLE_CATEGORY_LABELS, _ROLE_CATEGORY_LABELS),
             "level": _pairs(_ALLOWED_LEVEL, _LEVEL_LABELS),
             "track": _pairs(_ALLOWED_TRACK, _TRACK_LABELS),

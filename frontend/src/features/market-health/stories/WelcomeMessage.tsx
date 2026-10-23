@@ -6,6 +6,9 @@
 // story-catalogue message itself — DataStoryMessage renders those, once a shortcut here is
 // selected.
 
+import { MethodDisclosure } from "./MethodDisclosure";
+import type { MethodText } from "./sampling";
+
 export interface WelcomeRoleBreakdownRow {
   role_category: string;
   postings: number;
@@ -37,6 +40,9 @@ export interface WelcomeStoryShortcut {
 export interface WelcomeResult {
   inventory: WelcomeInventory;
   story_shortcuts: WelcomeStoryShortcut[];
+  /** "How we read the market" (added 2026-10-23). Optional only so an older API mid-deploy
+   * renders nothing in its place — never the retired hardcoded copy. */
+  method?: MethodText;
   provenance: {
     sources: string[];
     model_used: boolean;
@@ -178,11 +184,17 @@ export function WelcomeMessage({ welcome, onSelectShortcut }: WelcomeMessageProp
               </div>
             )}
 
-            <p className="mt-5 max-w-2xl text-sm leading-relaxed text-gray-400">
-              This is a growing sample of the market, not every job out there — it reflects
-              the companies and roles we follow today. For most of these we also have the
-              skills employers mention, and pay figures where they're shared.
-            </p>
+            {/* Revised 2026-10-23 (changes/2026-10-10-requirements-extraction-sampling.md): the
+                API's one-line method text, never a hardcoded sentence. The old copy blurred two
+                different limits into one word, "sample". */}
+            {welcome.method ? (
+              <div className="mt-5">
+                <p className="max-w-2xl text-sm leading-relaxed text-gray-400">
+                  {welcome.method.one_line} We show pay where it&rsquo;s shared.
+                </p>
+                <MethodDisclosure method={welcome.method} />
+              </div>
+            ) : null}
           </>
         ) : (
           <p className="text-sm text-gray-400">

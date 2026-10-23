@@ -26,6 +26,17 @@ collected data, never a guess.
 exactly what data it looked at and how it got there — so you can verify it instead of just
 trusting it.
 
+**Know exactly how the numbers were gathered.** _(New, 2026-10 — ships with the sampling
+release.)_ The platform counts every job posted by the companies it follows, so job numbers,
+trends, pay and coverage are full counts. To see what employers ask for, it reads a fair sample of
+those job descriptions in full (up to 50 per role and specialization each month, and every design
+role), rather than every single one. So every skills figure is an estimate and says so wherever it
+appears, e.g. "estimated from 50 of 712 postings we read in full, ±14 pts". Two skills closer than
+that margin are called "about level", never ranked. A "How we read the market" note on the welcome,
+a line at the end of each data story, and a "How do you get these numbers?" instant answer all
+explain this in the same words, and so does any outside AI you connect. The sample also keeps
+storage from growing with every new job source.
+
 **Read fixed data stories with no AI involved.** Five standing reports — "What we know about
 the market," "Employment risk across the market," "Independent market benchmark" (a second,
 outside read on hiring demand and pay from a specialist third-party site, shown separately,
@@ -85,14 +96,20 @@ sizes, sources, and business areas the platform's data supports strong insight f
 are still thin, so the operator can see real gaps at a glance rather than discovering them the
 hard way. Also shows a technical data footprint — how much data each part of the platform holds,
 and how many of its capabilities are reachable by an external AI over MCP versus only from this
-platform's own product. Not something an end user ever sees or needs.
+platform's own product. _(New, 2026-10-23.)_ A "Paid work check" on the front page shows, for the
+latest run, how many job descriptions were paid for, how many were new and how many had been read
+before. Paid reading pauses itself and says so if it is about to pay again for work it already
+did. _(New, 2026-10 — ships with the sampling release.)_ A Sampling page shows, per month and per
+role and specialization, how many jobs were seen, how many kept in full, and how many read. Not
+something an end user ever sees or needs.
 
 ## How it's built, in one paragraph
 
 The interface is a conversation, not a dashboard with a chat box bolted on — every screen is
 designed around an AI-native, "ask and see" model. Underneath, real job postings and employment
 records are collected daily from public sources, classified against a fixed taxonomy, and stored
-— nothing here is mock data. Two independent pipelines feed it (job postings; employment-risk
+— nothing here is mock data. Every job is counted. Full job details are kept, and read for
+skills, for a fair sample of each kind of role. Two independent pipelines feed it (job postings; employment-risk
 events), and a small, explicit set of AI-provider adapters means the platform isn't locked into
 one AI vendor for its own chat feature either.
 

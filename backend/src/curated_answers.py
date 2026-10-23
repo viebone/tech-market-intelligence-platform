@@ -22,7 +22,9 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
+import method_text
 from llm.base import ToolCall
+from sampling_estimates import about_level
 from market_query import (
     query_compensation_data,
     query_market_data,
@@ -174,40 +176,56 @@ def _pay_for(role: str):
 
 
 def _skills_for(role: str):
+    """Skills answer from the sample (2026-10-23 — Sampling across the other response surfaces):
+    estimated shares with the shared qualifier in the sentence, and the "about level" rule for
+    neighbours closer than the margin."""
     def build() -> tuple[str, list[ToolCall]]:
         args = {"role_category": [role]}
         r = query_requirements_data(**args)
         tc = [_tc("query_requirements_data", args, r)]
-        total = r["total_matching"]
+        est = r["estimate"]
         window = _window(r["data_range"])
-        if total == 0:
+        if est["sample_n"] == 0:
             return (
-                f"No {role} postings {window} have had their requirements extracted yet, "
+                f"No {role} postings {window} have been read in full yet, "
                 "so there's nothing to summarise for this slice.",
                 tc,
             )
-        ranked = sorted(
-            r["skills"],
-            key=lambda s: s["must_have_count"] + s["nice_to_have_count"],
-            reverse=True,
-        )[:6]
-        lines = [
-            f"- **{s['skill_group']}** — mentioned in "
-            f"{s['must_have_count'] + s['nice_to_have_count']:,} of {total:,} postings "
-            f"({round((s['must_have_count'] + s['nice_to_have_count']) / total * 100)}%; "
-            f"{s['must_have_count']:,} as must-have)"
-            for s in ranked
-        ]
+        if est["confidence"] == "too_few":
+            return (f"Too few {role} postings {window} have been read so far to estimate which skills "
+                    f"they ask for. {est['qualifier']}", tc)
+        counts_mode = est["confidence"] == "full_small"
+        ranked = r["skills"][:6]
+        if counts_mode:
+            lines = [f"- **{s['skill_group']}** — {s['count']:,} of {est['population_n']:,} postings "
+                     f"({s.get('must_have_count', 0):,} as must-have)" for s in ranked]
+        else:
+            lines = [f"- **{s['skill_group']}** — about {round(s['share_pct'])}% of postings "
+                     f"({round(s.get('must_have_pct') or 0)}% as must-have)" for s in ranked]
+        level_notes = []
+        if not counts_mode:
+            for a, b in zip(ranked, ranked[1:]):
+                if about_level(a["share_pct"], b["share_pct"], est["margin_pts"]):
+                    level_notes.append(f"**{a['skill_group']}** and **{b['skill_group']}** are about level")
         body = (
-            f"Based on **{total:,} {role} postings with extracted requirements** ({window}), "
-            "the most-mentioned skill groups are:\n\n"
+            f"For **{role} postings** ({window}), the most-mentioned skill groups are:\n\n"
             + "\n".join(lines)
-            + "\n\nThese are proportions of the postings we've processed, interpreted from "
-            "job-description text — not verified facts."
+            + f"\n\n{est['qualifier']}."
+            + (f" {'; '.join(level_notes)} — the gap is smaller than the margin." if level_notes else "")
+            + (" Small sample, so treat this as a rough guide rather than a recommendation."
+               if est["confidence"] == "small_sample" else "")
+            + "\n\nSkills are interpreted from job-description text, not verified facts."
         )
         return body, tc
 
     return build
+
+
+def _how_numbers() -> tuple[str, list[ToolCall]]:
+    """"How do you get these numbers?" — the canonical method text with live values
+    (design/market-health/experience.md — How we read the market). No model call."""
+    m = method_text.company_count()
+    return method_text.full_as_markdown(m), [_tc("method_text", {}, {"company_count": m})]
 
 
 # --------------------------------------------------------------------------
@@ -324,6 +342,26 @@ CURATED_CATALOGUE: tuple[CuratedEntry, ...] = (
             "what should an engineer know",
         ),
         builder=_skills_for("Engineer"),
+    ),
+    CuratedEntry(
+        id="how-numbers",
+        question="How do you get these numbers?",
+        match_phrasings=(
+            "how do you get your numbers",
+            "how do you get this data",
+            "where does your data come from",
+            "where does this data come from",
+            "do you track every job",
+            "do you track all jobs",
+            "is this every job",
+            "is this all jobs",
+            "how accurate is this",
+            "how accurate is this data",
+            "how accurate are these numbers",
+            "how is this data collected",
+            "how do you collect jobs",
+        ),
+        builder=_how_numbers,
     ),
 )
 

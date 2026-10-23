@@ -14,6 +14,7 @@ design/market-health/job-classification.md and
 backend/specs/market-health/api.md — Data Models — Classification.
 """
 
+import sampling_estimates
 from db import get_connection
 from employment_events import ALL_EMPLOYMENT_EVENT_ADAPTERS
 from employment_events.base import SOURCE_DISPLAY_NAMES
@@ -377,7 +378,7 @@ def query_requirements_data(
     Every extracted field is an LLM's interpretation of free text a company
     wrote, not a verified fact — state findings in proportional terms ("42%
     of postings mention X"), never as absolute claims ("all postings require
-    X"), and always state total_matching as the sample size. If total_matching
+    X"), and always state the basis from `estimate` (see below). If the sample
     is small, say so explicitly rather than drawing a confident conclusion —
     for a synthesis question, give the data but decline to recommend if the
     sample is too small to support it. Never state a compensation/salary
@@ -399,24 +400,31 @@ def query_requirements_data(
             every skill group's raw_skills list. When set, every returned count
             and total_matching is scoped to postings mentioning a matching skill.
 
+    Requirements are read from a fair SAMPLE of postings (up to a fixed number per role and
+    specialization per month; every design role read in full), so every figure here is an
+    ESTIMATE for all postings in the slice, returned as a % share. Always state the estimate and
+    its basis in the same sentence as the number, using `estimate.qualifier` (e.g. "About 42% of
+    Backend Engineer postings ask for Kubernetes (estimated from 50 of 712 postings we read in
+    full, give or take 13 points)"). If two shares differ by less than `estimate.margin_pts`,
+    call them "about level" — never say one is more in demand. If `estimate.confidence` is
+    "small_sample", give the data but no recommendation; if "too_few", there are no shares —
+    say plainly that too few postings have been read yet. Under "full_small" (a handful, every
+    one read) the figures are plain counts, not shares.
+
     Returns:
         A dict with:
-        - skills: [{skill_group, must_have_count, nice_to_have_count,
-          raw_skills: [{raw_skill, count}, ...]}, ...] for every applicable skill
-          group mentioned at least once in the matched slice. raw_skills is the
-          specific technology/practice mentions behind that group's count,
-          sorted by frequency — this is what answers "which specific
-          technologies are trending," not just the group-level aggregate.
-        - education_levels: {education_level: count, ...}
-        - equivalent_experience_accepted_count: postings where that boolean is true —
+        - skills: [{skill_group, share_pct, must_have_pct, nice_to_have_pct,
+          raw_skills: [{raw_skill, share_pct}, ...]}, ...] sorted by share_pct — the estimated %
+          of postings in the slice mentioning that group (or that specific technology).
+        - education_levels_pct, work_arrangement_pct: {value: estimated %}
+        - equivalent_experience_accepted_pct: estimated % accepting equivalent experience —
           check this before stating an absolute education requirement claim.
-        - years_experience_min: {min, median, max} across postings where it's stated —
-          omitted fields mean no postings in this slice stated a minimum.
-        - work_arrangement: {onsite, hybrid, remote, not_mentioned: count, ...}
-        - languages: [{language, required_count, preferred_count}, ...]
-        - data_range, total_matching: total_matching is the count of postings in the
-          matched slice that actually have extracted requirements — the real denominator
-          for any percentage stated, not the same as query_market_data's broader count
+        - years_experience_min: {min, median, max} of stated minimums (median weighted).
+        - languages: [{language, required_pct, preferred_pct}, ...]
+        - estimate: {is_estimate, sample_n, population_n, unread_n, margin_pts, confidence,
+          qualifier} — the basis every number above stands on.
+        - data_range; total_matching (= estimate.sample_n, postings read; kept for one release).
+        Under confidence "full_small" the *_pct keys are *_count instead.
     """
     role_categories = [v for v in _as_list(role_category) if v in _ALLOWED_ROLE_CATEGORIES]
     specializations = _as_list(specialization)
@@ -429,184 +437,192 @@ def query_requirements_data(
     # Substring patterns, case-insensitive, fully parameterised (never interpolated).
     raw_skill_patterns = [f"%{v.strip()}%" for v in _as_list(raw_skill) if v and v.strip()]
 
-    where = ["c.role_category != 'other'"]
-    params: list = []
+    # Sampling (2026-10-23 — Business Logic — Sampling — Estimates). Two kinds of filter:
+    # posting filters (rp / c) define the population every share is estimated for; requirement
+    # filters (pr fields, raw_skill) narrow which READ postings count. Every figure below is a
+    # post-stratified estimate from sampling_estimates — never a raw count of sampled rows.
+    pop_where = ["c.role_category NOT IN ('other', 'unknown')"]
+    pop_params: list = []
     if role_categories:
-        where.append("c.role_category = ANY(%s)")
-        params.append(role_categories)
+        pop_where.append("c.role_category = ANY(%s)")
+        pop_params.append(role_categories)
     if specializations:
-        where.append("c.specialization = ANY(%s)")
-        params.append(specializations)
+        pop_where.append("c.specialization = ANY(%s)")
+        pop_params.append(specializations)
     if levels:
-        where.append("c.level = ANY(%s)")
-        params.append(levels)
+        pop_where.append("c.level = ANY(%s)")
+        pop_params.append(levels)
     if tracks:
-        where.append("c.track = ANY(%s)")
-        params.append(tracks)
+        pop_where.append("c.track = ANY(%s)")
+        pop_params.append(tracks)
     if countries:
-        where.append("rp.country = ANY(%s)")
-        params.append(countries)
+        pop_where.append("rp.country = ANY(%s)")
+        pop_params.append(countries)
     if date_from:
-        where.append("rp.fetched_at >= %s")
-        params.append(date_from)
+        pop_where.append("rp.fetched_at >= %s")
+        pop_params.append(date_from)
     if date_to:
-        where.append("rp.fetched_at <= %s")
-        params.append(date_to)
+        pop_where.append("rp.fetched_at <= %s")
+        pop_params.append(date_to)
+    req_where: list[str] = []
+    req_params: list = []
     if work_arrangements:
-        where.append("pr.work_arrangement = ANY(%s)")
-        params.append(work_arrangements)
+        req_where.append("pr.work_arrangement = ANY(%s)")
+        req_params.append(work_arrangements)
     if education_requireds:
-        where.append("pr.education_required = ANY(%s)")
-        params.append(education_requireds)
+        req_where.append("pr.education_required = ANY(%s)")
+        req_params.append(education_requireds)
     if raw_skill_patterns:
-        # Reference rp.id, not pr — every sub-query below joins raw_postings, but
-        # not all of them join posting_requirements (e.g. the languages query).
-        where.append(
+        req_where.append(
             "EXISTS (SELECT 1 FROM posting_skills psrs "
             "WHERE psrs.posting_id = rp.id AND psrs.raw_skill ILIKE ANY(%s))"
         )
-        params.append(raw_skill_patterns)
-    where_sql = " AND ".join(where)
+        req_params.append(raw_skill_patterns)
+    pop_sql = " AND ".join(pop_where)
+    where_sql = " AND ".join(pop_where + req_where)
+    params = pop_params + req_params
+    key = sampling_estimates.GROUP_KEY_SQL
+    read_from = """
+        FROM posting_requirements pr
+        JOIN raw_postings rp ON rp.id = pr.posting_id
+        JOIN classifications c ON c.posting_id = rp.id
+    """
+
+    def by_group(rows, value_cols: int = 0) -> dict:
+        """rows of (g1, g2, g3, *values, count) → {values: {group: count}} (or {group: count})."""
+        out: dict = {}
+        for r in rows:
+            group, values, n = (r[0], r[1], r[2]), tuple(r[3:3 + value_cols]), r[3 + value_cols]
+            if value_cols == 0:
+                out[group] = n
+            else:
+                out.setdefault(values if value_cols > 1 else values[0], {})[group] = n
+        return out
 
     with get_connection() as conn:
-        total_matching = conn.execute(
-            f"""
-            SELECT count(*) FROM posting_requirements pr
-            JOIN raw_postings rp ON rp.id = pr.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql}
-            """,
-            params,
-        ).fetchone()[0]
+        groups = sampling_estimates.population(conn, pop_sql, pop_params)
+        sample_by_group = by_group(conn.execute(
+            f"SELECT {key}, count(*) {read_from} WHERE {where_sql} GROUP BY 1, 2, 3", params,
+        ).fetchall())
+        est = sampling_estimates.Estimator(groups, sample_by_group)
 
         skill_group_filter_sql = ""
         skill_params = list(params)
         if skill_groups:
             skill_group_filter_sql = " AND ps.skill_group = ANY(%s)"
             skill_params = skill_params + [skill_groups]
+        skill_join = "JOIN posting_skills ps ON ps.posting_id = pr.posting_id"
 
-        skill_rows = conn.execute(
-            f"""
-            SELECT ps.skill_group, ps.requirement_level, count(*)
-            FROM posting_skills ps
-            JOIN raw_postings rp ON rp.id = ps.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            JOIN posting_requirements pr ON pr.posting_id = ps.posting_id
-            WHERE {where_sql}{skill_group_filter_sql}
-            GROUP BY ps.skill_group, ps.requirement_level
-            """,
-            skill_params,
-        ).fetchall()
-
-        raw_skill_rows = conn.execute(
-            f"""
-            SELECT ps.skill_group, ps.raw_skill, count(*)
-            FROM posting_skills ps
-            JOIN raw_postings rp ON rp.id = ps.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            JOIN posting_requirements pr ON pr.posting_id = ps.posting_id
-            WHERE {where_sql}{skill_group_filter_sql}
-            GROUP BY ps.skill_group, ps.raw_skill
-            ORDER BY count(*) DESC
-            """,
-            skill_params,
-        ).fetchall()
-
-        education_rows = conn.execute(
-            f"""
-            SELECT pr.education_level, count(*)
-            FROM posting_requirements pr
-            JOIN raw_postings rp ON rp.id = pr.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql}
-            GROUP BY pr.education_level
-            """,
+        # Distinct postings, not skill mentions: one posting naming three Frontend skills counts
+        # once for Frontend (the old row count could push a "% of postings" past 100).
+        group_any = by_group(conn.execute(
+            f"SELECT {key}, ps.skill_group, count(DISTINCT ps.posting_id) {read_from} {skill_join} "
+            f"WHERE {where_sql}{skill_group_filter_sql} GROUP BY 1, 2, 3, 4", skill_params,
+        ).fetchall(), 1)
+        group_level = by_group(conn.execute(
+            f"SELECT {key}, ps.skill_group, ps.requirement_level, count(DISTINCT ps.posting_id) {read_from} "
+            f"{skill_join} WHERE {where_sql}{skill_group_filter_sql} GROUP BY 1, 2, 3, 4, 5", skill_params,
+        ).fetchall(), 2)
+        raw_skill_counts = by_group(conn.execute(
+            f"SELECT {key}, ps.skill_group, ps.raw_skill, count(DISTINCT ps.posting_id) {read_from} "
+            f"{skill_join} WHERE {where_sql}{skill_group_filter_sql} GROUP BY 1, 2, 3, 4, 5", skill_params,
+        ).fetchall(), 2)
+        education = by_group(conn.execute(
+            f"SELECT {key}, pr.education_level, count(*) {read_from} WHERE {where_sql} GROUP BY 1, 2, 3, 4",
             params,
+        ).fetchall(), 1)
+        equivalent = by_group(conn.execute(
+            f"SELECT {key}, count(*) {read_from} WHERE {where_sql} AND pr.equivalent_experience_accepted = true "
+            "GROUP BY 1, 2, 3", params,
+        ).fetchall())
+        arrangement = by_group(conn.execute(
+            f"SELECT {key}, pr.work_arrangement, count(*) {read_from} WHERE {where_sql} GROUP BY 1, 2, 3, 4",
+            params,
+        ).fetchall(), 1)
+        language = by_group(conn.execute(
+            f"SELECT {key}, pl.language, pl.requirement_level, count(DISTINCT pl.posting_id) {read_from} "
+            f"JOIN posting_languages pl ON pl.posting_id = pr.posting_id WHERE {where_sql} "
+            "GROUP BY 1, 2, 3, 4, 5", params,
+        ).fetchall(), 2)
+        years_rows = conn.execute(
+            f"SELECT {key}, pr.years_experience_min {read_from} "
+            f"WHERE {where_sql} AND pr.years_experience_min IS NOT NULL", params,
         ).fetchall()
-
-        equivalent_experience_accepted_count = conn.execute(
-            f"""
-            SELECT count(*)
-            FROM posting_requirements pr
-            JOIN raw_postings rp ON rp.id = pr.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql} AND pr.equivalent_experience_accepted = true
-            """,
-            params,
-        ).fetchone()[0]
-
-        years_row = conn.execute(
-            f"""
-            SELECT min(pr.years_experience_min),
-                   percentile_cont(0.5) WITHIN GROUP (ORDER BY pr.years_experience_min),
-                   max(pr.years_experience_min)
-            FROM posting_requirements pr
-            JOIN raw_postings rp ON rp.id = pr.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql} AND pr.years_experience_min IS NOT NULL
-            """,
-            params,
-        ).fetchone()
-
-        work_arrangement_rows = conn.execute(
-            f"""
-            SELECT pr.work_arrangement, count(*)
-            FROM posting_requirements pr
-            JOIN raw_postings rp ON rp.id = pr.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql}
-            GROUP BY pr.work_arrangement
-            """,
-            params,
-        ).fetchall()
-
-        language_rows = conn.execute(
-            f"""
-            SELECT pl.language, pl.requirement_level, count(*)
-            FROM posting_languages pl
-            JOIN raw_postings rp ON rp.id = pl.posting_id
-            JOIN classifications c ON c.posting_id = rp.id
-            WHERE {where_sql}
-            GROUP BY pl.language, pl.requirement_level
-            """,
-            params,
-        ).fetchall()
-
         earliest, latest = conn.execute(
             "SELECT min(fetched_at), max(fetched_at) FROM raw_postings"
         ).fetchone()
 
-    skills: dict[str, dict] = {}
-    for group, level_, n in skill_rows:
-        entry = skills.setdefault(
-            group, {"skill_group": group, "must_have_count": 0, "nice_to_have_count": 0, "raw_skills": []}
-        )
-        entry[f"{level_}_count"] = n
-    for group, raw_skill, n in raw_skill_rows:
-        if group in skills:
-            skills[group]["raw_skills"].append({"raw_skill": raw_skill, "count": n})
+    estimate = est.estimate()
+    counts_mode = estimate["confidence"] == "full_small"   # a handful, every one read: plain counts
+    no_shares = estimate["confidence"] == "too_few"
+
+    def figure(counts_by_group: dict) -> dict:
+        if counts_mode:
+            return {"count": sum(counts_by_group.values())}
+        return {"share_pct": est.share_pct(counts_by_group)}
+
+    skills: list[dict] = []
+    if not no_shares:
+        for group_name, counts in group_any.items():
+            entry = {"skill_group": group_name}
+            entry.update({f"{k}" if counts_mode else k: v for k, v in figure(counts).items()})
+            for level_ in ("must_have", "nice_to_have"):
+                level_counts = group_level.get((group_name, level_), {})
+                value = figure(level_counts)
+                entry[f"{level_}_count" if counts_mode else f"{level_}_pct"] = (
+                    value["count"] if counts_mode else value["share_pct"] or 0.0
+                )
+            raw = [
+                {"raw_skill": raw_name, **figure(raw_counts)}
+                for (g, raw_name), raw_counts in raw_skill_counts.items() if g == group_name
+            ]
+            entry["raw_skills"] = sorted(raw, key=lambda r: r.get("share_pct") or r.get("count") or 0, reverse=True)
+            skills.append(entry)
+        skills.sort(key=lambda s: s.get("share_pct") or s.get("count") or 0, reverse=True)
+
+    def table(by_value: dict) -> dict:
+        if no_shares:
+            return {}
+        return {v: (figure(c)["count"] if counts_mode else figure(c)["share_pct"]) for v, c in by_value.items()}
 
     languages: dict[str, dict] = {}
-    for language, level_, n in language_rows:
-        entry = languages.setdefault(language, {"language": language, "required_count": 0, "preferred_count": 0})
-        entry[f"{level_}_count"] = n
+    if not no_shares:
+        for (lang, level_), counts in language.items():
+            entry = languages.setdefault(lang, {"language": lang})
+            suffix = "_count" if counts_mode else "_pct"
+            entry[f"{level_}{suffix}"] = figure(counts)["count" if counts_mode else "share_pct"]
 
+    # Weighted median of the stated minimum years (each read posting counts w_g times).
     years_experience_min = None
-    if years_row and years_row[0] is not None:
-        years_experience_min = {"min": years_row[0], "median": years_row[1], "max": years_row[2]}
+    weighted_years = sorted(
+        (years, est.weights[(g1, g2, g3)]) for g1, g2, g3, years in years_rows if (g1, g2, g3) in est.weights
+    )
+    if weighted_years and not no_shares:
+        half, running, median = sum(w for _, w in weighted_years) / 2, 0.0, None
+        for years, w in weighted_years:
+            running += w
+            if running >= half:
+                median = years
+                break
+        years_experience_min = {"min": weighted_years[0][0], "median": median, "max": weighted_years[-1][0]}
 
+    unit_suffix = "_count" if counts_mode else "_pct"
     return {
-        "skills": list(skills.values()),
-        "education_levels": {level_: n for level_, n in education_rows},
-        "equivalent_experience_accepted_count": equivalent_experience_accepted_count,
+        "skills": skills,
+        f"education_levels{unit_suffix}": table(education),
+        f"equivalent_experience_accepted{unit_suffix}": (
+            None if no_shares else figure(equivalent)["count" if counts_mode else "share_pct"]
+        ),
         "years_experience_min": years_experience_min,
-        "work_arrangement": {arrangement: n for arrangement, n in work_arrangement_rows},
+        f"work_arrangement{unit_suffix}": table(arrangement),
         "languages": list(languages.values()),
         "data_range": {
             "earliest": earliest.date().isoformat() if earliest else None,
             "latest": latest.date().isoformat() if latest else None,
         },
-        "total_matching": total_matching,
+        "estimate": estimate,
+        # Kept one release for callers that read it; it is the number of postings READ.
+        "total_matching": estimate["sample_n"],
     }
 
 

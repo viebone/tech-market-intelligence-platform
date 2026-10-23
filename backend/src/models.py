@@ -92,3 +92,7 @@ class ReasoningTrace:
     sources_and_tools: list[SourceAccess]
     reasoning_steps: list[ReasoningStep]
     is_complete: bool
+    # The one-line "how we read the market" text (method_text.one_line), rendered last under
+    # Sources & Tools — its own field, never a fake source entry (2026-10-23, aligned with
+    # frontend/specs/market-health/architecture.md).
+    method_line: str | None = None

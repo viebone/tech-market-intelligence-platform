@@ -150,6 +150,10 @@ def record_run(
     reclassified_unchanged: int = 0,
     requirements_guard: str = "ok",
     guard_detail: dict | None = None,
+    postings_kept: int = 0,
+    postings_not_kept: int = 0,
+    postings_pending: int = 0,
+    requirements_reused: int = 0,
     error_message: str | None = None,
 ) -> int:
     """Insert one IngestionRun row. Called exactly once per run, always —
@@ -176,9 +180,10 @@ def record_run(
                  requirements_budget_reached, requirements_phase, batch_collected,
                  batch_submitted_id, anomalies, error_message,
                  requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
-                 reclassified_unchanged, requirements_guard, guard_detail)
+                 reclassified_unchanged, requirements_guard, guard_detail,
+                 postings_kept, postings_not_kept, postings_pending, requirements_reused)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -190,6 +195,7 @@ def record_run(
                 batch_submitted_id, json.dumps(anomalies), error_message,
                 requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
                 reclassified_unchanged, requirements_guard, json.dumps(guard_detail or {}, default=list),
+                postings_kept, postings_not_kept, postings_pending, requirements_reused,
             ),
         ).fetchone()
     return row[0]
@@ -208,7 +214,7 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
                    total_classified, requirements_extracted, budget_reached, other_rate,
                    requirements_phase, batch_collected, batch_submitted_id,
                    requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
-                   requirements_guard
+                   requirements_guard, postings_kept, postings_not_kept, total_inserted
             FROM ingestion_runs
             ORDER BY started_at DESC
             LIMIT %s OFFSET %s
@@ -223,6 +229,7 @@ def list_runs(page: int = 1, page_size: int = 25) -> dict:
             "requirements_phase": r[10], "batch_collected": r[11], "batch_submitted_id": r[12],
             "requirements_paid": r[13], "requirements_new": r[14], "requirements_repeats": r[15],
             "requirements_deleted": r[16], "requirements_guard": r[17],
+            "postings_kept": r[18], "postings_not_kept": r[19], "postings_seen": r[20],
         }
         for r in rows
     ]
@@ -242,7 +249,8 @@ def get_run(run_id: int) -> dict | None:
                    requirements_budget_reached, anomalies, error_message,
                    requirements_phase, batch_collected, batch_submitted_id,
                    requirements_paid, requirements_new, requirements_repeats, requirements_deleted,
-                   reclassified_unchanged, requirements_guard, guard_detail
+                   reclassified_unchanged, requirements_guard, guard_detail,
+                   postings_kept, postings_not_kept, postings_pending, requirements_reused
             FROM ingestion_runs WHERE id = %s
             """,
             (run_id,),
@@ -261,6 +269,8 @@ def get_run(run_id: int) -> dict | None:
         "requirements_paid": row[23], "requirements_new": row[24], "requirements_repeats": row[25],
         "requirements_deleted": row[26], "reclassified_unchanged": row[27],
         "requirements_guard": row[28], "guard_detail": row[29] or {},
+        "postings_kept": row[30], "postings_not_kept": row[31], "postings_pending": row[32],
+        "requirements_reused": row[33],
     }
 
 

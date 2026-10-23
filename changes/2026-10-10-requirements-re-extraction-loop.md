@@ -322,3 +322,22 @@ budgets and the $1-per-batch cap, not because anything noticed the work was poin
     - **Interactive-lane paid count:** for that lane, `requirements_paid` counts postings in
       batches actually sent, including a batch whose call then failed, because a failed call
       may still be billed. For the batch lane, it is counted at successful submit.
+- 2026-10-23: **Step 4b, part 1 of 2: deployed and checked live.** Pushed to `main` at
+  16:09 UTC (`324cdb6` specs, `ac8dafd` code). The new schema appeared in production through
+  `init_schema()` on service start. `migrate_extraction_ledger.py` seeded 6,526 ledger rows;
+  a second run inserted 0, so it is idempotent. Read-only checks against production:
+  - **Ledger coverage:** 6,526 `posting_requirements` rows, and 0 without a ledger row.
+  - **Today's real backlog** (the 500 that the next batch would take): 0 repeats, not blocked.
+    The next batch will run normally.
+  - **Simulated loop** (200 random already-read postings put through the same check): 200
+    unexplained, **blocked**. The breaker would have stopped the 09-21..10-10 loop on its
+    first day.
+  - **Batch #44** (in flight): `distinct_count` 500 of 500 slots.
+  - **Admin data paths:** `get_paid_work_check()`, `list_runs()` and `get_run()` all work on
+    the new columns. Run 107 predates the columns, so its numbers are 0 and its guard is `ok`.
+  - **Admin and api** respond with HTTP 200.
+  - **Not checked here:** the logged-in admin pages themselves. The password isn't available
+    to this session.
+  - **Still to do, part 2:** the first cron run on the new code (06:00 UTC on 2026-10-24) must
+    record non-zero `requirements_paid` with `paid = new + repeats`, `requirements_guard = ok`
+    and `requirements_deleted = 0`, and the Overview must show the Paid work check line.

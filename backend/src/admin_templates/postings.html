@@ -77,6 +77,15 @@
     </select>
   </div>
   <div>
+    <label for="full_details">Full details</label>
+    <select id="full_details" name="full_details">
+      <option value="">All</option>
+      {% for v in filter_options.full_details %}
+      <option value="{{ v }}" {{ 'selected' if filters.full_details == v }}>{{ v | replace('_', ' ') }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
     <label for="source">Source</label>
     <select id="source" name="source">
       <option value="">All</option>
@@ -118,6 +127,7 @@
       <th><a href="{{ sort_links.classification_confidence }}">Confidence{% if sort == 'classification_confidence' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
       <th><a href="{{ sort_links.taxonomy_version }}">Taxonomy{% if sort == 'taxonomy_version' %} {{ '↑' if dir == 'asc' else '↓' }}{% endif %}</a></th>
       <th>Requirements</th>
+      <th>Full details</th>
     </tr>
   </thead>
   <tbody>
@@ -137,7 +147,14 @@
         {% if p.requirements_status == 'extracted' %}<span class="badge success">Extracted</span>
         {% elif p.requirements_status == 'failed' %}<span class="badge error">Failed</span>
         {% elif p.requirements_status == 'not_eligible' %}<span class="badge neutral">Not eligible</span>
+        {% elif p.requirements_status == 'not_sampled' %}<span class="badge muted">Not sampled</span>
         {% else %}<span class="badge neutral">Pending</span>{% endif %}
+      </a></td>
+      <td><a class="row-link" href="/admin/postings/{{ p.id }}">
+        {% if p.full_details == 'kept' %}Kept
+        {% elif p.full_details == 'not_kept' %}<span class="badge muted">Not kept (outside sample)</span>
+        {% elif p.full_details == 'kept_before_sampling' %}Kept, from before sampling
+        {% else %}<span class="badge neutral">Deciding</span>{% endif %}
       </a></td>
     </tr>
     {% endfor %}

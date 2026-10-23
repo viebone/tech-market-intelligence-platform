@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import industries
 from employment_events.base import SOURCE_DISPLAY_NAMES
+import method_text
 from mcp_access.envelope import build_envelope, no_data, time_window_label
 from market_query import (
     query_compensation_data,
@@ -97,6 +98,7 @@ def get_job_demand(
         time_window=time_window_label(result["data_range"]["earliest"], result["data_range"]["latest"]),
         source="Company job boards on Greenhouse, Lever, and Ashby — classified by this platform",
         total_matching=result["total_matching"],
+        coverage=method_text.coverage_line(method_text.company_count()),
     )
 
 
@@ -134,6 +136,7 @@ def get_salary_stats(
         time_window=time_window_label(result["data_range"]["earliest"], result["data_range"]["latest"]),
         source="Structured or free-text-parsed compensation fields from live job postings",
         total_matching=result["total_matching"],
+        coverage=method_text.coverage_line(method_text.company_count()),
     )
 
 
@@ -149,10 +152,10 @@ def get_skill_demand(
     education_required: list[str] | None = None,
 ) -> dict:
     """
-    Skills, education, work-arrangement, and language requirements
-    extracted from job postings. total_matching is the real denominator for
-    any percentage you state — it's postings with extraction completed, not
-    every matching posting from get_job_demand.
+    Skills, education, work-arrangement, and language requirements read from a fair SAMPLE of
+    job postings (2026-10-23 — sampling). Every share is an estimate for all postings in the
+    slice: meta.estimate carries sample_n, population_n, margin_pts, confidence and the
+    qualifier to quote with any number.
     """
     result = query_requirements_data(
         role_category=role_category, specialization=specialization, level=level, track=track,
@@ -160,15 +163,10 @@ def get_skill_demand(
         work_arrangement=work_arrangement, education_required=education_required,
     )
     return build_envelope(
-        {
-            "skills": result["skills"],
-            "education_levels": result["education_levels"],
-            "equivalent_experience_accepted_count": result["equivalent_experience_accepted_count"],
-            "years_experience_min": result["years_experience_min"],
-            "work_arrangement": result["work_arrangement"],
-            "languages": result["languages"],
-        },
-        unit="% and count of postings with requirements extracted (see total_matching for the real denominator)",
+        {k: v for k, v in result.items() if k not in ("data_range", "estimate", "total_matching")},
+        unit=("plain count of postings (every posting in this small slice was read)"
+              if result["estimate"]["confidence"] == "full_small"
+              else "estimated % of postings in the slice"),
         scope=_scope_description({
             "role_category": role_category, "specialization": specialization, "level": level,
             "track": track, "country": country, "skill_group": skill_group, "raw_skill": raw_skill,
@@ -176,6 +174,8 @@ def get_skill_demand(
         time_window=time_window_label(result["data_range"]["earliest"], result["data_range"]["latest"]),
         source="Skills, education, and language requirements extracted from live job postings",
         total_matching=result["total_matching"],
+        estimate=result["estimate"],
+        method=method_text.requirements_method_note(),
     )
 
 
@@ -313,6 +313,7 @@ def get_job_function_breakdown() -> dict:
         source="This platform's own classification taxonomy — postings outside Designer/"
         "Product Manager/Engineer",
         total_matching=result["total_matching"],
+        coverage=method_text.coverage_line(method_text.company_count()),
     )
 
 

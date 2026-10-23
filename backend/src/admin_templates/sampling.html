@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Sampling — Pipeline Visibility{% endblock %}
+{% block content %}
+<h1>Sampling by group — {{ summary.month_label }}</h1>
+<div class="stat-label" style="margin-bottom: 12px;">
+  One row per role and specialization · limit = postings kept in full at most · {{ summary.rule_line }}
+</div>
+
+<form method="get" action="/admin/sampling" style="margin-bottom: 16px;">
+  <label for="month">Month</label>
+  <input id="month" name="month" type="month" value="{{ summary.month }}">
+  <button type="submit">Show</button>
+</form>
+
+{% set p = summary.panel %}
+{% if p.seen == 0 %}
+<div class="card"><div class="empty-state">No postings seen yet this month.</div></div>
+{% else %}
+<div class="card-grid">
+  <div class="card"><div class="stat-value">{{ p.seen }}</div><div class="stat-label">postings seen</div></div>
+  <div class="card"><div class="stat-value">{{ p.kept }}</div><div class="stat-label">kept in full · {{ (100 * p.kept / p.seen) | round | int }}% of seen</div></div>
+  <div class="card"><div class="stat-value">{{ p.read }}</div><div class="stat-label">read for requirements · {{ (100 * p.read / p.seen) | round | int }}% of seen</div></div>
+  <div class="card"><div class="stat-value">{{ p.not_kept }}</div><div class="stat-label">not kept · {{ (100 * p.not_kept / p.seen) | round | int }}% of seen</div></div>
+</div>
+
+<table class="data-table" style="margin-top: 16px;">
+  <thead>
+    <tr><th>Role</th><th>Specialization</th><th>Seen</th><th>Kept in full</th><th>Limit</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for g in summary.groups %}
+    {% set href = '/admin/postings?role_category=' ~ (g.role | urlencode) ~ ('&specialization=' ~ (g.specialization | urlencode) if g.specialization else '') ~ '&group_month=' ~ summary.month %}
+    <tr>
+      <td><a class="row-link" href="{{ href }}">{{ g.role }}</a></td>
+      <td><a class="row-link" href="{{ href }}">{{ g.specialization or '—' }}</a></td>
+      <td><a class="row-link" href="{{ href }}">{{ g.seen }}</a></td>
+      <td><a class="row-link" href="{{ href }}">{{ g.kept }}{% if g.pending %} (+{{ g.pending }} deciding){% endif %}</a></td>
+      <td><a class="row-link" href="{{ href }}">{{ 'All' if g.limit is none else g.limit }}</a></td>
+      <td><a class="row-link" href="{{ href }}">
+        {% if g.status == 'over_limit' %}<span class="badge neutral">Over the limit</span>
+        {% elif g.status == 'sampled' %}Sampled
+        {% else %}Under the limit, all kept{% endif %}
+      </a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

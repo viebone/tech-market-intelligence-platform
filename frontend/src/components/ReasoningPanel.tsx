@@ -17,6 +17,9 @@ export interface ReasoningTrace {
   sources_and_tools: SourceAccess[];
   reasoning_steps: ReasoningStep[];
   is_complete: boolean;
+  /** One-line "how we read the market" text (added 2026-10-23 — sampling). Its own field, never
+   * a sources_and_tools entry, so it can't read as a source that was consulted. */
+  method_line?: string | null;
 }
 
 interface ReasoningPanelProps {
@@ -119,6 +122,9 @@ export function ReasoningPanel({
                       ))}
                   </ol>
                 )}
+                {trace.method_line ? (
+                  <p className="mt-2 text-xs text-gray-400">{trace.method_line}</p>
+                ) : null}
               </section>
 
               <section>

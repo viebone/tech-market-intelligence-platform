@@ -26,6 +26,9 @@ def build_envelope(
     taxonomy_version: str | None = None,
     total_matching: int | None = None,
     sources_checked: list[str] | None = None,
+    coverage: str | None = None,
+    estimate: dict[str, Any] | None = None,
+    method: str | None = None,
 ) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "unit": unit,
@@ -39,6 +42,16 @@ def build_envelope(
         meta["total_matching"] = total_matching
     if sources_checked is not None:
         meta["sources_checked"] = sources_checked
+    # Sampling (2026-10-23 — backend/specs/mcp-access/api.md — Response envelope): `coverage` on
+    # every job-postings tool says the numbers are full counts of the followed companies;
+    # `estimate` + `method` on requirements tools say they are estimates from a sample. The
+    # absence of `estimate` means the numbers are full counts.
+    if coverage is not None:
+        meta["coverage"] = coverage
+    if estimate is not None:
+        meta["estimate"] = estimate
+    if method is not None:
+        meta["method"] = method
     return {"data": data, "meta": meta}
 
 

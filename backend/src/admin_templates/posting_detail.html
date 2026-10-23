@@ -90,6 +90,20 @@
 
 <div class="card">
   <h2>Raw Source Response</h2>
-  <pre class="raw-json">{{ data.posting.raw_response_json }}</pre>
+  {% set smp = data.sample %}
+  {% if smp and smp.decision == 'not_kept' %}
+    {% set where = (smp.group_month.strftime('%B %Y') if smp.group_month else '') ~ ' sample for ' ~ smp.group_role ~ ' · ' ~ (smp.group_specialization or 'no specialization') %}
+    <div class="empty-state">
+      {% if smp.reason == 'ceiling' %}Full details not kept: this group reached its monthly ceiling ({{ where }}).
+      {% elif smp.reason == 'unavailable' %}Full details not kept: the posting left its board before it could be sampled.
+      {% else %}Full details not kept: outside the {{ where }}.{% endif %}
+      Its short record and classification above are complete; it is counted in every job figure.
+    </div>
+  {% elif data.posting.raw_response is none %}
+    <div class="empty-state">Full details not decided yet — this posting is waiting for its sampling decision.</div>
+  {% else %}
+    {% if smp and smp.decision == 'kept' %}<div class="field-hint">Kept in full ({{ smp.reason | replace('_', ' ') }}).</div>{% endif %}
+    <pre class="raw-json">{{ data.posting.raw_response_json }}</pre>
+  {% endif %}
 </div>
 {% endblock %}

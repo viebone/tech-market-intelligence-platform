@@ -62,6 +62,7 @@ from market_query import (
     query_trusted_statistics_data,
 )
 from mock_data import LAYOFF_SIGNALS
+import method_text
 from models import ReasoningStep, ReasoningTrace, SourceAccess
 
 logger = logging.getLogger(__name__)
@@ -171,10 +172,12 @@ synthesis question ("should I learn X", "what should I focus on"). For a questio
 specific named technology ("is Rust in demand", "should I learn Kubernetes"), pass that name \
 as the raw_skill filter — one direct query, rather than scanning every skill group. Its \
 skills breakdown also has the specific raw_skill mentions behind each skill_group aggregate. \
-Every extracted field is an interpretation of free text, not a verified fact — report \
-findings as proportions of total_matching ("42% of postings mention X"), never as absolute \
-claims. If total_matching is small, say so and be cautious about drawing a firm conclusion \
-from it. This tool never returns compensation figures — use query_compensation_data for those.
+Every extracted field is an interpretation of free text, not a verified fact. Requirements \
+are read from a fair SAMPLE, so its figures are estimated shares (share_pct): state each one with \
+its basis from estimate.qualifier in the same sentence, never as an absolute claim. Call two \
+shares closer than estimate.margin_pts "about level" — never rank them. If estimate.confidence is \
+"small_sample" give no recommendation; if "too_few" there are no shares, say too few postings have \
+been read yet. This tool never returns compensation figures — use query_compensation_data for those.
 - query_employment_events_data: layoffs, closures, restructuring, bankruptcy, offshoring, \
 expansion, and hiring-announcement questions for any company or sector (not limited to \
 tracked companies), plus the data half of any "is this a pattern or a one-off" question. Its \
@@ -209,7 +212,11 @@ nothing). Do not answer the missing part from outside the data.
 
 If the data can answer the question, respond directly and specifically: state the data's time \
 window (from data_range) and the real numbers returned. Never state a number or claim the tool \
-did not actually return."""
+did not actually return.
+
+If the user asks how the platform gets its data, whether it tracks every job, or how accurate it \
+is, answer with exactly the text below and add nothing of your own (no tool call is needed):
+{method}"""
 
 
 async def _query_platform_data(recent_messages: list[ChatMessage]):
@@ -227,7 +234,9 @@ async def _query_platform_data(recent_messages: list[ChatMessage]):
     async def _call(provider):
         return await provider.complete_with_tools(
             prompt=_render_transcript(recent_messages),
-            system=_DATA_STAGE_SYSTEM_TEMPLATE.format(today=today),
+            system=_DATA_STAGE_SYSTEM_TEMPLATE.format(
+                today=today, method=method_text.full_as_markdown(method_text.company_count()),
+            ),
             tools=[
                 query_market_data,
                 query_compensation_data,
@@ -304,9 +313,11 @@ def _build_synthesis_system(stage1_text: str, tool_calls: list) -> str:
             "\"what should I focus on\") and query_requirements_data was called: two clearly "
             "separated parts — first the underlying data (real proportions/counts), then, on "
             "its own line, your judgment built on that data. Never blend them. The judgment "
-            "reasons over these numbers only, not outside advice. If total_matching is too "
-            "small for a confident conclusion, give the data alone and say the sample is too "
-            "small — don't guess a recommendation anyway.",
+            "reasons over these numbers only, not outside advice. Requirements figures are "
+            "estimates from a sample: quote each share with its estimate.qualifier in the same "
+            "sentence, call shares closer than estimate.margin_pts \"about level\", and if "
+            "estimate.confidence is small_sample or too_few give the data alone and say the "
+            "sample is too small — don't guess a recommendation anyway.",
             "",
             "If the question asks whether a layoff/closure/restructuring/expansion is part of a "
             "pattern or a one-off, and query_employment_events_data was called: two clearly "
@@ -414,12 +425,35 @@ def _build_reasoning_trace(
             purpose=f"{call.name}({call.args})",
         ))
         seq += 1
+        if call.name == "method_text":
+            # The "How do you get these numbers?" answer reads the platform's own method text,
+            # not posting data — say so, rather than "found 0 matching postings" (2026-10-23).
+            sources[-1] = SourceAccess(
+                sequence=seq - 1, source_type="data_source",
+                name="How this platform reads the market",
+                purpose="the platform's own method description, with the live count of companies followed",
+            )
+            steps.append(ReasoningStep(
+                sequence=step_seq,
+                content=(f"Read the platform's own description of how it collects and samples job postings "
+                         f"({result.get('company_count')} companies followed)."),
+            ))
+            step_seq += 1
+            continue
         data_range = result.get("data_range", {})
+        estimate = result.get("estimate") if isinstance(result, dict) else None
+        if estimate:
+            # Requirements are a sample: "{n} read in full of {N} postings" (experience spec).
+            basis = "sample" if estimate["is_estimate"] else "every posting read"
+            found = (f"{estimate['sample_n']:,} read in full of {estimate['population_n']:,} postings "
+                     f"({basis})")
+        else:
+            found = f"{result.get('total_matching', 0)} matching postings"
         steps.append(ReasoningStep(
             sequence=step_seq,
             content=(
                 f"Queried the platform's data via {call.name}({call.args}). Found "
-                f"{result.get('total_matching', 0)} matching postings, data available from "
+                f"{found}, data available from "
                 f"{data_range.get('earliest')} to {data_range.get('latest')}."
             ),
         ))
@@ -447,6 +481,7 @@ def _build_reasoning_trace(
         sources_and_tools=sources,
         reasoning_steps=steps,
         is_complete=True,
+        method_line=method_text.one_line(method_text.company_count()),
     )
 
 

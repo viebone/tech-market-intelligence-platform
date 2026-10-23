@@ -30,6 +30,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import batch_jobs
 import requirements as reqs
+import sampling
 from classification import DAILY_REQUEST_BUDGET, TAXONOMY_VERSION, classify_postings, reclassify_all
 from db import init_schema
 from ingestion_runs import (
@@ -61,7 +62,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def ingest_company(adapter, company: str) -> dict:
+def ingest_company(adapter, company: str, payloads: dict | None = None, pending: set | None = None) -> dict:
     """
     Fetch and store new postings for one (adapter, company) pair. Never
     raises — a company that still fails after the adapter's own retries are
@@ -80,6 +81,11 @@ def ingest_company(adapter, company: str) -> dict:
     the insert itself open their own connection via `with get_connection()`, so
     a failure here never leaves a partial write to roll back — safe to catch
     broadly, same as the fetch side.
+
+    `payloads` / `pending` (2026-10-23 — Business Logic — Sampling): the run's in-memory payload
+    map. Every newly inserted posting, and every still-undecided posting seen on its board again,
+    has its raw_response held here until sampling.run_decision_phase() keeps it or not. Nothing is
+    staged in the database, so a crash just leaves postings pending for the next run.
     """
     try:
         postings = adapter.fetch_company(company)
@@ -92,6 +98,13 @@ def ingest_company(adapter, company: str) -> dict:
     except Exception as exc:
         logger.error("ingest[%s/%s]: fetched %d but failed to store them: %s", adapter.name, company, len(postings), exc)
         return {"source": adapter.name, "company": company, "fetched": len(postings), "inserted": 0, "error": str(exc)}
+
+    if payloads is not None:
+        wanted = set(new_ids) | (pending or set())
+        for p in postings:
+            pid = f"{adapter.name}:{p.source_ref}"
+            if pid in wanted:
+                payloads[pid] = p.raw_response
 
     logger.info(
         "ingest[%s/%s]: fetched %d, inserted %d new",
@@ -201,7 +214,7 @@ async def run_requirements_phase() -> dict:
         "requirements_phase": "ok", "batch_collected": 0, "batch_submitted_id": None,
         # Repeat-work guardrails (2026-10-23): paid = new + repeats, always.
         "requirements_paid": 0, "requirements_new": 0, "requirements_repeats": 0,
-        "guards": [], "guard_detail": {},
+        "guards": [], "guard_detail": {}, "requirements_reused": 0,
     }
     phases: list[str] = []
 
@@ -240,6 +253,12 @@ async def run_requirements_phase() -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.exception("requirements batch collect failed: %s", exc)
             phases.append("batch_collect_failed")
+
+    # --- step 1b: duplicate reuse (2026-10-23) — free, before any paid lane ---
+    try:
+        result["requirements_reused"] = sampling.reuse_duplicate_extractions()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("requirements duplicate reuse failed (paid lanes continue): %s", exc)
 
     # --- step 2: interactive lane (unchanged) ----------------------------
     try:
@@ -368,12 +387,15 @@ async def run() -> None:
     init_schema()
     started_at = datetime.now(timezone.utc)
     terms_processed: list[dict] = []
+    payloads: dict[str, dict] = {}
+    sampling_stats = {"postings_kept": 0, "postings_not_kept": 0, "postings_pending": 0}
 
     try:
+        pending = sampling.pending_ids() if sampling.is_sampling_live(started_at) else set()
         for adapter in ALL_SOURCE_ADAPTERS:
             try:
                 for company in adapter.companies:
-                    terms_processed.append(ingest_company(adapter, company))
+                    terms_processed.append(ingest_company(adapter, company, payloads, pending))
             except Exception as exc:
                 # Adapter-level failure outside any single company's fetch
                 # (e.g. a bug in that adapter's response parsing) — recorded,
@@ -415,6 +437,15 @@ async def run() -> None:
             except Exception as exc:  # noqa: BLE001 — mirrors requirements phase's own per-step isolation
                 logger.exception("reclassify: taxonomy backlog reprocessing failed: %s", exc)
                 reclassify_stats["stopped_early"] = True
+
+        # Sampling decisions (2026-10-23 — Business Logic — Sampling): once classified, each new
+        # posting is kept in full or not, once. No model call, no delete. A failure here leaves
+        # postings pending for the next run and never blocks the requirements phase.
+        try:
+            sampling_stats = sampling.run_decision_phase(payloads)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("sampling: decision phase failed, postings stay pending: %s", exc)
+        payloads.clear()
 
         # Requirements extraction runs as its own phase after classification,
         # only over postings classification already confirmed are real roles.
@@ -480,6 +511,10 @@ async def run() -> None:
         requirements_phase=requirements_stats["requirements_phase"],
         batch_collected=requirements_stats["batch_collected"],
         batch_submitted_id=requirements_stats["batch_submitted_id"],
+        postings_kept=sampling_stats["postings_kept"],
+        postings_not_kept=sampling_stats["postings_not_kept"],
+        postings_pending=sampling_stats["postings_pending"],
+        requirements_reused=requirements_stats["requirements_reused"],
         requirements_paid=requirements_stats["requirements_paid"],
         requirements_new=requirements_stats["requirements_new"],
         requirements_repeats=requirements_stats["requirements_repeats"],

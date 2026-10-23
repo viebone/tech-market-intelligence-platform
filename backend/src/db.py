@@ -740,6 +740,42 @@ ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS reclassified_unchanged INTEG
 -- 'ok' for legacy rows: they predate the guardrails, nothing fired.
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_guard TEXT NOT NULL DEFAULT 'ok';
 ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS guard_detail JSONB NOT NULL DEFAULT '{}';
+
+-- Sampling (2026-10-23) — backend/specs/market-health/api.md — Data Models — PostingSample,
+-- PostingDetail; changes/2026-10-10-requirements-extraction-sampling.md. Postings stored after
+-- SAMPLING_GO_LIVE are inserted with raw_response NULL; a kept posting's payload goes to
+-- posting_details. Both tables are INSERT-ONLY (raw_postings stays immutable too).
+ALTER TABLE raw_postings ALTER COLUMN raw_response DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS posting_samples (
+    posting_id           TEXT PRIMARY KEY REFERENCES raw_postings(id),
+    decision             TEXT NOT NULL,          -- kept | not_kept | kept_before_sampling
+    reason               TEXT NOT NULL,
+    group_role           TEXT NOT NULL,
+    group_specialization TEXT,
+    group_month          DATE NOT NULL,
+    limit_at_decision    INTEGER,
+    rate                 REAL NOT NULL,
+    hash_u               DOUBLE PRECISION NOT NULL,
+    decided_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ingestion_run_id     INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_posting_samples_group ON posting_samples (group_month, group_role, group_specialization);
+
+CREATE TABLE IF NOT EXISTS posting_details (
+    posting_id       TEXT PRIMARY KEY REFERENCES raw_postings(id),
+    raw_response     JSONB NOT NULL,
+    description_hash TEXT NOT NULL,
+    kept_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_posting_details_hash ON posting_details (description_hash);
+
+ALTER TABLE posting_requirements ADD COLUMN IF NOT EXISTS reused_from TEXT;
+
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS postings_kept INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS postings_not_kept INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS postings_pending INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS requirements_reused INTEGER NOT NULL DEFAULT 0;
 """
 
 

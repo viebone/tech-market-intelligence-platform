@@ -270,9 +270,34 @@ Logic — Repeat-work guardrails.
   On a normal day, `requirements_repeats` and `requirements_deleted` are 0 and
   `requirements_guard` is `ok`.
 - **A deliberate large re-read** (a taxonomy migration) goes through the manual scripts, which
-  now require the change request's slug:
-  `python reprocess_taxonomy.py --change-ref <change-slug>`, and the same for
-  `reextract_skilless.py`.
+  now require the change request's slug (see below).
+
+### Sampling (built 2026-10-23, deploy together with its frontend)
+
+`changes/2026-10-10-requirements-extraction-sampling.md`. Every job is still fetched, counted and
+classified. Full job details are kept only for a fair sample (up to 50 per role × specialization
+× month; Designer and `unknown` always), and only kept tracked-role postings are read for skills.
+See `backend/specs/market-health/api.md` — Business Logic — Sampling.
+
+- **Before pushing**, set `SAMPLING_GO_LIVE` in `backend/src/sampling_settings.py` to the first
+  06:00 UTC cron *after* the deploy. Postings stored from then on are sampled, and everything
+  earlier keeps its full details. The same value must be seen by `job-sync`, `api` and `admin`,
+  which is why it is a code constant, not a per-service env var.
+- **Deploy backend and frontend together.** The skills API changes from counts to estimated
+  shares, and the current frontend can't render the new shape.
+- **Once, after the deploy:** `cd backend/src && python migrate_sampling_go_live.py`. This only
+  records pre-go-live postings as `kept_before_sampling` for the admin views; the pipeline works
+  without it. It is idempotent.
+- **Check the first run after go-live:** `ingestion_runs.postings_kept / postings_not_kept /
+  postings_pending`, then the admin **Sampling** page (seen vs. kept, per group) and the
+  Overview's Sampling line. `postings_pending` should be 0 on a normal day.
+- **Limits** are settings: `SAMPLING_LIMIT_DEFAULT`, `SAMPLING_LIMIT_ENGINEER`,
+  `SAMPLING_LIMIT_PRODUCT_MANAGER`, `SAMPLING_LIMIT_DESIGNER` (`none` = all), set the same on all
+  three services. A change needs a change request, and the method text updates by itself.
+
+Manual re-read scripts (repeat-work safeguards, above) take the change request's slug:
+`python reprocess_taxonomy.py --change-ref <change-slug>`, and the same for
+`reextract_skilless.py`.
 
 ---
 

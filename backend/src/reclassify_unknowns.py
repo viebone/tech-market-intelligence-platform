@@ -59,9 +59,13 @@ def _fetch_unknowns() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT c.posting_id, rp.title, rp.source, rp.raw_response
+            SELECT c.posting_id, rp.title, rp.source, COALESCE(pd.raw_response, rp.raw_response)
             FROM classifications c
             JOIN raw_postings rp ON rp.id = c.posting_id
+            -- Sampling (2026-10-23): a kept posting's payload lives in posting_details. Every
+            -- role_category = 'unknown' posting is kept, so its description is always here; a
+            -- not-kept posting with only an unknown level/track gets a title-only second look.
+            LEFT JOIN posting_details pd ON pd.posting_id = rp.id
             WHERE (c.role_category = 'unknown'
                    OR c.specialization = 'unknown'
                    OR c.level = 'unknown'
